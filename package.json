@@ -1,0 +1,17 @@
+{
+  "name": "nexus",
+  "private": true,
+  "version": "2.0.0",
+  "description": "NEXUS Platform — WhatsApp AI Agent Panel",
+  "scripts": {
+    "dev": "pnpm --filter @nexus/api dev",
+    "build": "pnpm --filter @nexus/shared build && pnpm --filter @nexus/api build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "clean": "pnpm -r clean"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}

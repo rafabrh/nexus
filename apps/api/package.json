@@ -1,0 +1,50 @@
+{
+  "name": "@nexus/api",
+  "version": "2.0.0",
+  "description": "NEXUS Panel — NestJS BFF API",
+  "private": true,
+  "scripts": {
+    "dev": "nest start --watch",
+    "build": "nest build",
+    "start": "node dist/main",
+    "start:prod": "node dist/main",
+    "clean": "rimraf dist",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^8.3.0",
+    "@nestjs/common": "^10.4",
+    "@nestjs/config": "^3.2",
+    "@nestjs/core": "^10.4",
+    "@nestjs/platform-fastify": "^10.4",
+    "@nestjs/platform-socket.io": "^10.4",
+    "@nestjs/swagger": "^7.4",
+    "@nestjs/terminus": "^10.2",
+    "@nestjs/websockets": "^10.4",
+    "@nexus/shared": "workspace:*",
+    "class-transformer": "^0.5",
+    "class-validator": "^0.14",
+    "cockatiel": "^3.2",
+    "fastify": "^4.28.1",
+    "googleapis": "^140",
+    "ioredis": "^5.4",
+    "jose": "^5.6",
+    "nestjs-pino": "^4.1",
+    "pino": "^9.3",
+    "pino-pretty": "^11.2",
+    "prom-client": "^15.1",
+    "reflect-metadata": "^0.2",
+    "resend": "^3.5",
+    "rxjs": "^7.8",
+    "socket.io": "^4.7"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.4",
+    "@nestjs/schematics": "^10.1",
+    "@nestjs/testing": "^10.4",
+    "rimraf": "^5.0",
+    "supertest": "^7.0",
+    "typescript": "^5.5",
+    "vitest": "^2.0"
+  }
+}
