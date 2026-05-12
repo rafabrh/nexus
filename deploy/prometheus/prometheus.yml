@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'nexus-api'
+    static_configs:
+      - targets: ['nexus-api:4000']
+    metrics_path: '/api/v1/metrics'
+    scrape_interval: 15s

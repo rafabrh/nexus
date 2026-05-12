@@ -54,4 +54,22 @@ export const RedisKeys = {
 
   idempotency: (reqId: string) =>
     `idempotency:${reqId}`,
+
+  // ---- isHot flag ----
+
+  isHot: (inst: string, jid: string) =>
+    `chat:${inst}:${jid}:isHot`,
+
+  // ---- Reminders ----
+
+  reminder: (inst: string, id: string) =>
+    `reminder:${inst}:${id}`,
+
+  reminders: (inst: string) =>
+    `reminders:${inst}`,
+
+  // ---- Quick Replies ----
+
+  quickReplies: (inst: string) =>
+    `quickreplies:${inst}`,
 } as const;

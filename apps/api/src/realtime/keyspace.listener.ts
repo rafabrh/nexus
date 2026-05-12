@@ -14,6 +14,7 @@ export class KeyspaceListener implements OnModuleInit, OnModuleDestroy {
     '__keyspace@0__:chat:*:paymentStatus',
     '__keyspace@0__:chat:*:buffer',
     '__keyspace@0__:chat:*:processing',
+    '__keyspace@0__:chat:*:followup_step',
     '__keyspace@0__:mp:payment:*:approvedSent',
   ];
 

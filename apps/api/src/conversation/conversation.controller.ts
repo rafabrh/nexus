@@ -25,6 +25,8 @@ import { ConversationQueryDto } from './dto/conversation-query.dto';
 import { AddNoteRequestDto } from './dto/add-note-request.dto';
 import { AddTagRequestDto } from './dto/add-tag-request.dto';
 import { SendMessageRequestDto } from './dto/send-message-request.dto';
+import { UpdateStageRequestDto } from './dto/update-stage-request.dto';
+import { ToggleHotRequestDto } from './dto/toggle-hot-request.dto';
 
 @Controller('conversations')
 @UseGuards(JwtAuthGuard)
@@ -116,5 +118,27 @@ export class ConversationController {
     @Body() dto: SendMessageRequestDto,
   ) {
     return this.service.sendMessage(instancia, jid, dto.text);
+  }
+
+  @Post(':jid/stage')
+  @UseInterceptors(IdempotencyInterceptor)
+  @ApiOperation({ summary: 'Atualizar stage do funil' })
+  async updateStage(
+    @Tenant() instancia: string,
+    @Param('jid') jid: string,
+    @Body() dto: UpdateStageRequestDto,
+  ) {
+    return this.service.updateStage(instancia, jid, dto.stage);
+  }
+
+  @Post(':jid/hot')
+  @UseInterceptors(IdempotencyInterceptor)
+  @ApiOperation({ summary: 'Toggle manual isHot flag' })
+  async toggleHot(
+    @Tenant() instancia: string,
+    @Param('jid') jid: string,
+    @Body() dto: ToggleHotRequestDto,
+  ) {
+    return this.service.toggleHot(instancia, jid, dto.isHot);
   }
 }

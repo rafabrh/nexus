@@ -3,6 +3,7 @@ import type Redis from 'ioredis';
 import { RedisKeys } from '@nexus/shared';
 import type { AiControlResponse } from '@nexus/shared';
 import type { AiToggleRequestDto } from './dto/ai-toggle-request.dto';
+import { EventPublisher } from '../realtime/event.publisher';
 
 @Injectable()
 export class AiControlService {
@@ -10,6 +11,7 @@ export class AiControlService {
 
   constructor(
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
+    private readonly publisher: EventPublisher,
   ) {}
 
   async getState(instancia: string, jid: string): Promise<AiControlResponse> {
@@ -34,6 +36,9 @@ export class AiControlService {
   async toggle(instancia: string, jid: string, dto: AiToggleRequestDto): Promise<AiControlResponse> {
     const key = RedisKeys.humanControlUntil(instancia, jid);
 
+    // Detect previous state to determine if handoff should be emitted
+    const previousState = await this.getState(instancia, jid);
+
     if (dto.state === 'ON') {
       await this.redis.del(key);
       this.logger.log(`IA turned ON for ${instancia}/${jid}`);
@@ -47,6 +52,19 @@ export class AiControlService {
 
     await this.redis.set(key, until.toString());
     this.logger.log(`IA turned OFF_UNTIL ${new Date(until).toISOString()} for ${instancia}/${jid}`);
+
+    // Emit handoff.triggered when transitioning from ON to OFF/OFF_UNTIL
+    if (previousState.state === 'ON') {
+      await this.publisher.publish({
+        type: 'handoff.triggered',
+        instancia,
+        jid,
+        ts: Date.now(),
+        payload: {
+          until: new Date(until).toISOString(),
+        },
+      });
+    }
 
     return {
       state: 'OFF_UNTIL',

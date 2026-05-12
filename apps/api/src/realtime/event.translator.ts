@@ -46,6 +46,12 @@ export class EventTranslator {
           }
           return null;
 
+        case 'followup_step':
+          if (operation === 'set') {
+            return { type: 'funnel.changed', instancia, jid, ts, payload: {} };
+          }
+          return null;
+
         default:
           return null;
       }

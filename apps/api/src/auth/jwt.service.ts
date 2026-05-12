@@ -25,7 +25,7 @@ export class NexusJwtService {
       10,
     );
     this.refreshTtlMs = parseInt(
-      config.get<string>('JWT_REFRESH_EXPIRATION_MS', '604800000'),
+      config.get<string>('JWT_REFRESH_EXPIRATION_MS', '2592000000'),
       10,
     );
   }

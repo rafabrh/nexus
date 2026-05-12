@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, Inject } from '@nestjs/common';
+import type Redis from 'ioredis';
+import { RedisKeys } from '@nexus/shared';
 import type {
   ConversationListItem,
   ConversationDetail,
@@ -6,6 +8,7 @@ import type {
 } from '@nexus/shared';
 import { ConversationRepository } from './conversation.repository';
 import { EvolutionClient } from '../whatsapp/evolution.client';
+import { EventPublisher } from '../realtime/event.publisher';
 
 @Injectable()
 export class ConversationService {
@@ -14,6 +17,8 @@ export class ConversationService {
   constructor(
     private readonly repo: ConversationRepository,
     private readonly evolution: EvolutionClient,
+    private readonly publisher: EventPublisher,
+    @Inject('REDIS_CLIENT') private readonly redis: Redis,
   ) {}
 
   async listConversations(
@@ -69,6 +74,15 @@ export class ConversationService {
 
   async addNote(instancia: string, jid: string, text: string, userEmail: string): Promise<{ message: string }> {
     await this.repo.appendNote(instancia, jid, text);
+
+    await this.publisher.publish({
+      type: 'note.added',
+      instancia,
+      jid,
+      ts: Date.now(),
+      payload: { text, addedBy: userEmail },
+    });
+
     this.logger.log(`Note added by ${userEmail} for ${instancia}/${jid}`);
     return { message: 'Nota adicionada' };
   }
@@ -92,5 +106,47 @@ export class ConversationService {
     await this.evolution.sendTextMessage(instancia, jid, text);
     this.logger.log(`Message sent via Evolution API for ${instancia}/${jid}`);
     return { message: 'Mensagem enviada' };
+  }
+
+  /**
+   * Update the funnel stage (followup_step) for a conversation.
+   */
+  async updateStage(instancia: string, jid: string, stage: string): Promise<{ message: string; stage: string }> {
+    const key = RedisKeys.followupStep(instancia, jid);
+    await this.redis.set(key, stage);
+
+    await this.publisher.publish({
+      type: 'funnel.changed',
+      instancia,
+      jid,
+      ts: Date.now(),
+      payload: { stage },
+    });
+
+    this.logger.log(`Stage updated to ${stage} for ${instancia}/${jid}`);
+    return { message: 'Stage atualizado', stage };
+  }
+
+  /**
+   * Toggle manual isHot flag for a conversation.
+   */
+  async toggleHot(instancia: string, jid: string, isHot: boolean): Promise<{ message: string; isHot: boolean }> {
+    const key = RedisKeys.isHot(instancia, jid);
+    if (isHot) {
+      await this.redis.set(key, 'true');
+    } else {
+      await this.redis.del(key);
+    }
+
+    await this.publisher.publish({
+      type: 'lead.hot',
+      instancia,
+      jid,
+      ts: Date.now(),
+      payload: { isHot, manual: true },
+    });
+
+    this.logger.log(`isHot toggled to ${isHot} for ${instancia}/${jid}`);
+    return { message: isHot ? 'Lead marcado como hot' : 'Lead removido de hot', isHot };
   }
 }

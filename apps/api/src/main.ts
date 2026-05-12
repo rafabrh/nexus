@@ -7,6 +7,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
 import fastifyCookie from '@fastify/cookie';
+import helmet from '@fastify/helmet';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './core/filters/http-exception.filter';
 import { AllExceptionsFilter } from './core/filters/all-exceptions.filter';
@@ -20,6 +21,11 @@ async function bootstrap() {
 
   // Pino structured logging
   app.useLogger(app.get(Logger));
+
+  // Helmet — security headers
+  await app.register(helmet, {
+    contentSecurityPolicy: false, // CSP managed by frontend/proxy
+  });
 
   // Fastify cookie plugin
   await app.register(fastifyCookie, {

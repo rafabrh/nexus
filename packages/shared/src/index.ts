@@ -5,5 +5,7 @@ export * from './types/ai-control-state';
 export * from './types/dashboard';
 export * from './types/lead';
 export * from './types/tenant';
+export * from './types/reminder';
+export * from './types/quick-reply';
 export * from './constants/redis-keys';
 export * from './utils/phone-mask';

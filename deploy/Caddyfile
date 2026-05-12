@@ -1,0 +1,35 @@
+# API Backend (NestJS)
+api.shkgroups.com {
+    tls {
+        protocols tls1.2 tls1.3
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+        -Server
+    }
+
+    # WebSocket (Socket.IO)
+    @websocket {
+        path /socket.io/*
+    }
+    reverse_proxy @websocket localhost:4000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        transport http {
+            read_timeout 3600s
+            write_timeout 3600s
+        }
+    }
+
+    # REST API
+    reverse_proxy localhost:4000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+    }
+}

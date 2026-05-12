@@ -77,8 +77,10 @@ export class AuthService {
 
   /**
    * Refresh the access token using a valid refresh token.
+   * Implements refresh token rotation: the old refresh token is blacklisted
+   * and a new one is issued alongside the new access token.
    */
-  async refresh(refreshToken: string): Promise<{ accessToken: string }> {
+  async refresh(refreshToken: string): Promise<TokenPair> {
     let payload;
     try {
       payload = await this.jwt.verify(refreshToken);
@@ -94,13 +96,28 @@ export class AuthService {
       throw new UnauthorizedException('Token revogado');
     }
 
-    const accessToken = await this.jwt.signAccess({
+    // Blacklist the old refresh token (rotation)
+    const now = Math.floor(Date.now() / 1000);
+    const ttlSeconds = Math.max((payload.exp ?? now) - now, 0);
+    if (ttlSeconds > 0) {
+      await this.redis.set(
+        RedisKeys.sessionBlacklist(payload.jti!),
+        'rotated',
+        'EX',
+        ttlSeconds,
+      );
+    }
+
+    const tokenPayload = {
       sub: payload.sub!,
       instancia: payload.instancia,
       role: payload.role,
-    });
+    };
 
-    return { accessToken };
+    const accessToken = await this.jwt.signAccess(tokenPayload);
+    const newRefreshToken = await this.jwt.signRefresh(tokenPayload);
+
+    return { accessToken, refreshToken: newRefreshToken };
   }
 
   /**

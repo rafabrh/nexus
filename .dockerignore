@@ -1,0 +1,14 @@
+node_modules
+.git
+.env*
+!.env.example
+*.md
+dist
+coverage
+.next
+.idea
+.vscode
+nexus-build
+nexus-build2
+nexus-panel-api
+deploy/backups

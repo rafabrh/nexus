@@ -11,6 +11,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -26,6 +27,7 @@ export class AuthController {
 
   @Post('magic-link')
   @HttpCode(200)
+  @Throttle({ default: { ttl: 3600000, limit: 5 } })
   @ApiOperation({ summary: 'Request a magic link login email' })
   @ApiResponse({ status: 200, description: 'Magic link email sent (if registered)' })
   async sendMagicLink(
@@ -69,7 +71,7 @@ export class AuthController {
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'strict',
         path: '/api/v1/auth',
-        maxAge: 604800, // 7 days
+        maxAge: 2592000, // 30 days
       })
       .redirect(302, redirectUrl);
   }
@@ -90,7 +92,8 @@ export class AuthController {
       throw new UnauthorizedException('Refresh token ausente');
     }
 
-    const { accessToken } = await this.authService.refresh(refreshToken);
+    const { accessToken, refreshToken: newRefreshToken } =
+      await this.authService.refresh(refreshToken);
 
     reply
       .setCookie('access_token', accessToken, {
@@ -100,7 +103,14 @@ export class AuthController {
         path: '/',
         maxAge: 900,
       })
-      .send({ message: 'Token renovado' });
+      .setCookie('refresh_token', newRefreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        path: '/api/v1/auth',
+        maxAge: 2592000, // 30 days
+      })
+      .send({ accessToken, message: 'Token renovado' });
   }
 
   @Post('logout')

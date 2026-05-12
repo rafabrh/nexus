@@ -1,5 +1,15 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
+import { EventPublisher } from '../realtime/event.publisher';
+
+/** Keywords that indicate a hot lead */
+const HOT_KEYWORDS = [
+  'comprar', 'quero', 'pagar', 'fechar', 'preco', 'valor',
+  'desconto', 'pix', 'cartao', 'boleto', 'contratar', 'assinar',
+];
+
+/** Stages S3+ are considered advanced enough to contribute to isHot */
+const HOT_STAGES = new Set(['S3', 'S4', 'S5', 'S6']);
 
 @Injectable()
 export class WebhookService {
@@ -7,6 +17,7 @@ export class WebhookService {
 
   constructor(
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
+    private readonly publisher: EventPublisher,
   ) {}
 
   async processEvolutionEvent(payload: Record<string, unknown>): Promise<void> {
@@ -98,6 +109,15 @@ export class WebhookService {
       await this.redis.set(contactKey, JSON.stringify({ pushName }));
     }
 
+    // Detect lead.hot automatically
+    if (!fromMe) {
+      try {
+        await this.detectAndEmitHot(instanceName, jid, content);
+      } catch (err: any) {
+        this.logger.warn(`lead.hot detection failed: ${err.message}`);
+      }
+    }
+
     this.logger.log(
       `webhook.message-processed instance=${instanceName} jid=${jid} fromMe=${fromMe} type=${mediaType}`,
     );
@@ -146,6 +166,70 @@ export class WebhookService {
     if (message.protocolMessage) return null;
 
     return '[mensagem]';
+  }
+
+  /**
+   * Detect if a lead is hot based on multi-criteria and emit lead.hot event.
+   */
+  private async detectAndEmitHot(
+    instanceName: string,
+    jid: string,
+    content: string,
+  ): Promise<void> {
+    let score = 0;
+    const now = Date.now();
+    const fiveMin = 5 * 60 * 1000;
+    const tenMin = 10 * 60 * 1000;
+
+    // (a) last message is right now (< 5 min) — always true for incoming message
+    score++;
+
+    // (b) stage S3+
+    const stepKey = `chat:${instanceName}:${jid}:followup_step`;
+    const stage = await this.redis.get(stepKey);
+    if (stage && HOT_STAGES.has(stage)) {
+      score++;
+    }
+
+    // (c) keywords in content
+    if (content) {
+      const lower = content.toLowerCase();
+      if (HOT_KEYWORDS.some((kw) => lower.includes(kw))) {
+        score++;
+      }
+    }
+
+    // (d) 3+ messages in last 10 min — check recent history timestamps
+    const histKey = `chathistory:${instanceName}-${jid.replace('@s.whatsapp.net', '')}`;
+    const recentMsgs = await this.redis.lrange(histKey, -10, -1);
+    if (recentMsgs.length >= 3) {
+      let recentCount = 0;
+      for (const raw of recentMsgs) {
+        try {
+          const parsed = JSON.parse(raw);
+          const ts = parsed.data?.timestamp ?? parsed.timestamp;
+          if (ts && (now - Number(ts)) < tenMin) {
+            recentCount++;
+          }
+        } catch {
+          // skip
+        }
+      }
+      if (recentCount >= 3) {
+        score++;
+      }
+    }
+
+    if (score >= 2) {
+      await this.publisher.publish({
+        type: 'lead.hot',
+        instancia: instanceName,
+        jid,
+        ts: now,
+        payload: { score, automatic: true },
+      });
+      this.logger.log(`lead.hot detected for ${instanceName}/${jid} (score=${score})`);
+    }
   }
 
   private handleConnectionUpdate(
