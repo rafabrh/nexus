@@ -2,7 +2,9 @@
 
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { modalOverlay, modalContent } from '@/lib/motion-variants';
 
 interface ModalProps {
   open: boolean;
@@ -15,27 +17,61 @@ interface ModalProps {
 export function Modal({ open, onOpenChange, title, children, className }: ModalProps) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 animate-fade-in" />
-        <Dialog.Content
-          className={cn(
-            'fixed top-1/2 left-1/2 z-50 -translate-x-1/2 -translate-y-1/2',
-            'w-full max-w-md bg-bg-surface border border-border rounded-modal p-6',
-            'shadow-lg animate-slide-up',
-            'focus:outline-none',
-            className,
+      <Dialog.Portal forceMount>
+        <AnimatePresence>
+          {open && (
+            <>
+              <Dialog.Overlay asChild>
+                <motion.div
+                  className="fixed inset-0 z-50"
+                  style={{
+                    background: 'rgba(0,0,0,0.65)',
+                    backdropFilter: 'blur(4px)',
+                    WebkitBackdropFilter: 'blur(4px)',
+                  }}
+                  variants={modalOverlay}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                />
+              </Dialog.Overlay>
+
+              <Dialog.Content asChild>
+                <motion.div
+                  className={cn(
+                    'fixed top-1/2 left-1/2 z-50 -translate-x-1/2 -translate-y-1/2',
+                    'w-full max-w-md p-6',
+                    'focus:outline-none',
+                    className,
+                  )}
+                  style={{
+                    background: 'rgba(20,24,32,0.85)',
+                    backdropFilter: 'blur(24px) saturate(1.3)',
+                    WebkitBackdropFilter: 'blur(24px) saturate(1.3)',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                    borderRadius: '14px',
+                    boxShadow:
+                      '0 32px 64px rgba(0,0,0,0.5), 0 8px 24px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.03)',
+                  }}
+                  variants={modalContent}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <Dialog.Title className="text-lg font-semibold text-text-primary">
+                      {title}
+                    </Dialog.Title>
+                    <Dialog.Close className="text-text-muted hover:text-text-secondary transition-colors duration-150">
+                      <X size={16} />
+                    </Dialog.Close>
+                  </div>
+                  {children}
+                </motion.div>
+              </Dialog.Content>
+            </>
           )}
-        >
-          <div className="flex items-center justify-between mb-4">
-            <Dialog.Title className="text-lg font-semibold text-text-primary">
-              {title}
-            </Dialog.Title>
-            <Dialog.Close className="text-text-muted hover:text-text-secondary transition-colors duration-150">
-              <X size={16} />
-            </Dialog.Close>
-          </div>
-          {children}
-        </Dialog.Content>
+        </AnimatePresence>
       </Dialog.Portal>
     </Dialog.Root>
   );

@@ -2,10 +2,12 @@
 
 import { useMemo } from 'react';
 import { Search, Flame } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { cn, timeAgo } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { useConversations } from '@/hooks/use-conversations';
 import { useConversationStore } from '@/stores/conversation.store';
+import { staggerContainer, staggerItem } from '@/lib/motion-variants';
 import type { ConversationListItem, AiState } from '@nexus/shared';
 
 const FILTERS = [
@@ -26,9 +28,12 @@ function getAiBadge(state: AiState) {
   }
 }
 
-function ConversationSkeleton() {
+function ConversationSkeleton({ index }: { index: number }) {
   return (
-    <div className="px-4 py-3 flex gap-3">
+    <div
+      className="px-4 py-3 flex gap-3"
+      style={{ animationDelay: `${index * 50}ms` }}
+    >
       <div className="w-9 h-9 rounded-full skeleton flex-shrink-0" />
       <div className="flex-1 space-y-2">
         <div className="h-3 w-24 skeleton" />
@@ -56,17 +61,29 @@ function ConversationItem({
     .toUpperCase();
 
   return (
-    <button
+    <motion.button
+      variants={staggerItem}
       onClick={onClick}
       className={cn(
-        'w-full text-left px-4 py-3 flex gap-3 transition-colors duration-150',
+        'w-full text-left mx-1.5 py-3 flex gap-3 transition-colors duration-150 rounded-lg',
         'hover:bg-bg-hover',
-        selected && 'bg-bg-active',
-        conversation.isHot && 'border-l-2 border-l-warning',
+        selected
+          ? 'border-l-2 border-l-primary-500'
+          : conversation.isHot
+          ? 'border-l-2 border-l-warning'
+          : '',
       )}
+      style={
+        selected
+          ? { background: 'rgba(37,48,64,0.6)', paddingLeft: '14px', paddingRight: '12px' }
+          : { paddingLeft: '16px', paddingRight: '12px' }
+      }
     >
       {/* Avatar */}
-      <div className="w-9 h-9 rounded-full bg-bg-elevated flex items-center justify-center flex-shrink-0 text-xs font-medium text-text-secondary">
+      <div
+        className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-medium text-text-secondary"
+        style={{ background: 'linear-gradient(135deg, #1A2029, #1F2733)' }}
+      >
         {initials}
       </div>
 
@@ -99,7 +116,7 @@ function ConversationItem({
           </Badge>
         </div>
       </div>
-    </button>
+    </motion.button>
   );
 }
 
@@ -140,7 +157,15 @@ export function Sidebar() {
   }, [conversations, searchQuery, filter]);
 
   return (
-    <aside className="fixed top-12 left-0 bottom-0 w-80 bg-bg-surface border-r border-border flex flex-col z-40">
+    <aside
+      className="fixed top-12 left-0 bottom-0 w-80 flex flex-col z-40"
+      style={{
+        backdropFilter: 'blur(12px) saturate(1.2)',
+        WebkitBackdropFilter: 'blur(12px) saturate(1.2)',
+        borderRight: '1px solid rgba(255,255,255,0.06)',
+        background: 'rgba(20,24,32,0.6)',
+      }}
+    >
       {/* Search */}
       <div className="p-3">
         <div className="relative">
@@ -153,27 +178,39 @@ export function Sidebar() {
             placeholder="Buscar conversa..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-8 pl-8 pr-3 rounded-input bg-bg-elevated border border-border text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary-600 transition-colors duration-150"
+            className="w-full h-8 pl-8 pr-3 rounded-input border border-border text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary-600 focus:shadow-[0_0_0_2px_rgba(99,102,241,0.15)] transition-all duration-150"
+            style={{ background: '#0C0F12' }}
           />
         </div>
       </div>
 
       {/* Filter chips */}
       <div className="px-3 pb-2 flex gap-1">
-        {FILTERS.map((f) => (
-          <button
-            key={f.key}
-            onClick={() => setFilter(f.key)}
-            className={cn(
-              'text-xs px-2.5 py-1 rounded-badge transition-colors duration-150',
-              filter === f.key
-                ? 'bg-primary-800/40 text-primary-400'
-                : 'text-text-muted hover:text-text-secondary hover:bg-bg-hover',
-            )}
-          >
-            {f.label}
-          </button>
-        ))}
+        {FILTERS.map((f) => {
+          const active = filter === f.key;
+          return (
+            <button
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              className={cn(
+                'relative text-xs px-2.5 py-1 rounded-full transition-colors duration-150',
+                active
+                  ? 'text-primary-400'
+                  : 'text-text-muted hover:text-text-secondary hover:bg-bg-hover',
+              )}
+              style={
+                active
+                  ? {
+                      background: 'rgba(129,140,248,0.08)',
+                      border: '1px solid rgba(129,140,248,0.12)',
+                    }
+                  : {}
+              }
+            >
+              {f.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Conversation list */}
@@ -181,7 +218,7 @@ export function Sidebar() {
         {isLoading ? (
           <>
             {Array.from({ length: 6 }).map((_, i) => (
-              <ConversationSkeleton key={i} />
+              <ConversationSkeleton key={i} index={i} />
             ))}
           </>
         ) : filtered.length === 0 ? (
@@ -189,19 +226,34 @@ export function Sidebar() {
             <p className="text-sm text-text-muted">Nenhuma conversa encontrada</p>
           </div>
         ) : (
-          filtered.map((c) => (
-            <ConversationItem
-              key={c.jid}
-              conversation={c}
-              selected={selectedJid === c.jid}
-              onClick={() => setSelectedJid(c.jid)}
-            />
-          ))
+          <motion.div
+            variants={staggerContainer}
+            initial="initial"
+            animate="animate"
+            className="py-1"
+          >
+            <AnimatePresence>
+              {filtered.map((c) => (
+                <ConversationItem
+                  key={c.jid}
+                  conversation={c}
+                  selected={selectedJid === c.jid}
+                  onClick={() => setSelectedJid(c.jid)}
+                />
+              ))}
+            </AnimatePresence>
+          </motion.div>
         )}
       </div>
 
       {/* Footer count */}
-      <div className="px-4 py-2 border-t border-border">
+      <div
+        className="px-4 py-2"
+        style={{
+          background: 'rgba(20,24,32,0.5)',
+          borderTop: '1px solid rgba(255,255,255,0.04)',
+        }}
+      >
         <span className="text-xs text-text-muted">
           {filtered.length} conversa{filtered.length !== 1 ? 's' : ''}
         </span>

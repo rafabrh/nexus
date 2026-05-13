@@ -1,6 +1,6 @@
 'use client';
 
-import { Bot, Flame, PanelRightOpen, PanelRightClose, Phone } from 'lucide-react';
+import { Bot, Flame, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,11 +10,11 @@ import type { ConversationListItem, AiState } from '@nexus/shared';
 function getAiLabel(state: AiState) {
   switch (state) {
     case 'ON':
-      return { label: 'IA Ativa', variant: 'success' as const, dot: 'bg-ai-on' };
+      return { label: 'IA Ativa', variant: 'success' as const, dot: 'bg-ai-on', isOn: true };
     case 'OFF':
-      return { label: 'IA Off', variant: 'default' as const, dot: 'bg-ai-off' };
+      return { label: 'IA Off', variant: 'default' as const, dot: 'bg-ai-off', isOn: false };
     case 'OFF_UNTIL':
-      return { label: 'IA Pausada', variant: 'warning' as const, dot: 'bg-ai-paused' };
+      return { label: 'IA Pausada', variant: 'warning' as const, dot: 'bg-ai-paused', isOn: false };
   }
 }
 
@@ -34,12 +34,29 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
     .toUpperCase();
 
   return (
-    <div className="h-14 flex items-center justify-between px-4 border-b border-border bg-bg-surface flex-shrink-0">
+    <div
+      className="h-14 flex items-center justify-between px-4 flex-shrink-0"
+      style={{
+        background: 'rgba(20,24,32,0.72)',
+        backdropFilter: 'blur(12px) saturate(1.2)',
+        WebkitBackdropFilter: 'blur(12px) saturate(1.2)',
+        borderBottom: '1px solid rgba(255,255,255,0.04)',
+      }}
+    >
       {/* Left — contact info */}
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full bg-bg-elevated flex items-center justify-center text-xs font-medium text-text-secondary">
+        {/* Avatar 34px */}
+        <div
+          className="rounded-full flex items-center justify-center text-xs font-medium text-text-secondary flex-shrink-0"
+          style={{
+            width: 34,
+            height: 34,
+            background: 'linear-gradient(135deg, #1A2029, #1F2733)',
+          }}
+        >
           {initials}
         </div>
+
         <div>
           <div className="flex items-center gap-1.5">
             <span className="text-sm font-medium text-text-primary">
@@ -67,12 +84,46 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
 
       {/* Right — actions */}
       <div className="flex items-center gap-2">
-        {/* AI status badge */}
-        <div className={cn('flex items-center gap-1.5 px-2 py-1 rounded-badge text-xs', `bg-${ai.variant === 'success' ? 'success' : ai.variant === 'warning' ? 'warning' : 'bg-hover'}/10`)}>
-          <span className={cn('w-2 h-2 rounded-full', ai.dot)} />
-          <span className={cn(
-            ai.variant === 'success' ? 'text-success' : ai.variant === 'warning' ? 'text-warning' : 'text-text-muted'
-          )}>
+        {/* AI status pill */}
+        <div
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs"
+          style={{
+            background:
+              ai.variant === 'success'
+                ? 'rgba(34,197,94,0.08)'
+                : ai.variant === 'warning'
+                ? 'rgba(234,179,8,0.08)'
+                : 'rgba(255,255,255,0.05)',
+            border:
+              ai.variant === 'success'
+                ? '1px solid rgba(34,197,94,0.12)'
+                : ai.variant === 'warning'
+                ? '1px solid rgba(234,179,8,0.12)'
+                : '1px solid rgba(255,255,255,0.08)',
+          }}
+        >
+          {/* Dot with optional pulse-ring when ON */}
+          <span className="relative flex items-center justify-center" style={{ width: 7, height: 7 }}>
+            <span
+              className={cn('rounded-full', ai.dot)}
+              style={{ width: 7, height: 7, display: 'block' }}
+            />
+            {ai.isOn && (
+              <span
+                className={cn('absolute rounded-full animate-ping', ai.dot)}
+                style={{ width: 7, height: 7, opacity: 0.5 }}
+              />
+            )}
+          </span>
+          <span
+            className={cn(
+              ai.variant === 'success'
+                ? 'text-success'
+                : ai.variant === 'warning'
+                ? 'text-warning'
+                : 'text-text-muted',
+            )}
+          >
             {ai.label}
           </span>
         </div>

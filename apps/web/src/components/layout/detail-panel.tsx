@@ -11,7 +11,6 @@ import {
   Zap,
   Clock,
   ChevronDown,
-  ChevronRight,
   Plus,
   Trash2,
   Flame,
@@ -38,6 +37,7 @@ import { useQuickReplies } from '@/hooks/use-quick-replies';
 import { useReminders, useCreateReminder } from '@/hooks/use-reminders';
 import { FunnelStage, type AiState, type FunnelStageKey } from '@nexus/shared';
 import { timeAgo } from '@/lib/utils';
+import { slideInRight, staggerItem } from '@/lib/motion-variants';
 
 interface DetailPanelProps {
   jid: string;
@@ -56,16 +56,37 @@ function Section({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border-b border-border last:border-b-0">
+    <div style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }} className="last:border-b-0">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors duration-150"
+        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-text-secondary transition-colors duration-150"
+        style={{ borderRadius: 0 }}
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(31,39,51,0.3)')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
       >
+        {/* @ts-expect-error Lucide icons accept size prop */}
         <Icon size={14} className="text-text-muted" />
         <span className="flex-1 text-left">{title}</span>
-        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <motion.div
+          animate={{ rotate: open ? 180 : 0 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+        >
+          <ChevronDown size={14} />
+        </motion.div>
       </button>
-      {open && <div className="px-4 pb-3">{children}</div>}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            style={{ overflow: 'hidden' }}
+          >
+            <div className="px-4 pb-3">{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -149,18 +170,35 @@ export function DetailPanel({ jid }: DetailPanelProps) {
     <AnimatePresence>
       {detailPanelOpen && (
         <motion.aside
-          initial={{ x: '100%' }}
-          animate={{ x: 0 }}
-          exit={{ x: '100%' }}
-          transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-          className="fixed top-12 right-0 bottom-0 w-[380px] bg-bg-surface border-l border-border z-40 flex flex-col overflow-y-auto"
+          variants={slideInRight}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="fixed top-12 right-0 bottom-0 w-[380px] z-40 flex flex-col overflow-y-auto"
+          style={{
+            background: 'rgba(20,24,32,0.72)',
+            backdropFilter: 'blur(16px) saturate(1.2)',
+            WebkitBackdropFilter: 'blur(16px) saturate(1.2)',
+            borderLeft: '1px solid rgba(255,255,255,0.06)',
+          }}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <div
+            className="flex items-center justify-between px-4 py-3 flex-shrink-0"
+            style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+          >
             <h3 className="text-sm font-semibold text-text-primary">Detalhes</h3>
             <button
               onClick={() => setDetailPanelOpen(false)}
-              className="text-text-muted hover:text-text-secondary transition-colors duration-150"
+              aria-label="Fechar painel de detalhes"
+              className="flex items-center justify-center text-text-muted hover:text-text-secondary transition-colors duration-150"
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 6,
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(31,39,51,0.4)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
             >
               <X size={16} />
             </button>
@@ -191,7 +229,8 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-text-muted">Hot Lead</span>
-                    <button
+                    <motion.button
+                      whileTap={{ scale: 0.97 }}
                       onClick={() => toggleHot.mutate(!detail.isHot)}
                       className={cn(
                         'flex items-center gap-1 px-2 py-0.5 rounded-badge text-xs transition-colors duration-150',
@@ -199,10 +238,22 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                           ? 'bg-warning/15 text-warning'
                           : 'bg-bg-hover text-text-muted hover:text-text-secondary',
                       )}
+                      style={
+                        detail.isHot
+                          ? { boxShadow: '0 0 8px 1px rgba(251,191,36,0.25)' }
+                          : undefined
+                      }
                     >
-                      <Flame size={12} />
+                      <Flame
+                        size={12}
+                        style={
+                          detail.isHot
+                            ? { filter: 'drop-shadow(0 0 4px rgba(251,191,36,0.6))' }
+                            : undefined
+                        }
+                      />
                       {detail.isHot ? 'Sim' : 'Nao'}
-                    </button>
+                    </motion.button>
                   </div>
                 </div>
               </Section>
@@ -234,30 +285,36 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                     )}
                   </div>
                   <div className="flex gap-1.5">
-                    <Button
-                      size="xs"
-                      variant={aiControl?.state === 'ON' ? 'success' : 'secondary'}
-                      onClick={() => handleAiToggle('ON')}
-                      disabled={toggleAi.isPending}
-                    >
-                      Ligar
-                    </Button>
-                    <Button
-                      size="xs"
-                      variant={aiControl?.state === 'OFF_UNTIL' ? 'danger' : 'secondary'}
-                      onClick={() => handleAiToggle('OFF_UNTIL')}
-                      disabled={toggleAi.isPending}
-                    >
-                      Pausar 30min
-                    </Button>
-                    <Button
-                      size="xs"
-                      variant={aiControl?.state === 'OFF' ? 'danger' : 'secondary'}
-                      onClick={() => handleAiToggle('OFF')}
-                      disabled={toggleAi.isPending}
-                    >
-                      Desligar
-                    </Button>
+                    <motion.div whileTap={{ scale: 0.97 }}>
+                      <Button
+                        size="xs"
+                        variant={aiControl?.state === 'ON' ? 'success' : 'secondary'}
+                        onClick={() => handleAiToggle('ON')}
+                        disabled={toggleAi.isPending}
+                      >
+                        Ligar
+                      </Button>
+                    </motion.div>
+                    <motion.div whileTap={{ scale: 0.97 }}>
+                      <Button
+                        size="xs"
+                        variant={aiControl?.state === 'OFF_UNTIL' ? 'danger' : 'secondary'}
+                        onClick={() => handleAiToggle('OFF_UNTIL')}
+                        disabled={toggleAi.isPending}
+                      >
+                        Pausar 30min
+                      </Button>
+                    </motion.div>
+                    <motion.div whileTap={{ scale: 0.97 }}>
+                      <Button
+                        size="xs"
+                        variant={aiControl?.state === 'OFF' ? 'danger' : 'secondary'}
+                        onClick={() => handleAiToggle('OFF')}
+                        disabled={toggleAi.isPending}
+                      >
+                        Desligar
+                      </Button>
+                    </motion.div>
                   </div>
                 </div>
               </Section>
@@ -265,33 +322,44 @@ export function DetailPanel({ jid }: DetailPanelProps) {
               {/* Funnel Stage */}
               <Section title="Etapa do Funil" icon={Layers}>
                 <div className="space-y-1">
-                  {stages.map((s) => (
-                    <button
-                      key={s.key}
-                      onClick={() => {
-                        if (s.key !== detail.stage) {
-                          updateStage.mutate(s.key, {
-                            onSuccess: () => toast.success(`Etapa: ${s.label}`),
-                          });
-                        }
-                      }}
-                      className={cn(
-                        'w-full flex items-center gap-2 px-2 py-1.5 rounded-badge text-xs transition-colors duration-150',
-                        s.key === detail.stage
-                          ? 'bg-bg-active text-text-primary'
-                          : 'text-text-muted hover:bg-bg-hover hover:text-text-secondary',
-                      )}
-                    >
-                      <span
-                        className="w-2 h-2 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: s.color }}
-                      />
-                      <span>{s.label}</span>
-                      {s.key === detail.stage && (
-                        <span className="ml-auto text-primary-400">atual</span>
-                      )}
-                    </button>
-                  ))}
+                  {stages.map((s) => {
+                    const isCurrent = s.key === detail.stage;
+                    return (
+                      <button
+                        key={s.key}
+                        onClick={() => {
+                          if (!isCurrent) {
+                            updateStage.mutate(s.key as FunnelStageKey, {
+                              onSuccess: () => toast.success(`Etapa: ${s.label}`),
+                            });
+                          }
+                        }}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 text-xs transition-colors duration-150"
+                        style={{
+                          borderRadius: 6,
+                          background: isCurrent ? `${s.color}14` : 'transparent',
+                          borderLeft: isCurrent ? `2px solid ${s.color}` : '2px solid transparent',
+                          color: isCurrent ? 'var(--text-primary)' : 'var(--text-muted)',
+                          paddingLeft: isCurrent ? 6 : 8,
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isCurrent) e.currentTarget.style.background = 'rgba(31,39,51,0.3)';
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isCurrent) e.currentTarget.style.background = 'transparent';
+                        }}
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: s.color }}
+                        />
+                        <span>{s.label}</span>
+                        {isCurrent && (
+                          <span className="ml-auto text-primary-400">atual</span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </Section>
 
@@ -301,17 +369,27 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                   {detail.tags.length === 0 && (
                     <span className="text-xs text-text-muted">Sem tags</span>
                   )}
-                  {detail.tags.map((t) => (
-                    <Badge key={t} variant="primary" className="group cursor-pointer">
-                      {t}
-                      <button
-                        onClick={() => deleteTag.mutate(t)}
-                        className="ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                  <AnimatePresence>
+                    {detail.tags.map((t) => (
+                      <motion.div
+                        key={t}
+                        initial={{ scale: 0.8, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0.8, opacity: 0 }}
+                        transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
                       >
-                        <X size={10} />
-                      </button>
-                    </Badge>
-                  ))}
+                        <Badge variant="primary" className="group cursor-pointer">
+                          {t}
+                          <button
+                            onClick={() => deleteTag.mutate(t)}
+                            className="ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <X size={10} />
+                          </button>
+                        </Badge>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
                 </div>
                 <div className="flex gap-1.5">
                   <Input
@@ -321,9 +399,11 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                     onKeyDown={(e) => e.key === 'Enter' && handleAddTag()}
                     className="h-7 text-xs"
                   />
-                  <Button size="xs" variant="secondary" onClick={handleAddTag}>
-                    <Plus size={12} />
-                  </Button>
+                  <motion.div whileTap={{ scale: 0.97 }}>
+                    <Button size="xs" variant="secondary" onClick={handleAddTag}>
+                      <Plus size={12} />
+                    </Button>
+                  </motion.div>
                 </div>
               </Section>
 
@@ -333,20 +413,26 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                   {(!detail.notes || detail.notes.length === 0) && (
                     <span className="text-xs text-text-muted">Sem notas</span>
                   )}
-                  {detail.notes?.map((note, i) => (
-                    <div
-                      key={i}
-                      className="flex items-start gap-2 p-2 rounded-badge bg-bg-elevated text-xs text-text-secondary group"
-                    >
-                      <span className="flex-1">{note}</span>
-                      <button
-                        onClick={() => deleteNote.mutate(i)}
-                        className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-error transition-all"
+                  <AnimatePresence>
+                    {detail.notes?.map((note, i) => (
+                      <motion.div
+                        key={i}
+                        variants={staggerItem}
+                        initial="initial"
+                        animate="animate"
+                        exit={{ opacity: 0, y: -4, transition: { duration: 0.15 } }}
+                        className="flex items-start gap-2 p-2 rounded-badge bg-bg-elevated text-xs text-text-secondary group"
                       >
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
-                  ))}
+                        <span className="flex-1">{note}</span>
+                        <button
+                          onClick={() => deleteNote.mutate(i)}
+                          className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-error transition-all"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
                 </div>
                 <div className="flex gap-1.5">
                   <Input
@@ -356,9 +442,11 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                     onKeyDown={(e) => e.key === 'Enter' && handleAddNote()}
                     className="h-7 text-xs"
                   />
-                  <Button size="xs" variant="secondary" onClick={handleAddNote}>
-                    <Plus size={12} />
-                  </Button>
+                  <motion.div whileTap={{ scale: 0.97 }}>
+                    <Button size="xs" variant="secondary" onClick={handleAddNote}>
+                      <Plus size={12} />
+                    </Button>
+                  </motion.div>
                 </div>
               </Section>
 
@@ -417,9 +505,11 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                       <option value="120">2 horas</option>
                       <option value="1440">Amanha</option>
                     </select>
-                    <Button size="xs" variant="secondary" onClick={handleAddReminder}>
-                      <Plus size={12} /> Criar
-                    </Button>
+                    <motion.div whileTap={{ scale: 0.97 }}>
+                      <Button size="xs" variant="secondary" onClick={handleAddReminder}>
+                        <Plus size={12} /> Criar
+                      </Button>
+                    </motion.div>
                   </div>
                 </div>
               </Section>

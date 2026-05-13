@@ -1,8 +1,10 @@
 'use client';
 
+import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { formatTime } from '@/lib/utils';
 import { FileText, Headphones, ImageIcon } from 'lucide-react';
+import { messageIncoming, messageOutgoing } from '@/lib/motion-variants';
 import type { Message } from '@nexus/shared';
 
 interface MessageBubbleProps {
@@ -36,19 +38,28 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user';
 
   return (
-    <div
-      className={cn(
-        'flex mb-2',
-        isUser ? 'justify-start' : 'justify-end',
-      )}
+    <motion.div
+      className={cn('flex mb-2', isUser ? 'justify-start' : 'justify-end')}
+      variants={isUser ? messageIncoming : messageOutgoing}
+      initial="initial"
+      animate="animate"
     >
       <div
-        className={cn(
-          'max-w-[70%] px-3 py-2 text-sm',
+        className="max-w-[70%] px-3 py-2 text-sm text-text-primary"
+        style={
           isUser
-            ? 'bg-bg-elevated text-text-primary rounded-tl-badge rounded-tr-card rounded-br-card rounded-bl-card'
-            : 'bg-primary-800 text-text-primary rounded-tl-card rounded-tr-badge rounded-br-badge rounded-bl-card',
-        )}
+            ? {
+                background: '#1A2029',
+                border: '1px solid rgba(255,255,255,0.04)',
+                borderRadius: '4px 12px 12px 12px',
+              }
+            : {
+                background:
+                  'linear-gradient(135deg, rgba(13,148,136,0.15), rgba(16,185,129,0.08))',
+                border: '1px solid rgba(45,212,191,0.1)',
+                borderRadius: '12px 4px 12px 12px',
+              }
+        }
       >
         <MediaIndicator mediaType={message.mediaType} />
         <p className="whitespace-pre-wrap break-words leading-relaxed">
@@ -56,15 +67,17 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         </p>
         {message.ts && (
           <div
-            className={cn(
-              'text-[10px] mt-1',
-              isUser ? 'text-text-muted' : 'text-primary-400/60',
-            )}
+            className={cn('text-[10px] mt-1')}
+            style={
+              isUser
+                ? { color: 'var(--color-text-muted, #6b7280)' }
+                : { color: 'rgba(45,212,191,0.4)' }
+            }
           >
             {formatTime(message.ts)}
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
