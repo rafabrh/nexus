@@ -39,7 +39,7 @@ export class SheetsClient {
   private readonly logger = new Logger(SheetsClient.name);
 
   constructor(private readonly config: ConfigService) {
-    this.docId = config.getOrThrow<string>('SHEETS_DOCUMENT_ID');
+    this.docId = config.get<string>('SHEETS_DOCUMENT_ID', '');
 
     const saJson = config.get<string>('GOOGLE_SERVICE_ACCOUNT_JSON');
     if (saJson) {
@@ -60,8 +60,8 @@ export class SheetsClient {
   }
 
   async getLeads(instancia: string): Promise<LeadRow[]> {
-    if (!this.sheets) {
-      this.logger.warn('Sheets client not initialized, returning empty leads');
+    if (!this.sheets || !this.docId) {
+      this.logger.warn('Sheets client not initialized or no document ID, returning empty leads');
       return [];
     }
 

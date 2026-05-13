@@ -29,9 +29,11 @@ export const RedisKeys = {
     `chat:${inst}:${jid}:processing`,
 
   // ---- Historico LangChain (N8N escreve, BFF le) ----
+  // IMPORTANT: phone = digits only, WITHOUT @s.whatsapp.net
+  // N8N stores as chathistory:{instance}-{phone}
 
-  chatHistory: (inst: string, jid: string) =>
-    `chathistory:${inst}-${jid}`,
+  chatHistory: (inst: string, phone: string) =>
+    `chathistory:${inst}-${phone}`,
 
   // ---- Contato (N8N escreve, BFF le) ----
 

@@ -1,13 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../core/redis/redis.service';
 import { RedisKeys } from '@nexus/shared';
-
-export interface TenantInfo {
-  instancia: string;
-  adminEmail: string;
-  createdAt: string;
-  active: boolean;
-}
+import type { TenantRegistry, TenantEntry, TenantUser } from '@nexus/shared';
 
 @Injectable()
 export class TenantService {
@@ -15,49 +9,100 @@ export class TenantService {
 
   constructor(private readonly redis: RedisService) {}
 
-  async listTenants(): Promise<TenantInfo[]> {
-    const client = this.redis.getClient();
-    const data = await client.hgetall(RedisKeys.tenantRegistry());
-
-    return Object.entries(data).map(([instancia, json]) => {
-      const parsed = JSON.parse(json);
-      return { instancia, ...parsed };
-    });
+  private async loadRegistry(): Promise<TenantRegistry> {
+    const raw = await this.redis.get(RedisKeys.tenantRegistry());
+    if (!raw) {
+      return { version: 1, tenants: [] };
+    }
+    try {
+      return JSON.parse(raw) as TenantRegistry;
+    } catch {
+      this.logger.warn('Failed to parse tenant registry, returning empty');
+      return { version: 1, tenants: [] };
+    }
   }
 
-  async getTenant(instancia: string): Promise<TenantInfo | null> {
-    const client = this.redis.getClient();
-    const data = await client.hget(RedisKeys.tenantRegistry(), instancia);
-    if (!data) return null;
-
-    const parsed = JSON.parse(data);
-    return { instancia, ...parsed };
+  private async saveRegistry(registry: TenantRegistry): Promise<void> {
+    await this.redis.set(RedisKeys.tenantRegistry(), JSON.stringify(registry));
   }
 
-  async registerTenant(instancia: string, adminEmail: string): Promise<TenantInfo> {
-    const client = this.redis.getClient();
-    const info: Omit<TenantInfo, 'instancia'> = {
-      adminEmail,
+  async listTenants(): Promise<TenantEntry[]> {
+    const registry = await this.loadRegistry();
+    return registry.tenants;
+  }
+
+  async getTenant(instancia: string): Promise<TenantEntry | null> {
+    const registry = await this.loadRegistry();
+    return registry.tenants.find((t) => t.instancia === instancia) ?? null;
+  }
+
+  async registerTenant(instancia: string, adminEmail: string): Promise<TenantEntry> {
+    const registry = await this.loadRegistry();
+
+    // Check if tenant already exists
+    const existing = registry.tenants.find((t) => t.instancia === instancia);
+    if (existing) {
+      this.logger.warn(`Tenant ${instancia} already exists, returning existing`);
+      return existing;
+    }
+
+    const entry: TenantEntry = {
+      instancia,
+      name: instancia,
+      users: [{ email: adminEmail, role: 'admin' }],
       createdAt: new Date().toISOString(),
       active: true,
     };
 
-    await client.hset(RedisKeys.tenantRegistry(), instancia, JSON.stringify(info));
-    this.logger.log(`Tenant registered: ${instancia} (${adminEmail})`);
+    registry.tenants.push(entry);
+    registry.version++;
+    await this.saveRegistry(registry);
 
-    return { instancia, ...info };
+    this.logger.log(`Tenant registered: ${instancia} (${adminEmail})`);
+    return entry;
   }
 
-  async toggleTenant(instancia: string, active: boolean): Promise<TenantInfo | null> {
-    const existing = await this.getTenant(instancia);
-    if (!existing) return null;
+  async toggleTenant(instancia: string, active: boolean): Promise<TenantEntry | null> {
+    const registry = await this.loadRegistry();
+    const tenant = registry.tenants.find((t) => t.instancia === instancia);
+    if (!tenant) return null;
 
-    existing.active = active;
-    const { instancia: _, ...data } = existing;
-    const client = this.redis.getClient();
-    await client.hset(RedisKeys.tenantRegistry(), instancia, JSON.stringify(data));
+    tenant.active = active;
+    registry.version++;
+    await this.saveRegistry(registry);
 
     this.logger.log(`Tenant ${instancia} ${active ? 'activated' : 'deactivated'}`);
-    return existing;
+    return tenant;
+  }
+
+  async addUser(instancia: string, user: TenantUser): Promise<TenantEntry | null> {
+    const registry = await this.loadRegistry();
+    const tenant = registry.tenants.find((t) => t.instancia === instancia);
+    if (!tenant) return null;
+
+    const existing = tenant.users.find(
+      (u) => u.email.toLowerCase() === user.email.toLowerCase(),
+    );
+    if (!existing) {
+      tenant.users.push(user);
+      registry.version++;
+      await this.saveRegistry(registry);
+    }
+
+    return tenant;
+  }
+
+  async removeUser(instancia: string, email: string): Promise<TenantEntry | null> {
+    const registry = await this.loadRegistry();
+    const tenant = registry.tenants.find((t) => t.instancia === instancia);
+    if (!tenant) return null;
+
+    tenant.users = tenant.users.filter(
+      (u) => u.email.toLowerCase() !== email.toLowerCase(),
+    );
+    registry.version++;
+    await this.saveRegistry(registry);
+
+    return tenant;
   }
 }

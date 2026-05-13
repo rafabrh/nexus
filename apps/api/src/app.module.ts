@@ -13,6 +13,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 import { AdminModule } from './admin/admin.module';
 import { RemindersModule } from './reminders/reminders.module';
 import { QuickRepliesModule } from './quick-replies/quick-replies.module';
+import { validate } from './core/config/app.config';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { QuickRepliesModule } from './quick-replies/quick-replies.module';
       isGlobal: true,
       expandVariables: true,
       envFilePath: ['.env', '../../.env'],
+      validate,
     }),
     ThrottlerModule.forRoot([
       {

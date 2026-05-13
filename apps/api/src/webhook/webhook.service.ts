@@ -1,5 +1,7 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
+import { REDIS_CLIENT } from '../core/redis/redis.module';
+import { RedisKeys } from '@nexus/shared';
 import { EventPublisher } from '../realtime/event.publisher';
 
 /** Keywords that indicate a hot lead */
@@ -16,7 +18,7 @@ export class WebhookService {
   private readonly logger = new Logger(WebhookService.name);
 
   constructor(
-    @Inject('REDIS_CLIENT') private readonly redis: Redis,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly publisher: EventPublisher,
   ) {}
 
@@ -83,20 +85,20 @@ export class WebhookService {
     const mediaType = typeof data.messageType === 'string' ? data.messageType : 'text';
     if (!content) return;
 
-    // Persist message to chathistory:{instance}-{phone}
-    const histKey = `chathistory:${instanceName}-${phone}`;
+    // Persist message to chathistory:{instance}-{phone} (aligned with N8N)
+    const histKey = RedisKeys.chatHistory(instanceName, phone);
     const type = fromMe ? 'ai' : 'human';
     const entry = JSON.stringify({ type, data: { content } });
     await this.redis.rpush(histKey, entry);
 
     // Ensure conversation state exists
-    const stateKey = `chat:${instanceName}:${jid}:state`;
+    const stateKey = RedisKeys.state(instanceName, jid);
     const stateExists = await this.redis.exists(stateKey);
     if (!stateExists) {
       await this.redis.set(stateKey, 'active');
     }
 
-    const stepKey = `chat:${instanceName}:${jid}:followup_step`;
+    const stepKey = RedisKeys.followupStep(instanceName, jid);
     const stepExists = await this.redis.exists(stepKey);
     if (!stepExists) {
       await this.redis.set(stepKey, 'S0');
@@ -105,7 +107,7 @@ export class WebhookService {
     // Update contact name if available
     const pushName = typeof data.pushName === 'string' ? data.pushName : null;
     if (pushName) {
-      const contactKey = `contact:${phone}`;
+      const contactKey = RedisKeys.contact(phone);
       await this.redis.set(contactKey, JSON.stringify({ pushName }));
     }
 
@@ -185,7 +187,7 @@ export class WebhookService {
     score++;
 
     // (b) stage S3+
-    const stepKey = `chat:${instanceName}:${jid}:followup_step`;
+    const stepKey = RedisKeys.followupStep(instanceName, jid);
     const stage = await this.redis.get(stepKey);
     if (stage && HOT_STAGES.has(stage)) {
       score++;
@@ -200,7 +202,8 @@ export class WebhookService {
     }
 
     // (d) 3+ messages in last 10 min — check recent history timestamps
-    const histKey = `chathistory:${instanceName}-${jid.replace('@s.whatsapp.net', '')}`;
+    const phone = jid.replace('@s.whatsapp.net', '');
+    const histKey = RedisKeys.chatHistory(instanceName, phone);
     const recentMsgs = await this.redis.lrange(histKey, -10, -1);
     if (recentMsgs.length >= 3) {
       let recentCount = 0;
@@ -260,7 +263,7 @@ export class WebhookService {
 
       if (jid && jid.includes('@s.whatsapp.net') && pushName) {
         const phone = jid.replace('@s.whatsapp.net', '');
-        await this.redis.set(`contact:${phone}`, JSON.stringify({ pushName }));
+        await this.redis.set(RedisKeys.contact(phone), JSON.stringify({ pushName }));
       }
     }
   }

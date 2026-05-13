@@ -1,5 +1,6 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
+import { REDIS_CLIENT } from '../core/redis/redis.module';
 import {
   RedisKeys,
   FunnelStage,
@@ -26,7 +27,7 @@ export class ConversationRepository {
   private readonly logger = new Logger(ConversationRepository.name);
 
   constructor(
-    @Inject('REDIS_CLIENT') public readonly redis: Redis,
+    @Inject(REDIS_CLIENT) public readonly redis: Redis,
   ) {}
 
   /**
@@ -48,7 +49,7 @@ export class ConversationRepository {
    */
   async buildListItem(instancia: string, jid: string): Promise<ConversationListItem> {
     const phone = jid.replace('@s.whatsapp.net', '');
-    const histKey = RedisKeys.chatHistory(instancia, jid);
+    const histKey = RedisKeys.chatHistory(instancia, phone);
     const pipeline = this.redis.pipeline();
 
     pipeline.get(RedisKeys.followupStep(instancia, jid));        // 0
@@ -114,7 +115,7 @@ export class ConversationRepository {
    */
   async buildDetail(instancia: string, jid: string): Promise<ConversationDetail | null> {
     const phone = jid.replace('@s.whatsapp.net', '');
-    const histKey = RedisKeys.chatHistory(instancia, jid);
+    const histKey = RedisKeys.chatHistory(instancia, phone);
     const pipeline = this.redis.pipeline();
 
     pipeline.get(RedisKeys.followupStep(instancia, jid));        // 0
@@ -195,7 +196,8 @@ export class ConversationRepository {
    * Get messages from LangChain Redis chat history.
    */
   async getMessages(instancia: string, jid: string, limit: number): Promise<Message[]> {
-    const histKey = RedisKeys.chatHistory(instancia, jid);
+    const phone = jid.replace('@s.whatsapp.net', '');
+    const histKey = RedisKeys.chatHistory(instancia, phone);
     const raw = await this.redis.lrange(histKey, 0, -1);
 
     const messages: Message[] = [];

@@ -9,8 +9,8 @@ export class EvolutionClient {
   private readonly logger = new Logger(EvolutionClient.name);
 
   constructor(private readonly config: ConfigService) {
-    this.baseUrl = config.getOrThrow<string>('EVOLUTION_API_URL');
-    this.apiKey = config.getOrThrow<string>('EVOLUTION_API_KEY');
+    this.baseUrl = config.get<string>('EVOLUTION_API_URL', 'https://n8n-evolution-api.b8ul3d.easypanel.host');
+    this.apiKey = config.get<string>('EVOLUTION_API_KEY', '');
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {

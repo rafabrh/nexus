@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, Logger, Inject } from '@nestjs/common';
 import type Redis from 'ioredis';
+import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { RedisKeys } from '@nexus/shared';
 import type {
   ConversationListItem,
@@ -18,7 +19,7 @@ export class ConversationService {
     private readonly repo: ConversationRepository,
     private readonly evolution: EvolutionClient,
     private readonly publisher: EventPublisher,
-    @Inject('REDIS_CLIENT') private readonly redis: Redis,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
   async listConversations(

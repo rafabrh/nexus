@@ -18,9 +18,30 @@ export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
   catch(exception: unknown, host: ArgumentsHost): void {
-    // Let HttpExceptionFilter handle HttpException
+    // If it's an HttpException, format it as RFC 7807 (same as HttpExceptionFilter)
     if (exception instanceof HttpException) {
-      throw exception;
+      const ctx = host.switchToHttp();
+      const reply = ctx.getResponse<FastifyReply>();
+      const request = ctx.getRequest<FastifyRequest>();
+      const httpStatus = exception.getStatus();
+      const exceptionResponse = exception.getResponse();
+      const detail =
+        typeof exceptionResponse === 'string'
+          ? exceptionResponse
+          : (exceptionResponse as Record<string, unknown>).message ?? exception.message;
+
+      reply
+        .status(httpStatus)
+        .header('content-type', 'application/problem+json')
+        .send({
+          type: `https://httpstatuses.com/${httpStatus}`,
+          title: 'Error',
+          status: httpStatus,
+          detail,
+          instance: request.url,
+          timestamp: new Date().toISOString(),
+        });
+      return;
     }
 
     const ctx = host.switchToHttp();

@@ -1,5 +1,6 @@
 import { Injectable, Inject, Logger, NotFoundException } from '@nestjs/common';
 import type Redis from 'ioredis';
+import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { randomUUID } from 'crypto';
 import { RedisKeys } from '@nexus/shared';
 import type { Reminder, ReminderStatus } from '@nexus/shared';
@@ -10,7 +11,7 @@ export class RemindersService {
   private readonly logger = new Logger(RemindersService.name);
 
   constructor(
-    @Inject('REDIS_CLIENT') private readonly redis: Redis,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly publisher: EventPublisher,
   ) {}
 

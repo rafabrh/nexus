@@ -1,5 +1,6 @@
 import { Injectable, Inject, Logger, NotFoundException } from '@nestjs/common';
 import type Redis from 'ioredis';
+import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { randomUUID } from 'crypto';
 import { RedisKeys } from '@nexus/shared';
 import type { QuickReply } from '@nexus/shared';
@@ -9,7 +10,7 @@ export class QuickRepliesService {
   private readonly logger = new Logger(QuickRepliesService.name);
 
   constructor(
-    @Inject('REDIS_CLIENT') private readonly redis: Redis,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
   /**

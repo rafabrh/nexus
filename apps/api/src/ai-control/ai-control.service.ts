@@ -1,5 +1,6 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
+import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { RedisKeys } from '@nexus/shared';
 import type { AiControlResponse } from '@nexus/shared';
 import type { AiToggleRequestDto } from './dto/ai-toggle-request.dto';
@@ -10,7 +11,7 @@ export class AiControlService {
   private readonly logger = new Logger(AiControlService.name);
 
   constructor(
-    @Inject('REDIS_CLIENT') private readonly redis: Redis,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly publisher: EventPublisher,
   ) {}
 
