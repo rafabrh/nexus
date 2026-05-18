@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
@@ -13,8 +13,12 @@ function CallbackContent() {
   const searchParams = useSearchParams();
   const setToken = useAuthStore((s) => s.setToken);
   const [error, setError] = useState(false);
+  const calledRef = useRef(false);
 
   useEffect(() => {
+    if (calledRef.current) return;
+    calledRef.current = true;
+
     const token = searchParams.get('token');
     if (!token) {
       setError(true);
