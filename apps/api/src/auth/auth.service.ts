@@ -61,10 +61,11 @@ export class AuthService {
       throw new UnauthorizedException('Token invalido ou expirado');
     }
 
+    const normalizedRole = data.role.toLowerCase() as 'admin' | 'operator';
     const payload = {
       sub: data.email,
       instancia: data.instancia,
-      role: data.role as 'admin' | 'operator',
+      role: normalizedRole,
     };
 
     const accessToken = await this.jwt.signAccess(payload);
