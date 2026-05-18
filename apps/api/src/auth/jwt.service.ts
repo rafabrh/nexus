@@ -13,20 +13,18 @@ export interface NexusJwtPayload extends JWTPayload {
 @Injectable()
 export class NexusJwtService {
   private readonly secret: Uint8Array;
-  private readonly accessTtlMs: number;
-  private readonly refreshTtlMs: number;
+  private readonly accessTtlSec: number;
+  private readonly refreshTtlSec: number;
 
   constructor(private readonly config: ConfigService) {
     this.secret = new TextEncoder().encode(
       config.getOrThrow<string>('JWT_SECRET'),
     );
-    this.accessTtlMs = parseInt(
-      config.get<string>('JWT_EXPIRATION_MS', '900000'),
-      10,
+    this.accessTtlSec = Math.floor(
+      parseInt(config.get<string>('JWT_EXPIRATION_MS', '900000'), 10) / 1000,
     );
-    this.refreshTtlMs = parseInt(
-      config.get<string>('JWT_REFRESH_EXPIRATION_MS', '2592000000'),
-      10,
+    this.refreshTtlSec = Math.floor(
+      parseInt(config.get<string>('JWT_REFRESH_EXPIRATION_MS', '2592000000'), 10) / 1000,
     );
   }
 
@@ -36,7 +34,7 @@ export class NexusJwtService {
     return new SignJWT({ ...payload })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
-      .setExpirationTime(`${this.accessTtlMs}ms`)
+      .setExpirationTime(`${this.accessTtlSec}s`)
       .setJti(randomUUID())
       .sign(this.secret);
   }
@@ -47,7 +45,7 @@ export class NexusJwtService {
     return new SignJWT({ ...payload })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
-      .setExpirationTime(`${this.refreshTtlMs}ms`)
+      .setExpirationTime(`${this.refreshTtlSec}s`)
       .setJti(randomUUID())
       .sign(this.secret);
   }

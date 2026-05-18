@@ -41,10 +41,12 @@ export class AuthController {
 
   @Get('callback')
   @ApiOperation({ summary: 'Validate magic link token and set auth cookies' })
-  @ApiResponse({ status: 302, description: 'Redirect to dashboard with cookies set' })
+  @ApiResponse({ status: 200, description: 'JSON with tokens (SPA fetch)' })
+  @ApiResponse({ status: 302, description: 'Redirect to dashboard (browser navigation)' })
   @ApiResponse({ status: 401, description: 'Invalid or expired token' })
   async callback(
     @Query('token') token: string,
+    @Req() request: FastifyRequest,
     @Res() reply: FastifyReply,
   ): Promise<void> {
     if (!token) {
@@ -54,26 +56,36 @@ export class AuthController {
     const { accessToken, refreshToken } =
       await this.authService.validateMagicLink(token);
 
-    const redirectUrl =
-      process.env.MAGIC_LINK_BASE_URL?.replace('/auth/callback', '/dashboard') ??
-      '/';
+    const cookieOpts = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax' as const,
+      path: '/',
+    };
 
     reply
       .setCookie('access_token', accessToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        path: '/',
+        ...cookieOpts,
         maxAge: 900, // 15 min
       })
       .setCookie('refresh_token', refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        ...cookieOpts,
         path: '/api/v1/auth',
         maxAge: 2592000, // 30 days
-      })
-      .redirect(302, redirectUrl);
+      });
+
+    // SPA fetch: return JSON; browser navigation: redirect
+    const isFetch = request.headers.accept?.includes('application/json') ||
+      request.headers.origin != null;
+
+    if (isFetch) {
+      reply.send({ accessToken });
+    } else {
+      const redirectUrl =
+        process.env.MAGIC_LINK_BASE_URL?.replace('/auth/callback', '/dashboard') ??
+        '/';
+      reply.redirect(302, redirectUrl);
+    }
   }
 
   @Post('refresh')
@@ -99,14 +111,14 @@ export class AuthController {
       .setCookie('access_token', accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        sameSite: 'lax',
         path: '/',
         maxAge: 900,
       })
       .setCookie('refresh_token', newRefreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        sameSite: 'lax',
         path: '/api/v1/auth',
         maxAge: 2592000, // 30 days
       })

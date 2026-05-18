@@ -27,11 +27,11 @@ function CallbackContent() {
           `${API_URL}/api/v1/auth/callback?token=${encodeURIComponent(token!)}`,
           {
             credentials: 'include',
-            redirect: 'manual',
+            headers: { 'Accept': 'application/json' },
           },
         );
 
-        if (res.ok || res.type === 'opaqueredirect') {
+        if (res.ok) {
           const data = await res.json().catch(() => null);
           if (data?.accessToken) {
             setToken(data.accessToken);
