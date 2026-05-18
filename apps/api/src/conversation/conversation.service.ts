@@ -26,6 +26,19 @@ export class ConversationService {
     instancia: string,
     filters: { stage?: string; search?: string; aiState?: string },
   ): Promise<ConversationListItem[]> {
+    // Cache-aside: check for cached result (only for unfiltered requests)
+    const hasFilters = filters.stage || filters.search || filters.aiState;
+    if (!hasFilters) {
+      const cached = await this.redis.get(RedisKeys.cacheConversations(instancia));
+      if (cached) {
+        try {
+          return JSON.parse(cached) as ConversationListItem[];
+        } catch {
+          // Corrupted cache, fall through to rebuild
+        }
+      }
+    }
+
     // 1. Scan Redis for all JIDs with followup_step
     const jids = await this.repo.findAllJids(instancia);
 
@@ -34,8 +47,24 @@ export class ConversationService {
       jids.map((jid) => this.repo.buildListItem(instancia, jid)),
     );
 
-    // 3. Apply filters
-    let result = conversations;
+    // 3. Sort by lastActivity descending
+    const sorted = conversations.sort(
+      (a, b) =>
+        new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime(),
+    );
+
+    // 4. Cache unfiltered result (TTL 30s)
+    if (!hasFilters) {
+      await this.redis.set(
+        RedisKeys.cacheConversations(instancia),
+        JSON.stringify(sorted),
+        'EX',
+        30,
+      );
+    }
+
+    // 5. Apply filters (after caching the full list)
+    let result = sorted;
 
     if (filters.stage) {
       result = result.filter((c) => c.stage === filters.stage);
@@ -54,11 +83,7 @@ export class ConversationService {
       );
     }
 
-    // 4. Sort by lastActivity descending
-    return result.sort(
-      (a, b) =>
-        new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime(),
-    );
+    return result;
   }
 
   async getConversationDetail(instancia: string, jid: string): Promise<ConversationDetail> {
