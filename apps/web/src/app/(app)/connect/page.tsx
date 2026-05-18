@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, QrCode, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -12,51 +12,66 @@ import {
   useStartSync,
 } from '@/hooks/use-onboarding';
 
-type Phase = 'loading' | 'create' | 'scan' | 'syncing' | 'done' | 'error' | 'reconnect';
+type Phase = 'loading' | 'create' | 'creating' | 'scan' | 'syncing' | 'done' | 'error' | 'reconnect';
 
 function resolvePhase(
   state: { instanceExists: boolean; connectionState: string | null; syncStatus: string | null } | undefined,
   isLoading: boolean,
+  isCreating: boolean,
+  createError: boolean,
 ): Phase {
   if (isLoading || !state) return 'loading';
+  if (createError) return 'error';
+  if (isCreating) return 'creating';
   if (!state.instanceExists) return 'create';
   if (state.connectionState === 'close') return 'reconnect';
   if (state.connectionState !== 'open') return 'scan';
   if (state.syncStatus === 'syncing') return 'syncing';
   if (state.syncStatus === 'error') return 'error';
   if (state.syncStatus === 'done') return 'done';
-  return 'scan';
+  // connected but sync pending — auto-trigger sync
+  return 'syncing';
 }
 
 export default function ConnectPage() {
   const router = useRouter();
+  const createCalledRef = useRef(false);
+  const syncCalledRef = useRef(false);
 
   const { data: state, isLoading } = useOnboardingState({
     refetchInterval: 3000,
   });
 
-  const phase = resolvePhase(state, isLoading);
-
   const createInstance = useCreateInstance();
   const startSync = useStartSync();
+
+  const phase = resolvePhase(
+    state,
+    isLoading,
+    createInstance.isPending,
+    createInstance.isError,
+  );
 
   const showQr = phase === 'scan' || phase === 'reconnect';
   const { data: qrData } = useQrCode(showQr);
 
-  // Auto-create instance on first visit
+  // Auto-create instance on first visit (only once)
   useEffect(() => {
-    if (phase === 'create' && !createInstance.isPending) {
+    if (phase === 'create' && !createCalledRef.current) {
+      createCalledRef.current = true;
       createInstance.mutate();
     }
   }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-start sync when connection opens and sync is pending
+  // Auto-start sync when connection opens and sync is pending (only once)
   useEffect(() => {
     if (
       state?.connectionState === 'open' &&
-      state?.syncStatus === 'pending' &&
+      (state?.syncStatus === 'pending' || state?.syncStatus === null) &&
+      !syncCalledRef.current &&
       !startSync.isPending
     ) {
+      syncCalledRef.current = true;
       startSync.mutate();
     }
   }, [state?.connectionState, state?.syncStatus]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -82,7 +97,7 @@ export default function ConnectPage() {
           )}
 
           {/* Creating instance */}
-          {phase === 'create' && (
+          {(phase === 'create' || phase === 'creating') && (
             <PhaseCard key="create">
               <Loader2 size={40} className="animate-spin text-primary-400 mx-auto" />
               <p className="text-sm text-text-secondary mt-3">Criando instancia WhatsApp...</p>
@@ -151,16 +166,26 @@ export default function ConnectPage() {
             <PhaseCard key="error">
               <AlertCircle size={40} className="text-error mx-auto" />
               <h2 className="text-lg font-semibold text-text-primary mt-3 mb-1">
-                Erro na sincronizacao
+                Erro no onboarding
               </h2>
               <p className="text-sm text-text-secondary mb-4">
-                Houve um problema ao importar suas conversas. Tente novamente.
+                {createInstance.isError
+                  ? 'Falha ao criar instancia WhatsApp. Tente novamente.'
+                  : 'Houve um problema ao importar suas conversas. Tente novamente.'}
               </p>
               <Button
-                onClick={() => startSync.mutate()}
-                disabled={startSync.isPending}
+                onClick={() => {
+                  if (createInstance.isError) {
+                    createInstance.reset();
+                    createCalledRef.current = false;
+                  } else {
+                    syncCalledRef.current = false;
+                    startSync.mutate();
+                  }
+                }}
+                disabled={createInstance.isPending || startSync.isPending}
               >
-                <RefreshCw size={16} className={startSync.isPending ? 'animate-spin' : ''} />
+                <RefreshCw size={16} className={(createInstance.isPending || startSync.isPending) ? 'animate-spin' : ''} />
                 <span className="ml-2">Tentar novamente</span>
               </Button>
             </PhaseCard>
