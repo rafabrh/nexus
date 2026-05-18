@@ -36,7 +36,7 @@ export class WebhookService {
         await this.handleMessageUpsert(instanceName, payload);
         break;
       case 'connection.update':
-        this.handleConnectionUpdate(instanceName, payload);
+        await this.handleConnectionUpdate(instanceName, payload);
         break;
       case 'contacts.update':
       case 'contacts.upsert':
@@ -119,6 +119,10 @@ export class WebhookService {
         this.logger.warn(`lead.hot detection failed: ${err.message}`);
       }
     }
+
+    // Invalidate caches for this tenant
+    await this.redis.del(RedisKeys.cacheConversations(instanceName));
+    await this.redis.del(RedisKeys.cacheDashboard(instanceName));
 
     this.logger.log(
       `webhook.message-processed instance=${instanceName} jid=${jid} fromMe=${fromMe} type=${mediaType}`,
@@ -235,16 +239,33 @@ export class WebhookService {
     }
   }
 
-  private handleConnectionUpdate(
+  private async handleConnectionUpdate(
     instanceName: string,
     payload: Record<string, unknown>,
-  ): void {
+  ): Promise<void> {
     const dataObj = payload.data;
-    if (dataObj && typeof dataObj === 'object') {
-      const data = dataObj as Record<string, unknown>;
-      const state = typeof data.state === 'string' ? data.state : 'unknown';
-      this.logger.log(`webhook.connection-update instance=${instanceName} state=${state}`);
+    if (!dataObj || typeof dataObj !== 'object') return;
+
+    const data = dataObj as Record<string, unknown>;
+
+    // Resolve state from various Evolution API formats
+    let state = 'unknown';
+    const instanceObj = data.instance as Record<string, unknown> | undefined;
+    if (instanceObj && typeof instanceObj.state === 'string') {
+      state = instanceObj.state;
+    } else if (typeof data.state === 'string') {
+      state = data.state;
     }
+
+    const mappedState = state === 'open' ? 'open' : state === 'connecting' ? 'connecting' : 'close';
+
+    // Persist to Redis
+    await this.redis.set(RedisKeys.instanceState(instanceName), mappedState);
+
+    // Update tenant registry
+    await this.updateTenantConnectionState(instanceName, mappedState);
+
+    this.logger.log(`onboarding.connection-${mappedState} instance=${instanceName}`);
   }
 
   private async handleContactUpdate(
@@ -265,6 +286,31 @@ export class WebhookService {
         const phone = jid.replace('@s.whatsapp.net', '');
         await this.redis.set(RedisKeys.contact(phone), JSON.stringify({ pushName }));
       }
+    }
+
+    // Invalidate caches
+    await this.redis.del(RedisKeys.cacheContacts(instanceName));
+    await this.redis.del(RedisKeys.cacheConversations(instanceName));
+  }
+
+  private async updateTenantConnectionState(instanceName: string, connectionState: string): Promise<void> {
+    const raw = await this.redis.get(RedisKeys.tenantRegistry());
+    if (!raw) return;
+
+    try {
+      const registry = JSON.parse(raw);
+      const tenant = registry.tenants?.find((t: any) => t.instancia === instanceName);
+      if (!tenant) return;
+
+      tenant.connectionState = connectionState;
+      if (connectionState === 'open' && !tenant.connectedAt) {
+        tenant.connectedAt = new Date().toISOString();
+      }
+
+      registry.version = (registry.version || 0) + 1;
+      await this.redis.set(RedisKeys.tenantRegistry(), JSON.stringify(registry));
+    } catch {
+      this.logger.warn('Failed to update tenant registry from webhook');
     }
   }
 }
