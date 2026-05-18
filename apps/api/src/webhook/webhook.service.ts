@@ -115,8 +115,8 @@ export class WebhookService {
     if (!fromMe) {
       try {
         await this.detectAndEmitHot(instanceName, jid, content);
-      } catch (err: any) {
-        this.logger.warn(`lead.hot detection failed: ${err.message}`);
+      } catch (err: unknown) {
+        this.logger.warn(`lead.hot detection failed: ${(err as Error).message}`);
       }
     }
 

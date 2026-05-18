@@ -8,7 +8,7 @@ import { ToastProvider } from '@/components/ui/toast-provider';
 import { TopBar } from '@/components/layout/top-bar';
 import { useSocket } from '@/hooks/use-socket';
 import { useAuthStore } from '@/stores/auth.store';
-import { api } from '@/lib/api';
+import { api, tryRefreshSession } from '@/lib/api';
 
 function SocketManager() {
   useSocket();
@@ -22,10 +22,10 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isAuthenticated) {
-      api('/api/v1/auth/refresh', { method: 'POST' })
-        .then((data: any) => {
-          if (data?.accessToken) {
-            setToken(data.accessToken);
+      tryRefreshSession()
+        .then((token) => {
+          if (token) {
+            setToken(token);
           } else {
             router.replace('/login');
           }

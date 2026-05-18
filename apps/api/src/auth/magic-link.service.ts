@@ -66,7 +66,7 @@ export class MagicLinkService {
     const raw = await this.redis.get(key);
 
     if (!raw) {
-      this.logger.warn(`Magic link token not found or expired: ${token}`);
+      this.logger.warn(`Magic link token not found or expired: ${token.slice(0, 8)}...`);
       return null;
     }
 

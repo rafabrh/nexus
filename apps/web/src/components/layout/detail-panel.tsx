@@ -64,7 +64,6 @@ function Section({
         onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(31,39,51,0.3)')}
         onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
       >
-        {/* @ts-expect-error Lucide icons accept size prop */}
         <Icon size={14} className="text-text-muted" />
         <span className="flex-1 text-left">{title}</span>
         <motion.div

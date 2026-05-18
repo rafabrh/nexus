@@ -43,9 +43,14 @@ export async function api<T = unknown>(
   const token = await ensureToken();
 
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
   };
+
+  // Only set Content-Type when there's a body — Fastify rejects
+  // Content-Type: application/json with an empty body on POST
+  if (options.body != null) {
+    headers['Content-Type'] = headers['Content-Type'] ?? 'application/json';
+  }
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
@@ -90,3 +95,11 @@ export async function api<T = unknown>(
 }
 
 export { API_URL };
+
+/**
+ * Try to refresh the session using the refresh_token cookie.
+ * Returns the new access token or null if refresh fails.
+ */
+export async function tryRefreshSession(): Promise<string | null> {
+  return refreshToken();
+}
