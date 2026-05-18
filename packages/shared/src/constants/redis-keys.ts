@@ -74,4 +74,23 @@ export const RedisKeys = {
 
   quickReplies: (inst: string) =>
     `quickreplies:${inst}`,
+
+  // ---- Onboarding / Instance state ----
+
+  instanceState: (inst: string) =>
+    `instanceState:${inst}`,
+
+  syncStatus: (inst: string) =>
+    `syncStatus:${inst}`,
+
+  // ---- Cache (TTL-based, invalidated by webhook) ----
+
+  cacheConversations: (inst: string) =>
+    `cache:conversations:${inst}`,
+
+  cacheDashboard: (inst: string) =>
+    `cache:dashboard:${inst}`,
+
+  cacheContacts: (inst: string) =>
+    `cache:contacts:${inst}`,
 } as const;

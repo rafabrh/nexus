@@ -9,6 +9,10 @@ export interface TenantEntry {
   users: TenantUser[];
   createdAt: string;
   active: boolean;
+  connectionState?: 'created' | 'open' | 'close' | 'connecting';
+  syncStatus?: 'pending' | 'syncing' | 'done' | 'error';
+  connectedAt?: string;
+  n8nWebhookUrl?: string;
 }
 
 export interface TenantRegistry {
