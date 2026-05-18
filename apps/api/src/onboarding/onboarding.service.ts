@@ -30,6 +30,19 @@ export class OnboardingService {
       this.redis.get(RedisKeys.syncStatus(instancia)),
     ]);
 
+    // Redis says instance exists but it's not connected — verify with Evolution API
+    if (connectionState !== null && connectionState !== 'open') {
+      const existsOnEvolution = await this.verifyInstanceExists(instancia);
+      if (!existsOnEvolution) {
+        this.logger.warn(`Instance ${instancia} not found on Evolution API, resetting Redis state`);
+        await Promise.all([
+          this.redis.del(RedisKeys.instanceState(instancia)),
+          this.redis.del(RedisKeys.syncStatus(instancia)),
+        ]);
+        return { instanceExists: false, connectionState: null, syncStatus: null };
+      }
+    }
+
     return {
       instanceExists: connectionState !== null,
       connectionState,
@@ -37,10 +50,29 @@ export class OnboardingService {
     };
   }
 
+  private async verifyInstanceExists(instancia: string): Promise<boolean> {
+    try {
+      await this.evolution.getConnectionState(instancia);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async createInstance(instancia: string): Promise<{ instanceName: string; state: string }> {
     const existing = await this.redis.get(RedisKeys.instanceState(instancia));
     if (existing) {
-      throw new ConflictException(`Instancia ${instancia} ja existe`);
+      // Verify the instance actually exists on Evolution API
+      const existsOnEvolution = await this.verifyInstanceExists(instancia);
+      if (existsOnEvolution) {
+        throw new ConflictException(`Instancia ${instancia} ja existe`);
+      }
+      // Instance was deleted externally — clean up stale Redis state
+      this.logger.warn(`Stale Redis state for ${instancia}, cleaning up for re-creation`);
+      await Promise.all([
+        this.redis.del(RedisKeys.instanceState(instancia)),
+        this.redis.del(RedisKeys.syncStatus(instancia)),
+      ]);
     }
 
     const appBaseUrl = this.config.get<string>('APP_BASE_URL', 'http://localhost:4000');
