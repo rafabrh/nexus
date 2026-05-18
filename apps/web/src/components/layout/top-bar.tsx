@@ -105,7 +105,8 @@ export function TopBar() {
       {/* Actions — right */}
       <div className="flex-shrink-0 flex items-center gap-3 px-5">
         {/* Connection status */}
-        <div
+        <Link
+          href="/connect"
           className={cn(
             'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium',
             connected
@@ -119,7 +120,7 @@ export function TopBar() {
         >
           {connected ? <Wifi size={14} /> : <WifiOff size={14} />}
           {connected ? 'Online' : 'Offline'}
-        </div>
+        </Link>
 
         {/* Notifications */}
         <button

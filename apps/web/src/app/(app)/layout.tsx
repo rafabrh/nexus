@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '@/lib/query-client';
 import { ToastProvider } from '@/components/ui/toast-provider';
@@ -17,10 +17,10 @@ function SocketManager() {
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { isAuthenticated, setToken } = useAuthStore();
 
   useEffect(() => {
-    // Try to refresh token on mount
     if (!isAuthenticated) {
       api('/api/v1/auth/refresh', { method: 'POST' })
         .then((data: any) => {
@@ -36,8 +36,47 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Show nothing while checking auth
   if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-bg-base flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return <ConnectionGuard pathname={pathname}>{children}</ConnectionGuard>;
+}
+
+function ConnectionGuard({ children, pathname }: { children: React.ReactNode; pathname: string }) {
+  const router = useRouter();
+  const [checked, setChecked] = useState(false);
+
+  useEffect(() => {
+    if (pathname === '/connect') {
+      setChecked(true);
+      return;
+    }
+
+    api<{ instanceExists: boolean; connectionState: string | null; syncStatus: string | null }>(
+      '/api/v1/onboarding/state',
+    )
+      .then((state) => {
+        if (
+          !state.instanceExists ||
+          state.connectionState !== 'open' ||
+          state.syncStatus !== 'done'
+        ) {
+          router.replace('/connect');
+        } else {
+          setChecked(true);
+        }
+      })
+      .catch(() => {
+        setChecked(true);
+      });
+  }, [pathname, router]);
+
+  if (!checked) {
     return (
       <div className="min-h-screen bg-bg-base flex items-center justify-center">
         <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
