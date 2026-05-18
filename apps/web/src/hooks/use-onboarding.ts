@@ -27,6 +27,7 @@ export function useCreateInstance() {
     mutationFn: () =>
       api<{ instanceName: string; state: string }>('/api/v1/onboarding/instance', {
         method: 'POST',
+        body: '{}',
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['onboarding'] });
@@ -47,7 +48,7 @@ export function useStartSync() {
   const qc = useQueryClient();
   return useMutation<SyncResult>({
     mutationFn: () =>
-      api('/api/v1/onboarding/sync', { method: 'POST' }),
+      api('/api/v1/onboarding/sync', { method: 'POST', body: '{}' }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['onboarding'] });
     },
