@@ -11,6 +11,7 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { WebhookModule } from './webhook/webhook.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { AdminModule } from './admin/admin.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
 import { RemindersModule } from './reminders/reminders.module';
 import { QuickRepliesModule } from './quick-replies/quick-replies.module';
 import { validate } from './core/config/app.config';
@@ -40,6 +41,7 @@ import { validate } from './core/config/app.config';
     WebhookModule,
     RealtimeModule,
     AdminModule,
+    OnboardingModule,
     RemindersModule,
     QuickRepliesModule,
   ],
