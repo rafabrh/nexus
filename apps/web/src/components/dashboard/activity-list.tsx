@@ -85,7 +85,7 @@ export function ActivityList() {
   useEffect(() => {
     const newSet = new Set(recent.map((e) => e.eventId));
     prevIdsRef.current = newSet;
-  });
+  }, [recent.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const glassStyle: React.CSSProperties = {
     background: 'rgba(20,24,32,0.72)',

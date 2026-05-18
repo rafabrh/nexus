@@ -30,7 +30,12 @@ export class WebhookController {
   ): Promise<void> {
     const expectedKey = this.config.get<string>('EVOLUTION_API_KEY');
 
-    if (expectedKey && apiKey !== expectedKey) {
+    if (!expectedKey) {
+      this.logger.error('webhook.rejected: EVOLUTION_API_KEY not configured');
+      throw new UnauthorizedException('Webhook not configured');
+    }
+
+    if (apiKey !== expectedKey) {
       this.logger.warn('webhook.invalid-apikey from Evolution API');
       throw new UnauthorizedException('Invalid API key');
     }

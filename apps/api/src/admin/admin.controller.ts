@@ -10,11 +10,14 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import type { TenantEntry, TenantUser } from '@nexus/shared';
+import type { TenantEntry } from '@nexus/shared';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { TenantService } from './tenant.service';
+import { RegisterTenantDto } from './dto/register-tenant.dto';
+import { ToggleTenantDto } from './dto/toggle-tenant.dto';
+import { AddUserDto } from './dto/add-user.dto';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
@@ -40,18 +43,18 @@ export class AdminController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Registrar novo tenant' })
   async registerTenant(
-    @Body() body: { instancia: string; adminEmail: string },
+    @Body() dto: RegisterTenantDto,
   ): Promise<TenantEntry> {
-    return this.tenants.registerTenant(body.instancia, body.adminEmail);
+    return this.tenants.registerTenant(dto.instancia, dto.adminEmail);
   }
 
   @Patch('tenants/:instancia')
   @ApiOperation({ summary: 'Ativar/desativar tenant' })
   async toggleTenant(
     @Param('instancia') instancia: string,
-    @Body() body: { active: boolean },
+    @Body() dto: ToggleTenantDto,
   ): Promise<TenantEntry | null> {
-    return this.tenants.toggleTenant(instancia, body.active);
+    return this.tenants.toggleTenant(instancia, dto.active);
   }
 
   @Post('tenants/:instancia/users')
@@ -59,8 +62,8 @@ export class AdminController {
   @ApiOperation({ summary: 'Adicionar usuario ao tenant' })
   async addUser(
     @Param('instancia') instancia: string,
-    @Body() body: TenantUser,
+    @Body() dto: AddUserDto,
   ): Promise<TenantEntry | null> {
-    return this.tenants.addUser(instancia, body);
+    return this.tenants.addUser(instancia, dto);
   }
 }
