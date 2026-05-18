@@ -1,4 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
+import type Redis from 'ioredis';
+import { REDIS_CLIENT } from '../core/redis/redis.module';
+import { RedisKeys } from '@nexus/shared';
 import type { DashboardData } from '@nexus/shared';
 import { ConversationRepository } from '../conversation/conversation.repository';
 import { SheetsClient } from '../lead/sheets.client';
@@ -10,15 +13,27 @@ export class DashboardService {
   constructor(
     private readonly conversationRepo: ConversationRepository,
     private readonly sheets: SheetsClient,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
   async getDashboard(instancia: string): Promise<DashboardData> {
+    // Cache-aside: check for cached result (60s TTL)
+    const cacheKey = RedisKeys.cacheDashboard(instancia);
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      try {
+        return JSON.parse(cached) as DashboardData;
+      } catch {
+        // Corrupted cache, fall through to rebuild
+      }
+    }
+
     const [jids, leadsData] = await Promise.all([
       this.conversationRepo.findAllJids(instancia),
       this.sheets.getLeadsForDashboard(instancia),
     ]);
 
-    return {
+    const data: DashboardData = {
       ts: new Date().toISOString(),
       period: 'today',
       leadsNew: leadsData.newToday,
@@ -32,5 +47,9 @@ export class DashboardService {
       conversionRate: leadsData.conversionRate,
       topStage: leadsData.topStage,
     };
+
+    await this.redis.set(cacheKey, JSON.stringify(data), 'EX', 60);
+
+    return data;
   }
 }
