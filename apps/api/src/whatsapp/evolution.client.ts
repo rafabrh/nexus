@@ -75,6 +75,36 @@ export class EvolutionClient {
     return this.request('POST', `/chat/findChats/${instanceName}`, {});
   }
 
+  async createInstance(instanceName: string, webhookUrl?: string): Promise<Record<string, unknown>> {
+    const body: Record<string, unknown> = {
+      instanceName,
+      integration: 'WHATSAPP-BAILEYS',
+      qrcode: true,
+    };
+    if (webhookUrl) {
+      body.webhook = {
+        url: webhookUrl,
+        byEvents: false,
+        base64: false,
+        events: [
+          'messages.upsert',
+          'connection.update',
+          'contacts.update',
+          'contacts.upsert',
+        ],
+      };
+    }
+    return this.request<Record<string, unknown>>('POST', '/instance/create', body);
+  }
+
+  async getQrCode(instancia: string): Promise<{ base64: string; code: string }> {
+    return this.request<{ base64: string; code: string }>('GET', `/instance/connect/${instancia}`);
+  }
+
+  async deleteInstance(instancia: string): Promise<void> {
+    await this.request('DELETE', `/instance/delete/${instancia}`);
+  }
+
   // NOTA: setWebhook NAO deve ser chamado automaticamente.
   // O webhook do N8N em https://n8n.shkgroups.com/webhook/shkgroupwpp
   // e SAGRADO e nao deve ser sobrescrito.
