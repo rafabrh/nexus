@@ -132,7 +132,20 @@ export class ConversationService {
 
   async sendMessage(instancia: string, jid: string, text: string): Promise<{ message: string }> {
     await this.evolution.sendTextMessage(instancia, jid, text);
-    this.logger.log(`Message sent via Evolution API for ${instancia}/${jid}`);
+
+    const phone = jid.replace('@s.whatsapp.net', '');
+    const histKey = RedisKeys.chatHistory(instancia, phone);
+    const entry = JSON.stringify({ type: 'ai', data: { content: text, timestamp: Date.now() } });
+    await this.redis.rpush(histKey, entry); // also fires keyspace message.received
+
+    // Operator message = human takeover. Pause AI for 30min (V6.0 default).
+    const until = Date.now() + 30 * 60 * 1000;
+    await this.redis.set(RedisKeys.humanControlUntil(instancia, jid), String(until));
+
+    await this.index.addJid(instancia, jid);
+    await this.redis.del(RedisKeys.cacheConversations(instancia));
+
+    this.logger.log(`Message sent + persisted for ${instancia}/${jid}`);
     return { message: 'Mensagem enviada' };
   }
 
