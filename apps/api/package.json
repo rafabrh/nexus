@@ -26,6 +26,7 @@
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/websockets": "^10.4",
     "@nexus/shared": "workspace:*",
+    "@socket.io/redis-adapter": "^8.3.0",
     "class-transformer": "^0.5",
     "class-validator": "^0.14",
     "cockatiel": "^3.2",

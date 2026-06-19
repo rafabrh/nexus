@@ -11,6 +11,8 @@ import helmet from '@fastify/helmet';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './core/filters/http-exception.filter';
 import { AllExceptionsFilter } from './core/filters/all-exceptions.filter';
+import { RedisIoAdapter } from './realtime/redis-io.adapter';
+import { REDIS_CLIENT } from './core/redis/redis.module';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -52,6 +54,11 @@ async function bootstrap() {
     new AllExceptionsFilter(),
     new HttpExceptionFilter(),
   );
+
+  // Socket.IO Redis adapter — broadcasts reach clients on every replica.
+  const redisAdapter = new RedisIoAdapter(app, app.get(REDIS_CLIENT));
+  await redisAdapter.connect();
+  app.useWebSocketAdapter(redisAdapter);
 
   // CORS
   app.enableCors({
