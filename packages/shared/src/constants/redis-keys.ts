@@ -93,4 +93,9 @@ export const RedisKeys = {
 
   cacheContacts: (inst: string) =>
     `cache:contacts:${inst}`,
+
+  // ---- Conversation discovery index (BFF maintains, list reads) ----
+
+  conversationIndex: (inst: string) =>
+    `conversas:${inst}`,
 } as const;
