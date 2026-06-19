@@ -9,7 +9,8 @@
     "start": "node dist/main",
     "start:prod": "node dist/main",
     "clean": "rimraf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@fastify/cookie": "^8.3.0",

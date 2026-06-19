@@ -5,6 +5,6 @@
   "compilerOptions": {
     "deleteOutDir": false,
     "builder": "tsc",
-    "tsConfigPath": "tsconfig.json"
+    "tsConfigPath": "tsconfig.build.json"
   }
 }

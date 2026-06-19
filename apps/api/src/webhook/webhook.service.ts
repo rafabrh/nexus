@@ -3,6 +3,7 @@ import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { RedisKeys } from '@nexus/shared';
 import { EventPublisher } from '../realtime/event.publisher';
+import { resolvePersonalJid } from '../core/whatsapp/jid.util';
 
 /** Keywords that indicate a hot lead */
 const HOT_KEYWORDS = [
@@ -74,11 +75,16 @@ export class WebhookService {
     const key = data.key as Record<string, unknown> | undefined;
     if (!key) return;
 
-    const jid = key.remoteJid as string | undefined;
-    if (!jid || !jid.includes('@s.whatsapp.net')) return;
+    // Resolve canonical phone/JID, handling both legacy @s.whatsapp.net and
+    // @lid addressing (real phone in key.remoteJidAlt). Skip groups/broadcasts.
+    const resolved = resolvePersonalJid(
+      key.remoteJid as string | undefined,
+      key.remoteJidAlt as string | undefined,
+    );
+    if (!resolved) return;
+    const { phone, jid } = resolved;
 
     const fromMe = key.fromMe === true;
-    const phone = jid.replace('@s.whatsapp.net', '');
 
     // Extract message content
     const content = this.extractContent(data);
@@ -279,12 +285,17 @@ export class WebhookService {
       if (!item || typeof item !== 'object') continue;
       const contact = item as Record<string, unknown>;
 
-      const jid = typeof contact.remoteJid === 'string' ? contact.remoteJid : null;
+      const resolved = resolvePersonalJid(
+        contact.remoteJid as string | undefined,
+        contact.remoteJidAlt as string | undefined,
+      );
       const pushName = typeof contact.pushName === 'string' ? contact.pushName : null;
 
-      if (jid && jid.includes('@s.whatsapp.net') && pushName) {
-        const phone = jid.replace('@s.whatsapp.net', '');
-        await this.redis.set(RedisKeys.contact(phone), JSON.stringify({ pushName }));
+      if (resolved && pushName) {
+        await this.redis.set(
+          RedisKeys.contact(resolved.phone),
+          JSON.stringify({ pushName }),
+        );
       }
     }
 
