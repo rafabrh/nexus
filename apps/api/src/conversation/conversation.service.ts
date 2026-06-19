@@ -8,6 +8,7 @@ import type {
   Message,
 } from '@nexus/shared';
 import { ConversationRepository } from './conversation.repository';
+import { ConversationIndexService } from './conversation-index.service';
 import { EvolutionClient } from '../whatsapp/evolution.client';
 import { EventPublisher } from '../realtime/event.publisher';
 
@@ -20,6 +21,7 @@ export class ConversationService {
     private readonly evolution: EvolutionClient,
     private readonly publisher: EventPublisher,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    private readonly index: ConversationIndexService,
   ) {}
 
   async listConversations(
@@ -39,8 +41,8 @@ export class ConversationService {
       }
     }
 
-    // 1. Scan Redis for all JIDs with followup_step
-    const jids = await this.repo.findAllJids(instancia);
+    // 1. Discover all JIDs from the per-tenant index (no global SCAN)
+    const jids = await this.index.listJids(instancia);
 
     // 2. Build ConversationListItem for each JID in parallel
     const conversations = await Promise.all(
