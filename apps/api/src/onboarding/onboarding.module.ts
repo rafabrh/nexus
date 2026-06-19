@@ -1,12 +1,13 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { WhatsAppModule } from '../whatsapp/whatsapp.module';
+import { ConversationModule } from '../conversation/conversation.module';
 import { OnboardingController } from './onboarding.controller';
 import { OnboardingService } from './onboarding.service';
 import { SyncService } from './sync.service';
 
 @Module({
-  imports: [AuthModule, WhatsAppModule],
+  imports: [AuthModule, WhatsAppModule, ConversationModule],
   controllers: [OnboardingController],
   providers: [OnboardingService, SyncService],
   exports: [OnboardingService],

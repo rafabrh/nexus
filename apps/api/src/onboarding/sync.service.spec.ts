@@ -19,7 +19,7 @@ function makeService(findChats: () => Promise<unknown>): {
     }),
   };
   // Redis is unused by collectStableChats — only the Evolution client matters.
-  const service = new SyncService({} as never, evolution as never);
+  const service = new SyncService({} as never, evolution as never, { addJid: vi.fn() } as never);
   return { service, calls: () => calls };
 }
 
@@ -69,5 +69,52 @@ describe('SyncService.collectStableChats', () => {
 
     expect(result).toEqual([]);
     expect(calls()).toBe(4); // tried all attempts before giving up
+  });
+});
+
+describe('SyncService indexes imported chats', () => {
+  it('adds the resolved canonical jid to the conversation index after import', async () => {
+    const histStore = new Map<string, string[]>();
+    const redis = {
+      llen: vi.fn(async (k: string) => histStore.get(k)?.length ?? 0),
+      exists: vi.fn(async () => 0),
+      pipeline: vi.fn(() => {
+        const ops: Array<[string, string]> = [];
+        const chain: any = {
+          rpush: (k: string, v: string) => {
+            const arr = histStore.get(k) ?? [];
+            arr.push(v);
+            histStore.set(k, arr);
+            return chain;
+          },
+          set: () => chain,
+          exec: async () => ops,
+        };
+        return chain;
+      }),
+    };
+
+    const evolution = {
+      findChats: vi.fn(async () => [{ remoteJid: '5511999@s.whatsapp.net' }]),
+      findMessages: vi.fn(async () => [
+        {
+          key: { remoteJid: '5511999@s.whatsapp.net', fromMe: false },
+          message: { conversation: 'oi' },
+          messageTimestamp: 1700000000,
+        },
+      ]),
+      findContacts: vi.fn(async () => []),
+    };
+
+    const index = { addJid: vi.fn(async () => undefined) };
+    const service = new SyncService(redis as never, evolution as never, index as never);
+    // Bypass the history-load poll (delays) — not under test here.
+    vi.spyOn(service, 'collectStableChats').mockResolvedValue([
+      { remoteJid: '5511999@s.whatsapp.net' },
+    ] as never);
+
+    await service.syncAll('shk');
+
+    expect(index.addJid).toHaveBeenCalledWith('shk', '5511999@s.whatsapp.net');
   });
 });

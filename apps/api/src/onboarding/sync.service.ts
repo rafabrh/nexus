@@ -4,6 +4,7 @@ import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { RedisKeys } from '@nexus/shared';
 import { EvolutionClient } from '../whatsapp/evolution.client';
 import { resolvePersonalJid } from '../core/whatsapp/jid.util';
+import { ConversationIndexService } from '../conversation/conversation-index.service';
 
 interface SyncResult {
   chats: number;
@@ -54,6 +55,7 @@ export class SyncService {
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly evolution: EvolutionClient,
+    private readonly index: ConversationIndexService,
   ) {}
 
   async syncAll(instancia: string): Promise<SyncResult> {
@@ -246,6 +248,11 @@ export class SyncService {
     }
 
     await pipeline.exec();
+
+    // Register the conversation in the per-tenant discovery index so it shows
+    // up in the panel list without a global SCAN.
+    await this.index.addJid(instancia, jid);
+
     return count;
   }
 

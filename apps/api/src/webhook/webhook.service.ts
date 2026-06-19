@@ -4,6 +4,7 @@ import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { RedisKeys } from '@nexus/shared';
 import { EventPublisher } from '../realtime/event.publisher';
 import { resolvePersonalJid } from '../core/whatsapp/jid.util';
+import { ConversationIndexService } from '../conversation/conversation-index.service';
 
 /** Keywords that indicate a hot lead */
 const HOT_KEYWORDS = [
@@ -21,6 +22,7 @@ export class WebhookService {
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly publisher: EventPublisher,
+    private readonly index: ConversationIndexService,
   ) {}
 
   async processEvolutionEvent(payload: Record<string, unknown>): Promise<void> {
@@ -96,6 +98,9 @@ export class WebhookService {
     const type = fromMe ? 'ai' : 'human';
     const entry = JSON.stringify({ type, data: { content } });
     await this.redis.rpush(histKey, entry);
+
+    // Register the conversation in the per-tenant discovery index.
+    await this.index.addJid(instanceName, jid);
 
     // Ensure conversation state exists
     const stateKey = RedisKeys.state(instanceName, jid);
