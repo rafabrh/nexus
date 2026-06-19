@@ -37,4 +37,23 @@ describe('ConversationService', () => {
     expect(redis.set).toHaveBeenCalled(); // humanControlUntil
     expect(index.addJid).toHaveBeenCalledWith('shk', '5511@s.whatsapp.net');
   });
+
+  it('normalizes a bare phone to the canonical jid when updating stage', async () => {
+    const calls: any = { set: [] };
+    const redis = {
+      set: vi.fn(async (...a: any[]) => { calls.set.push(a); return 'OK'; }),
+    } as any;
+    const index = { addJid: vi.fn(async () => undefined) } as any;
+    const publisher = { publish: vi.fn(async () => undefined) } as any;
+    const svc = new ConversationService({} as any, {} as any, publisher, redis, index);
+
+    await svc.updateStage('shk', '5511952480228', 'S3');
+
+    // followup_step key uses the canonical jid, not the bare phone
+    expect(calls.set[0][0]).toBe('chat:shk:5511952480228@s.whatsapp.net:followup_step');
+    expect(index.addJid).toHaveBeenCalledWith('shk', '5511952480228@s.whatsapp.net');
+    expect(publisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'funnel.changed', jid: '5511952480228@s.whatsapp.net', payload: { stage: 'S3' } }),
+    );
+  });
 });

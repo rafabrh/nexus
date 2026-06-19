@@ -5,13 +5,14 @@ import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from '@/stores/auth.store';
 import { useRealtimeStore } from '@/stores/realtime.store';
 import { queryClient } from '@/lib/query-client';
-import type {
-  NexusEventEnvelope,
-  NexusEventType,
-  Lead,
-  ConversationListItem,
-  FunnelStageKey,
-  AiState,
+import {
+  jidFromPhone,
+  type NexusEventEnvelope,
+  type NexusEventType,
+  type Lead,
+  type ConversationListItem,
+  type FunnelStageKey,
+  type AiState,
 } from '@nexus/shared';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
@@ -37,7 +38,9 @@ function patchLeadStage(jid: string, stage: FunnelStageKey): boolean {
   queryClient.setQueryData<Lead[]>(['leads'], (old) => {
     if (!old) return old;
     return old.map((lead) => {
-      if (lead.leadId === jid) {
+      // Leads are keyed by phone in the Sheets CRM, not by JID — derive the
+      // canonical JID to match the event's jid.
+      if (jidFromPhone(lead.phone) === jid) {
         matched = true;
         return { ...lead, stage };
       }

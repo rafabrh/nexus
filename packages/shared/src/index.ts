@@ -9,3 +9,4 @@ export * from './types/reminder';
 export * from './types/quick-reply';
 export * from './constants/redis-keys';
 export * from './utils/phone-mask';
+export * from './utils/jid';

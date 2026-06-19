@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { KanbanCard } from './kanban-card';
 import { useLeads } from '@/hooks/use-leads';
-import { FunnelStage, type FunnelStageKey, type Lead } from '@nexus/shared';
+import { FunnelStage, jidFromPhone, type FunnelStageKey, type Lead } from '@nexus/shared';
 import { api } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { cardEntrance, staggerContainer } from '@/lib/motion-variants';
@@ -62,7 +62,10 @@ export function KanbanBoard() {
     }
 
     try {
-      await api(`/api/v1/conversations/${encodeURIComponent(draggedLead.leadId)}/stage`, {
+      // The stage is keyed by conversation JID, not the Sheets leadId. Derive
+      // the canonical JID from the lead's phone so the write hits the real key.
+      const jid = jidFromPhone(draggedLead.phone);
+      await api(`/api/v1/conversations/${encodeURIComponent(jid)}/stage`, {
         method: 'POST',
         body: JSON.stringify({ stage }),
       });

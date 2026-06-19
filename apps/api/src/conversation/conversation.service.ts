@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, Logger, Inject } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../core/redis/redis.module';
-import { RedisKeys } from '@nexus/shared';
+import { RedisKeys, jidFromPhone } from '@nexus/shared';
 import type {
   ConversationListItem,
   ConversationDetail,
@@ -153,18 +153,23 @@ export class ConversationService {
    * Update the funnel stage (followup_step) for a conversation.
    */
   async updateStage(instancia: string, jid: string, stage: string): Promise<{ message: string; stage: string }> {
-    const key = RedisKeys.followupStep(instancia, jid);
+    // Defense-in-depth: a bare phone (e.g. from a Sheets-keyed caller) is
+    // normalized to the canonical JID so the followup_step key and the emitted
+    // event jid match what N8N and the panel use.
+    const canonicalJid = jidFromPhone(jid);
+    const key = RedisKeys.followupStep(instancia, canonicalJid);
     await this.redis.set(key, stage);
+    await this.index.addJid(instancia, canonicalJid);
 
     await this.publisher.publish({
       type: 'funnel.changed',
       instancia,
-      jid,
+      jid: canonicalJid,
       ts: Date.now(),
       payload: { stage },
     });
 
-    this.logger.log(`Stage updated to ${stage} for ${instancia}/${jid}`);
+    this.logger.log(`Stage updated to ${stage} for ${instancia}/${canonicalJid}`);
     return { message: 'Stage atualizado', stage };
   }
 
