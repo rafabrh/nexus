@@ -36,6 +36,19 @@ export class AppConfig {
   @IsString()
   ADMIN_EMAIL: string = 'rafa@shkgroups.com';
 
+  // ---- Dev seed (non-production safety net) ----
+  // When SEED_INSTANCE is set AND the tenant registry is empty, the API seeds a
+  // single admin tenant on boot so local logins work against a fresh Redis.
+  // Ignored entirely when NODE_ENV=production. SEED_ADMIN_EMAIL falls back to
+  // ADMIN_EMAIL when omitted.
+  @IsOptional()
+  @IsString()
+  SEED_INSTANCE?: string;
+
+  @IsOptional()
+  @IsString()
+  SEED_ADMIN_EMAIL?: string;
+
   // ---- Evolution API ----
   @IsOptional()
   @IsString()

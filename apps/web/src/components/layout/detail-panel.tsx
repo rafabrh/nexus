@@ -118,8 +118,14 @@ export function DetailPanel({ jid }: DetailPanelProps) {
       state === 'OFF_UNTIL'
         ? new Date(Date.now() + 30 * 60000).toISOString()
         : undefined;
+    const label =
+      state === 'ON'
+        ? 'ativada'
+        : state === 'OFF_UNTIL'
+        ? 'pausada por 30min'
+        : 'desligada por 24h';
     toggleAi.mutate({ state, expireAt }, {
-      onSuccess: () => toast.success(`IA ${state === 'ON' ? 'ativada' : 'desativada'}`),
+      onSuccess: () => toast.success(`IA ${label}`),
       onError: () => toast.error('Erro ao alterar IA'),
     });
   };
@@ -311,7 +317,7 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                         onClick={() => handleAiToggle('OFF')}
                         disabled={toggleAi.isPending}
                       >
-                        Desligar
+                        Desligar 24h
                       </Button>
                     </motion.div>
                   </div>

@@ -72,7 +72,10 @@ function ConnectionGuard({ children, pathname }: { children: React.ReactNode; pa
         }
       })
       .catch(() => {
-        setChecked(true);
+        // Fail-safe: if we can't confirm the connection, treat as not-onboarded
+        // and send to /connect (which re-checks and bounces back when ready)
+        // instead of silently exposing an unconfigured panel.
+        router.replace('/connect');
       });
   }, [pathname, router]);
 
