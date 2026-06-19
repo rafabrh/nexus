@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Inject, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../core/redis/redis.module';
+import { RedisKeys } from '@nexus/shared';
 import { EventTranslator } from './event.translator';
 import { EventPublisher } from './event.publisher';
 
@@ -9,14 +10,22 @@ export class KeyspaceListener implements OnModuleInit, OnModuleDestroy {
   private subscriber!: Redis;
   private readonly logger = new Logger(KeyspaceListener.name);
 
-  private readonly patterns = [
-    '__keyspace@0__:chat:*:humanControlUntil',
-    '__keyspace@0__:chat:*:paymentStatus',
-    '__keyspace@0__:chat:*:buffer',
-    '__keyspace@0__:chat:*:processing',
-    '__keyspace@0__:chat:*:followup_step',
-    '__keyspace@0__:mp:payment:*:approvedSent',
-  ];
+  /**
+   * Patterns target the keys that carry real meaning. `chathistory:*` on rpush
+   * captures both the client message and the AI reply — the moment the visible
+   * history changes — replacing the fragile `buffer` proxy.
+   */
+  private patternsFor(db: number): string[] {
+    const prefix = `__keyspace@${db}__:`;
+    return [
+      `${prefix}chathistory:*`,
+      `${prefix}chat:*:humanControlUntil`,
+      `${prefix}chat:*:paymentStatus`,
+      `${prefix}chat:*:processing`,
+      `${prefix}chat:*:followup_step`,
+      `${prefix}mp:payment:*:approvedSent`,
+    ];
+  }
 
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
@@ -27,22 +36,35 @@ export class KeyspaceListener implements OnModuleInit, OnModuleDestroy {
   async onModuleInit() {
     this.subscriber = this.redis.duplicate();
 
-    for (const pattern of this.patterns) {
+    // The keyspace DB index must match the connection's DB, not a hardcoded @0.
+    const db = this.redis.options?.db ?? 0;
+    const patterns = this.patternsFor(db);
+
+    for (const pattern of patterns) {
       await this.subscriber.psubscribe(pattern);
     }
 
     this.subscriber.on('pmessage', async (_pattern: string, channel: string, operation: string) => {
       try {
-        const event = this.translator.translate(channel, operation);
+        const event = await this.translator.translate(channel, operation);
         if (event) {
           await this.publisher.publish(event);
+
+          // Self-heal the conversation index on every persisted message.
+          if (event.type === 'message.received' && event.instancia && event.jid) {
+            await this.redis
+              .sadd(RedisKeys.conversationIndex(event.instancia), event.jid)
+              .catch((err: Error) =>
+                this.logger.warn(`index self-heal failed: ${err.message}`),
+              );
+          }
         }
       } catch (err: any) {
         this.logger.warn(`Keyspace event error: ${err.message}`, { channel, operation });
       }
     });
 
-    this.logger.log(`Subscribed to ${this.patterns.length} keyspace patterns`);
+    this.logger.log(`Subscribed to ${patterns.length} keyspace patterns (db=${db})`);
   }
 
   async onModuleDestroy() {
