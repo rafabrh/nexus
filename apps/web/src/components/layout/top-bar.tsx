@@ -1,14 +1,117 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Bot, Bell, Wifi, WifiOff } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { Bot, Bell, Wifi, WifiOff, User, Settings, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import gsap from 'gsap';
 import { cn } from '@/lib/utils';
 import { useRealtimeStore } from '@/stores/realtime.store';
 import { useReminders } from '@/hooks/use-reminders';
+import { useAuthStore } from '@/stores/auth.store';
+import { api } from '@/lib/api';
+
+/** Decodes the `sub` (email) claim from the JWT for display. */
+function emailFromToken(token: string | null): string | null {
+  if (!token) return null;
+  try {
+    const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(part)).sub ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function UserMenu() {
+  const router = useRouter();
+  const token = useAuthStore((s) => s.token);
+  const logout = useAuthStore((s) => s.logout);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const email = emailFromToken(token);
+  const initial = (email?.[0] ?? 'U').toUpperCase();
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [open]);
+
+  const handleLogout = async () => {
+    // Best-effort server-side logout (blacklists token + clears cookies);
+    // the client state is cleared regardless.
+    try {
+      await api('/api/v1/auth/logout', { method: 'POST', body: '{}' });
+    } catch {
+      // ignore — we still clear the client session below
+    }
+    logout();
+    router.replace('/login');
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Menu do usuario"
+        className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white transition-transform duration-150 hover:scale-105"
+        style={{ background: 'linear-gradient(135deg, #0d9488, #10b981)' }}
+      >
+        {initial}
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -6, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.97 }}
+            transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+            className="absolute right-0 mt-2 w-56 rounded-xl overflow-hidden z-50"
+            style={{
+              background: 'rgba(20,24,32,0.92)',
+              backdropFilter: 'blur(16px) saturate(1.3)',
+              WebkitBackdropFilter: 'blur(16px) saturate(1.3)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
+            }}
+          >
+            <div className="px-4 py-3 border-b border-white/[0.06]">
+              <div className="flex items-center gap-2">
+                <User size={14} className="text-text-muted flex-shrink-0" />
+                <span className="text-xs text-text-secondary truncate" title={email ?? undefined}>
+                  {email ?? 'Conta'}
+                </span>
+              </div>
+            </div>
+
+            <Link
+              href="/connect"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-white/[0.04] transition-colors duration-150"
+            >
+              <Settings size={15} />
+              Configurar conta
+            </Link>
+
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-error hover:bg-error/[0.08] transition-colors duration-150"
+            >
+              <LogOut size={15} />
+              Sair
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 const NAV_TABS = [
   { label: 'Conversas', href: '/conversations' },
@@ -138,6 +241,9 @@ export function TopBar() {
             </span>
           )}
         </button>
+
+        {/* User menu — account + logout */}
+        <UserMenu />
       </div>
     </header>
   );
