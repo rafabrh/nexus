@@ -12,6 +12,8 @@ export function useConversations() {
   return useQuery<ConversationListItem[]>({
     queryKey: ['conversations'],
     queryFn: () => api('/api/v1/conversations'),
+    // Safety net: realtime keyspace channel is lossy, so poll the list slowly.
+    refetchInterval: 45_000,
   });
 }
 

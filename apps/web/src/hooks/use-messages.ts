@@ -20,7 +20,26 @@ export function useSendMessage(jid: string) {
         method: 'POST',
         body: JSON.stringify({ text }),
       }),
-    onSuccess: () => {
+    onMutate: async (text: string) => {
+      await qc.cancelQueries({ queryKey: ['messages', jid] });
+      const prev = qc.getQueryData<Message[]>(['messages', jid]);
+      const optimistic: Message = {
+        id: `optimistic-${Date.now()}`,
+        role: 'assistant',
+        content: text,
+        mediaType: 'text',
+        ts: null,
+      };
+      qc.setQueryData<Message[]>(['messages', jid], (old) => [
+        ...(old ?? []),
+        optimistic,
+      ]);
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['messages', jid], ctx.prev);
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ['messages', jid] });
       qc.invalidateQueries({ queryKey: ['conversations'] });
     },

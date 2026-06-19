@@ -6,5 +6,7 @@ export function useLeads() {
   return useQuery<Lead[]>({
     queryKey: ['leads'],
     queryFn: () => api('/api/v1/leads'),
+    // Safety net: reconcile missed funnel.changed events from the lossy channel.
+    refetchInterval: 45_000,
   });
 }
