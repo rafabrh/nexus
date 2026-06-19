@@ -76,6 +76,34 @@ Alerta critico --------> SET chat:{inst}:{jid}:tags --------> Notificacao no pai
 O painel le Redis por namespace - nao importa qual instancia N8N escreveu.
 O decorator `@Tenant()` na API garante isolamento por instancia no JWT.
 
+### 3.4 Realtime & Latency Architecture
+
+O fluxo acima (3.3) descreve a intencao, mas o "Socket.IO push → atualiza
+real-time" nao era um fato resolvido: o keyspace nunca foi configurado, a
+descoberta de conversas era fragil e a mensagem enviada pelo operador nem era
+persistida. A camada de tempo real e detalhada em
+[2026-06-19-realtime-latency-architecture-design.md](./2026-06-19-realtime-latency-architecture-design.md).
+Resumo das decisoes (metas: baixa latencia, resiliencia, escalabilidade):
+
+- **Painel passivo via keyspace** — o N8N nao e modificado. O painel observa as
+  chaves que carregam dado real (`chathistory:*` no `rpush` para mensagens,
+  `followup_step` para funil), nao proxies efemeros (`buffer`).
+- **API auto-configura o Redis no boot** — `CONFIG SET notify-keyspace-events
+  KEA` + validacao. Sem isso toda a camada passiva fica silenciosa (era a causa
+  raiz do Kanban parado). Falha → healthcheck `degraded` + fallback por poll.
+- **Indice de conversas por tenant** — `conversas:{inst}` (Redis SET) mantido por
+  webhook/sync/listener/send. A lista le o SET (O(n do tenant)) em vez de `SCAN`
+  global do Redis compartilhado. Resolve "nao carrega todas as conversas".
+- **Mensagem do operador persistida** — `sendMessage` faz `RPUSH` no historico +
+  `SET humanControlUntil` + `SADD` no indice, alem do envio Evolution. A mensagem
+  passa a aparecer (antes sumia) e a IA pausa.
+- **Eventos enriquecidos** — eventos de mudanca de valor (`funnel.changed`,
+  `ai.toggled`) carregam o valor; o cliente faz patch direto no cache em vez de
+  invalidar e reconstruir tudo. Card do Kanban move instantaneo.
+- **Socket.IO Redis adapter** — broadcasts cruzam replicas (escala horizontal).
+- **Consistencia no pior caso** — keyspace pub/sub e perdivel; reconcile no
+  reconnect + poll de seguranca em baixa frequencia garantem convergencia.
+
 ## 4. N8N Flow (V6.0) - Capabilities Map
 
 O fluxo NEXUS V6.0 implementa:
