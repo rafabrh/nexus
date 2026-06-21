@@ -54,3 +54,29 @@ export function useStartSync() {
     },
   });
 }
+
+/** Forces an immediate connection re-check (bypasses the backend probe throttle). */
+export function useRefreshConnection() {
+  const qc = useQueryClient();
+  return useMutation<OnboardingState>({
+    mutationFn: () =>
+      api('/api/v1/onboarding/refresh', { method: 'POST', body: '{}' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['onboarding'] });
+    },
+  });
+}
+
+/** Re-imports chats/messages from the instance and refreshes the list caches. */
+export function useRetrySync() {
+  const qc = useQueryClient();
+  return useMutation<SyncResult>({
+    mutationFn: () =>
+      api('/api/v1/onboarding/retry-sync', { method: 'POST', body: '{}' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['onboarding'] });
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+      qc.invalidateQueries({ queryKey: ['leads'] });
+    },
+  });
+}

@@ -28,6 +28,14 @@ export class OnboardingController {
     return this.service.getState(instancia);
   }
 
+  @Post('refresh')
+  @HttpCode(200)
+  @Throttle({ default: { ttl: 60000, limit: 12 } })
+  @ApiOperation({ summary: 'Forcar revalidacao imediata da conexao (ignora o throttle)' })
+  async refresh(@Tenant() instancia: string): Promise<OnboardingState> {
+    return this.service.refreshConnection(instancia);
+  }
+
   @Post('instance')
   @Roles('admin')
   @HttpCode(201)

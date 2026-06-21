@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { useSettingsStore, refetchIntervalFromSettings } from '@/stores/settings.store';
 import type {
   ConversationListItem,
   ConversationDetail,
@@ -9,11 +10,13 @@ import type {
 } from '@nexus/shared';
 
 export function useConversations() {
+  // Safety net: realtime keyspace channel is lossy, so poll the list at the
+  // operator-configured interval (Settings → auto-refresh).
+  const interval = useSettingsStore((s) => s.refreshIntervalMs);
   return useQuery<ConversationListItem[]>({
     queryKey: ['conversations'],
     queryFn: () => api('/api/v1/conversations'),
-    // Safety net: realtime keyspace channel is lossy, so poll the list slowly.
-    refetchInterval: 45_000,
+    refetchInterval: refetchIntervalFromSettings(interval),
   });
 }
 

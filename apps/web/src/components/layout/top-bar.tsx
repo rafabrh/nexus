@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { useRealtimeStore } from '@/stores/realtime.store';
 import { useReminders } from '@/hooks/use-reminders';
 import { useAuthStore } from '@/stores/auth.store';
+import { useSettingsStore } from '@/stores/settings.store';
 import { api } from '@/lib/api';
 
 /** Decodes the `sub` (email) claim from the JWT for display. */
@@ -30,8 +31,10 @@ function UserMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
+  const displayName = useSettingsStore((s) => s.displayName);
   const email = emailFromToken(token);
-  const initial = (email?.[0] ?? 'U').toUpperCase();
+  const shownName = displayName || email;
+  const initial = (shownName?.[0] ?? 'U').toUpperCase();
 
   useEffect(() => {
     if (!open) return;
@@ -85,18 +88,18 @@ function UserMenu() {
               <div className="flex items-center gap-2">
                 <User size={14} className="text-text-muted flex-shrink-0" />
                 <span className="text-xs text-text-secondary truncate" title={email ?? undefined}>
-                  {email ?? 'Conta'}
+                  {shownName ?? 'Conta'}
                 </span>
               </div>
             </div>
 
             <Link
-              href="/connect"
+              href="/settings"
               onClick={() => setOpen(false)}
               className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-white/[0.04] transition-colors duration-150"
             >
               <Settings size={15} />
-              Configurar conta
+              Configurações
             </Link>
 
             <button

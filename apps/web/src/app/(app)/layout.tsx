@@ -56,14 +56,17 @@ function ConnectionGuard({ children, pathname }: { children: React.ReactNode; pa
   // Real-time connection guard: if the backend pushes that the WhatsApp instance
   // dropped or was deleted while the operator is on a protected screen, bounce to
   // /connect immediately instead of leaving stale conversations on screen.
-  useEffect(() => {
-    if (instanceState && instanceState !== 'open' && pathname !== '/connect') {
-      router.replace('/connect');
-    }
-  }, [instanceState, pathname, router]);
+  // Screens reachable even when the instance is down (so the operator can fix it).
+  const alwaysAllowed = pathname === '/connect' || pathname === '/settings';
 
   useEffect(() => {
-    if (pathname === '/connect') {
+    if (instanceState && instanceState !== 'open' && !alwaysAllowed) {
+      router.replace('/connect');
+    }
+  }, [instanceState, alwaysAllowed, router]);
+
+  useEffect(() => {
+    if (alwaysAllowed) {
       setChecked(true);
       return;
     }

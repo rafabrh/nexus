@@ -34,6 +34,18 @@ export class OnboardingService {
     private readonly tenants: TenantRepository,
   ) {}
 
+  /**
+   * Forces an immediate connection re-check, bypassing the getState probe
+   * throttle. Used by the "Atualizar conexao" button so the operator doesn't
+   * have to wait for the next reconciler cycle.
+   */
+  async refreshConnection(instancia: string): Promise<OnboardingState> {
+    await this.redis.del(RedisKeys.instanceProbeAt(instancia));
+    const state = await this.getState(instancia);
+    this.logger.log(`onboarding.refresh instancia=${instancia} state=${state.connectionState}`);
+    return state;
+  }
+
   async getState(instancia: string): Promise<OnboardingState> {
     let connectionState = await this.redis.get(RedisKeys.instanceState(instancia));
     const syncStatus = await this.redis.get(RedisKeys.syncStatus(instancia));

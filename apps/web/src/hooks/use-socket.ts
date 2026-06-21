@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from '@/stores/auth.store';
 import { useRealtimeStore } from '@/stores/realtime.store';
+import { useSettingsStore } from '@/stores/settings.store';
 import { queryClient } from '@/lib/query-client';
 import {
   jidFromPhone,
@@ -25,6 +26,36 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 let sharedSocket: Socket | null = null;
 let refCount = 0;
 let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Force a manual reconnect of the shared socket (Settings → "Reconectar"). */
+export function reconnectSocket(): void {
+  if (sharedSocket) {
+    sharedSocket.disconnect();
+    sharedSocket.connect();
+  }
+}
+
+/** A short, subtle WebAudio ping — no asset, respects the sound preference. */
+function playPing(): void {
+  try {
+    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new Ctx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.24);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.25);
+    osc.onended = () => ctx.close();
+  } catch {
+    /* audio not available — ignore */
+  }
+}
 
 // Scoped invalidation map. ['messages'] prefix-matches every ['messages', jid]
 // query, so we no longer need the dead ['conversation-detail'] gap for chat.
@@ -184,6 +215,14 @@ export function useSocket() {
       }
 
       addEvent(envelope);
+
+      // Subtle sound on inbound activity, when the operator enabled it.
+      if (
+        (envelope.type === 'message.received' || envelope.type === 'ai.responded') &&
+        useSettingsStore.getState().soundEnabled
+      ) {
+        playPing();
+      }
 
       // Enriched events carry the new value: patch the cache directly instead of
       // refetching everything, then fall back to invalidation only when no cached
