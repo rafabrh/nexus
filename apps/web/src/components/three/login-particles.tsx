@@ -4,7 +4,7 @@ import { useRef, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
-const PARTICLE_COUNT = 60;
+const PARTICLE_COUNT = 120;
 
 function Particles() {
   const meshRef = useRef<THREE.InstancedMesh>(null);
@@ -44,7 +44,13 @@ function Particles() {
   return (
     <instancedMesh ref={meshRef} args={[undefined, undefined, PARTICLE_COUNT]}>
       <sphereGeometry args={[1, 8, 8]} />
-      <meshBasicMaterial color="#2DD4BF" transparent opacity={0.15} />
+      <meshBasicMaterial
+        color="#2DD4BF"
+        transparent
+        opacity={0.28}
+        blending={THREE.AdditiveBlending}
+        depthWrite={false}
+      />
     </instancedMesh>
   );
 }

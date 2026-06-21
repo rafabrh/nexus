@@ -83,7 +83,7 @@ export default function FeedPage() {
             <Radio size={32} className="text-text-muted mx-auto mb-3" />
             <h3 className="text-md font-medium text-text-secondary mb-1">Aguardando eventos</h3>
             <p className="text-sm text-text-muted max-w-sm mx-auto">
-              Eventos do agente IA aparecerrao aqui em tempo real conforme as conversas acontecem.
+              Eventos do agente IA aparecerão aqui em tempo real conforme as conversas acontecem.
             </p>
           </div>
         ) : (

@@ -3,7 +3,7 @@
 import { useRef, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { gsap } from 'gsap';
-import { MessageCircle, Bot, CreditCard, ArrowRight, Flame, AlertTriangle } from 'lucide-react';
+import { MessageCircle, Bot, CreditCard, ArrowRight, Flame, AlertTriangle, Activity } from 'lucide-react';
 import { cn, timeAgo } from '@/lib/utils';
 import { useRealtimeStore } from '@/stores/realtime.store';
 import type { NexusEventEnvelope, NexusEventType } from '@nexus/shared';
@@ -101,8 +101,11 @@ export function ActivityList() {
         <div className="flex items-center gap-2 mb-4">
           <h3 className="text-sm font-medium text-text-secondary">Atividade Recente</h3>
         </div>
-        <div className="py-8 text-center text-xs text-text-muted">
-          Nenhuma atividade recente. Eventos aparecerrao em tempo real.
+        <div className="flex flex-col items-center justify-center py-10 text-center">
+          <Activity size={20} className="text-text-muted/50 mb-2" />
+          <p className="text-xs text-text-muted max-w-[200px]">
+            Nenhuma atividade ainda. Os eventos aparecerão aqui em tempo real.
+          </p>
         </div>
       </div>
     );

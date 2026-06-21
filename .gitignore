@@ -18,6 +18,8 @@ coverage/
 .DS_Store
 Thumbs.db
 
+.qa-runner/
+
 nexus-build/
 nexus-build2/
 nexus-panel-api/

@@ -17,6 +17,15 @@ import {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
+// Single shared socket across all consumers. useSocket() is mounted both by the
+// app-shell SocketManager and by the Conversations page; without reference
+// counting, one consumer unmounting (e.g. navigating away from Conversations)
+// would tear down the socket for everyone. We only disconnect when the LAST
+// consumer leaves, and defer it so a StrictMode/Fast-Refresh remount cancels it.
+let sharedSocket: Socket | null = null;
+let refCount = 0;
+let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
 // Scoped invalidation map. ['messages'] prefix-matches every ['messages', jid]
 // query, so we no longer need the dead ['conversation-detail'] gap for chat.
 const EVENT_TO_QUERY_KEYS: Record<NexusEventType, string[][]> = {
@@ -50,6 +59,23 @@ function patchLeadStage(jid: string, stage: FunnelStageKey): boolean {
   return matched;
 }
 
+// Patch the matching conversation's stage in place so the Kanban card (which is
+// fed by the conversations cache) jumps to its new column instantly.
+function patchConversationStage(jid: string, stage: FunnelStageKey): boolean {
+  let matched = false;
+  queryClient.setQueryData<ConversationListItem[]>(['conversations'], (old) => {
+    if (!old) return old;
+    return old.map((conv) => {
+      if (conv.jid === jid) {
+        matched = true;
+        return { ...conv, stage };
+      }
+      return conv;
+    });
+  });
+  return matched;
+}
+
 // Patch the matching conversation list item's aiState/aiOffUntil in place.
 function patchConversationAi(
   jid: string,
@@ -73,23 +99,50 @@ function patchConversationAi(
 export function useSocket() {
   const socketRef = useRef<Socket | null>(null);
   const token = useAuthStore((s) => s.token);
-  const { setConnected, addEvent, lastEventId } = useRealtimeStore();
+  // Stable selectors — Zustand actions never change identity, so handlers
+  // attached once stay valid for the socket's whole life.
+  const setConnected = useRealtimeStore((s) => s.setConnected);
+  const addEvent = useRealtimeStore((s) => s.addEvent);
 
   useEffect(() => {
     if (!token) return;
 
-    const socket = io(API_URL, {
-      auth: { token },
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionAttempts: 10,
-    });
+    // A pending teardown (last consumer left, or a StrictMode/Fast-Refresh
+    // unmount): cancel it and keep the existing socket. Then register as a
+    // consumer.
+    if (disconnectTimer) {
+      clearTimeout(disconnectTimer);
+      disconnectTimer = null;
+    }
+    refCount++;
 
+    const socket =
+      sharedSocket ??
+      io(API_URL, {
+        auth: { token },
+        // Default transport negotiation (polling → websocket upgrade). Forcing
+        // websocket-first caused "closed before the connection is established"
+        // reconnect loops behind the Fastify adapter.
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionAttempts: 10,
+      });
+    sharedSocket = socket;
     socketRef.current = socket;
+
+    // Reused sockets must not stack duplicate listeners.
+    socket.off('connect');
+    socket.off('disconnect');
+    socket.off('connect_error');
+    socket.off('nexus-event');
+
+    // If we reused an already-connected socket, reflect that immediately —
+    // the 'connect' event won't fire again.
+    if (socket.connected) setConnected(true);
 
     socket.on('connect', () => {
       setConnected(true);
+      const lastEventId = useRealtimeStore.getState().lastEventId;
       if (lastEventId) {
         socket.emit('replay', { lastEventId });
       }
@@ -99,8 +152,17 @@ export function useSocket() {
       queryClient.invalidateQueries({ queryKey: ['leads'] });
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('[socket] disconnect:', reason);
+      }
       setConnected(false);
+    });
+
+    socket.on('connect_error', (err) => {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('[socket] connect_error:', err.message);
+      }
     });
 
     socket.on('nexus-event', (envelope: NexusEventEnvelope) => {
@@ -112,6 +174,10 @@ export function useSocket() {
       if (envelope.type === 'funnel.changed') {
         const stage = envelope.payload?.stage as FunnelStageKey | null | undefined;
         if (stage) {
+          // Kanban is fed by conversations — move the card to its new column
+          // instantly. A brand-new contact not yet cached is picked up by the
+          // conversations invalidation below.
+          patchConversationStage(envelope.jid, stage);
           const matched = patchLeadStage(envelope.jid, stage);
           if (!matched) {
             // leadId !== jid (Sheets may key leads differently) — fall back.
@@ -147,9 +213,20 @@ export function useSocket() {
     });
 
     return () => {
-      socket.disconnect();
+      refCount--;
       socketRef.current = null;
-      setConnected(false);
+      // Only tear down when the last consumer leaves. Deferred so a StrictMode/
+      // Fast-Refresh remount (or a quick navigation between two pages that both
+      // use the socket) cancels it and keeps the connection alive.
+      if (refCount <= 0) {
+        refCount = 0;
+        disconnectTimer = setTimeout(() => {
+          socket.disconnect();
+          sharedSocket = null;
+          setConnected(false);
+          disconnectTimer = null;
+        }, 300);
+      }
     };
   }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 

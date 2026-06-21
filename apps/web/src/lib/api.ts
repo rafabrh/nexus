@@ -26,14 +26,24 @@ async function refreshToken(): Promise<string | null> {
   }
 }
 
-async function ensureToken(): Promise<string | null> {
-  if (accessToken) return accessToken;
+/**
+ * Coalesce concurrent refreshes into a single in-flight request. The backend
+ * rotates (and blacklists) the refresh token on every call, so two parallel
+ * refreshes would make the second one reuse an already-revoked token → 401 →
+ * spurious logout. Every refresh path MUST go through here.
+ */
+function dedupedRefresh(): Promise<string | null> {
   if (!refreshPromise) {
     refreshPromise = refreshToken().finally(() => {
       refreshPromise = null;
     });
   }
   return refreshPromise;
+}
+
+async function ensureToken(): Promise<string | null> {
+  if (accessToken) return accessToken;
+  return dedupedRefresh();
 }
 
 export async function api<T = unknown>(
@@ -63,8 +73,8 @@ export async function api<T = unknown>(
   });
 
   if (res.status === 401 && token) {
-    // Try refresh once
-    const newToken = await refreshToken();
+    // Try refresh once (deduped — see dedupedRefresh)
+    const newToken = await dedupedRefresh();
     if (newToken) {
       headers['Authorization'] = `Bearer ${newToken}`;
       const retry = await fetch(`${API_URL}${path}`, {
@@ -101,5 +111,5 @@ export { API_URL };
  * Returns the new access token or null if refresh fails.
  */
 export async function tryRefreshSession(): Promise<string | null> {
-  return refreshToken();
+  return dedupedRefresh();
 }
