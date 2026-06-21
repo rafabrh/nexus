@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Users, DollarSign, TrendingUp, Zap } from 'lucide-react';
 import { KpiCard, KpiCardSkeleton } from '@/components/dashboard/kpi-card';
 import { FunnelChart } from '@/components/dashboard/funnel-chart';
+import { ConversionGauge } from '@/components/dashboard/conversion-gauge';
 import { ActivityList } from '@/components/dashboard/activity-list';
 import { SalesTable } from '@/components/dashboard/sales-table';
 import { useDashboard } from '@/hooks/use-dashboard';
@@ -95,34 +96,20 @@ export default function DashboardPage() {
           )}
         </motion.div>
 
-        {/* Content grid */}
+        {/* Content grid — each panel carries its own glass (no nesting) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left column */}
-          <div
-            className="lg:col-span-7 space-y-6"
-            style={{
-              background: 'rgba(20,24,32,0.72)',
-              backdropFilter: 'blur(12px) saturate(1.2)',
-              borderRadius: '12px',
-              border: '1px solid rgba(255,255,255,0.06)',
-              padding: '16px',
-            }}
-          >
+          <div className="lg:col-span-8 space-y-6">
             <FunnelChart />
             <SalesTable />
           </div>
 
           {/* Right column */}
-          <div
-            className="lg:col-span-5"
-            style={{
-              background: 'rgba(20,24,32,0.72)',
-              backdropFilter: 'blur(12px) saturate(1.2)',
-              borderRadius: '12px',
-              border: '1px solid rgba(255,255,255,0.06)',
-              padding: '16px',
-            }}
-          >
+          <div className="lg:col-span-4 space-y-6">
+            <ConversionGauge
+              value={data?.conversionRate ?? 0}
+              subtitle={`${data?.leadsQualified ?? 0} qualificados`}
+            />
             <ActivityList />
           </div>
         </div>
