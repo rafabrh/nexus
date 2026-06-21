@@ -36,7 +36,7 @@ function getEventConfig(type: NexusEventType) {
         bg: 'bg-info/10',
         label: 'IA Pensando',
         variant: 'info' as const,
-        accentHex: '#3B82F6',
+        accentHex: '#8B5CF6',
       };
     case 'ai.responded':
       return {

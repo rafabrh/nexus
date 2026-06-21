@@ -55,8 +55,8 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               }
             : {
                 background:
-                  'linear-gradient(135deg, rgba(13,148,136,0.15), rgba(16,185,129,0.08))',
-                border: '1px solid rgba(45,212,191,0.1)',
+                  'linear-gradient(135deg, rgba(139,92,246,0.14), rgba(13,148,136,0.10))',
+                border: '1px solid rgba(139,92,246,0.16)',
                 borderRadius: '12px 4px 12px 12px',
               }
         }
