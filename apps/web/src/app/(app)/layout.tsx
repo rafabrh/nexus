@@ -8,6 +8,7 @@ import { ToastProvider } from '@/components/ui/toast-provider';
 import { TopBar } from '@/components/layout/top-bar';
 import { useSocket } from '@/hooks/use-socket';
 import { useAuthStore } from '@/stores/auth.store';
+import { useRealtimeStore } from '@/stores/realtime.store';
 import { api, tryRefreshSession } from '@/lib/api';
 
 function SocketManager() {
@@ -50,6 +51,16 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 function ConnectionGuard({ children, pathname }: { children: React.ReactNode; pathname: string }) {
   const router = useRouter();
   const [checked, setChecked] = useState(false);
+  const instanceState = useRealtimeStore((s) => s.instanceState);
+
+  // Real-time connection guard: if the backend pushes that the WhatsApp instance
+  // dropped or was deleted while the operator is on a protected screen, bounce to
+  // /connect immediately instead of leaving stale conversations on screen.
+  useEffect(() => {
+    if (instanceState && instanceState !== 'open' && pathname !== '/connect') {
+      router.replace('/connect');
+    }
+  }, [instanceState, pathname, router]);
 
   useEffect(() => {
     if (pathname === '/connect') {

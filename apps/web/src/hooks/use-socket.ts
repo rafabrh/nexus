@@ -38,6 +38,9 @@ const EVENT_TO_QUERY_KEYS: Record<NexusEventType, string[][]> = {
   'payment.approved': [['dashboard'], ['leads'], ['conversations']],
   'note.added': [['conversation-detail']],
   'lead.hot': [['conversations']],
+  // Infrastructure event — handled apart from the feed (see the early return
+  // in the nexus-event handler); no query invalidation by this map.
+  'connection.update': [],
 };
 
 // Patch the matching lead card in the ['leads'] cache to its new stage.
@@ -166,6 +169,20 @@ export function useSocket() {
     });
 
     socket.on('nexus-event', (envelope: NexusEventEnvelope) => {
+      // Connection state is infrastructure, not a business event: update the
+      // store (the ConnectionGuard reacts) and keep it out of the activity feed.
+      if (envelope.type === 'connection.update') {
+        const state = (envelope.payload?.state as string | undefined) ?? null;
+        useRealtimeStore.getState().setInstanceState(state);
+        if (state === 'open') {
+          // Instance reconnected — refetch the list caches that went stale.
+          queryClient.invalidateQueries({ queryKey: ['conversations'] });
+          queryClient.invalidateQueries({ queryKey: ['leads'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+        }
+        return;
+      }
+
       addEvent(envelope);
 
       // Enriched events carry the new value: patch the cache directly instead of

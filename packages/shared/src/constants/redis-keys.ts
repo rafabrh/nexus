@@ -83,6 +83,11 @@ export const RedisKeys = {
   syncStatus: (inst: string) =>
     `syncStatus:${inst}`,
 
+  // Throttle marker: limits how often getState() re-probes the Evolution API
+  // for a given instance (TTL key — present means "probed recently").
+  instanceProbeAt: (inst: string) =>
+    `instanceProbeAt:${inst}`,
+
   // ---- Cache (TTL-based, invalidated by webhook) ----
 
   cacheConversations: (inst: string) =>

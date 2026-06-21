@@ -60,6 +60,36 @@ export class EvolutionClient {
     return this.request<Record<string, unknown>>('GET', `/instance/connectionState/${instancia}`);
   }
 
+  /**
+   * Probes an instance, collapsing the raw call into three states that callers
+   * MUST treat differently:
+   *  - `exists`  : instance is live (with its connection state)
+   *  - `absent`  : Evolution returned 404 — the instance genuinely does not exist
+   *  - `unknown` : the call failed (timeout/network/5xx) — we cannot tell
+   *
+   * `unknown` must never be collapsed into `absent`: a transient error could
+   * otherwise trigger destructive recreation of a live instance.
+   */
+  async probeState(
+    instancia: string,
+  ): Promise<{ status: 'exists'; state: string } | { status: 'absent' } | { status: 'unknown' }> {
+    try {
+      const res = await this.getConnectionState(instancia);
+      const instanceObj = (res as Record<string, unknown>)?.instance as
+        | Record<string, unknown>
+        | undefined;
+      const state = instanceObj?.state ?? (res as Record<string, unknown>)?.state;
+      return { status: 'exists', state: typeof state === 'string' ? state : 'close' };
+    } catch (err) {
+      const msg = (err as Error).message ?? '';
+      if (msg.includes('404') || msg.toLowerCase().includes('does not exist')) {
+        return { status: 'absent' };
+      }
+      this.logger.warn(`probeState: Evolution unreachable for ${instancia}: ${msg}`);
+      return { status: 'unknown' };
+    }
+  }
+
   async findContacts(instanceName: string): Promise<unknown> {
     return this.request('POST', `/chat/findContacts/${instanceName}`, {});
   }

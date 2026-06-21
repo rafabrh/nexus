@@ -23,6 +23,9 @@ export interface OnboardingState {
 export class OnboardingService {
   private readonly logger = new Logger(OnboardingService.name);
 
+  // Max one Evolution probe per instance within this window on getState reads.
+  private static readonly PROBE_THROTTLE_SECONDS = 20;
+
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly evolution: EvolutionClient,
@@ -35,33 +38,56 @@ export class OnboardingService {
     let connectionState = await this.redis.get(RedisKeys.instanceState(instancia));
     const syncStatus = await this.redis.get(RedisKeys.syncStatus(instancia));
 
-    // Redis says instance exists but isn't 'open' yet — reconcile with the
-    // Evolution API. The connection.update webhook can be lost (API restart,
-    // tunnel hiccup, scan happening before the webhook is registered), which
-    // would otherwise leave the panel stuck on 'created' forever even though
-    // WhatsApp is actually connected.
-    if (connectionState !== null && connectionState !== 'open') {
-      const probe = await this.probeInstance(instancia);
+    // The Evolution instance is the SINGLE SOURCE OF TRUTH for connectivity.
+    // Even when Redis says 'open', the instance may have been deleted or
+    // disconnected externally — serving stale conversations would lie to the
+    // operator (the exact bug: a deleted instance still showed chats). So we
+    // revalidate against Evolution on EVERY state read, throttled so we never
+    // hammer the API (at most one probe per PROBE_THROTTLE_SECONDS per
+    // instance; the connection.update webhook still pushes faster updates).
+    if (connectionState !== null) {
+      const probedRecently = await this.redis.get(
+        RedisKeys.instanceProbeAt(instancia),
+      );
 
-      if (probe.status === 'absent') {
-        // Evolution CONFIRMED (404) the instance no longer exists — safe to reset.
-        this.logger.warn(`Instance ${instancia} not found on Evolution API, resetting Redis state`);
-        await Promise.all([
-          this.redis.del(RedisKeys.instanceState(instancia)),
-          this.redis.del(RedisKeys.syncStatus(instancia)),
-        ]);
-        return { instanceExists: false, connectionState: null, syncStatus: null };
-      }
+      if (!probedRecently) {
+        await this.redis.set(
+          RedisKeys.instanceProbeAt(instancia),
+          Date.now().toString(),
+          'EX',
+          OnboardingService.PROBE_THROTTLE_SECONDS,
+        );
 
-      if (probe.status === 'exists' && probe.state === 'open') {
-        // Webhook was missed but the instance is connected — reconcile.
-        await this.redis.set(RedisKeys.instanceState(instancia), 'open');
-        await this.updateTenantRegistry(instancia, 'open');
-        connectionState = 'open';
-        this.logger.log(`onboarding.connection-reconciled instancia=${instancia} (webhook missed)`);
+        const probe = await this.probeInstance(instancia);
+
+        if (probe.status === 'absent') {
+          // Evolution CONFIRMED (404) the instance no longer exists. Reset the
+          // stale Redis state so the panel stops serving dead conversations and
+          // routes the operator back to (re)connect.
+          this.logger.warn(
+            `Instance ${instancia} not found on Evolution API, resetting Redis state`,
+          );
+          await Promise.all([
+            this.redis.del(RedisKeys.instanceState(instancia)),
+            this.redis.del(RedisKeys.syncStatus(instancia)),
+          ]);
+          await this.updateTenantRegistry(instancia, 'absent', 'pending');
+          return { instanceExists: false, connectionState: null, syncStatus: null };
+        }
+
+        if (probe.status === 'exists' && probe.state !== connectionState) {
+          // Drift between Redis and Evolution (a connection.update webhook was
+          // missed, in either direction) — reconcile to the real state.
+          await this.redis.set(RedisKeys.instanceState(instancia), probe.state);
+          await this.updateTenantRegistry(instancia, probe.state);
+          connectionState = probe.state;
+          this.logger.log(
+            `onboarding.state-reconciled instancia=${instancia} -> ${probe.state}`,
+          );
+        }
+        // probe.status === 'unknown' (Evolution unreachable): keep current state
+        // — a transient error must never wipe a real instance's state.
       }
-      // probe.status === 'unknown' (Evolution unreachable): keep the current state
-      // — a transient error must never wipe a real instance's state.
     }
 
     return {
@@ -85,23 +111,7 @@ export class OnboardingService {
   private async probeInstance(
     instancia: string,
   ): Promise<{ status: 'exists'; state: string } | { status: 'absent' } | { status: 'unknown' }> {
-    try {
-      const res = await this.evolution.getConnectionState(instancia);
-      const instanceObj = (res as Record<string, unknown>)?.instance as
-        | Record<string, unknown>
-        | undefined;
-      const state = instanceObj?.state ?? (res as Record<string, unknown>)?.state;
-      return { status: 'exists', state: typeof state === 'string' ? state : 'close' };
-    } catch (err) {
-      const msg = (err as Error).message ?? '';
-      if (msg.includes('404') || msg.toLowerCase().includes('does not exist')) {
-        return { status: 'absent' };
-      }
-      this.logger.warn(
-        `probeInstance: Evolution unreachable for ${instancia}: ${msg}`,
-      );
-      return { status: 'unknown' };
-    }
+    return this.evolution.probeState(instancia);
   }
 
   async createInstance(instancia: string): Promise<{ instanceName: string; state: string }> {

@@ -7,7 +7,8 @@ export type NexusEventType =
   | 'handoff.triggered'
   | 'payment.approved'
   | 'note.added'
-  | 'lead.hot';
+  | 'lead.hot'
+  | 'connection.update';
 
 export interface NexusEvent {
   type: NexusEventType;

@@ -272,11 +272,25 @@ export class WebhookService {
 
     const mappedState = state === 'open' ? 'open' : state === 'connecting' ? 'connecting' : 'close';
 
+    const prev = await this.redis.get(RedisKeys.instanceState(instanceName));
+
     // Persist to Redis
     await this.redis.set(RedisKeys.instanceState(instanceName), mappedState);
 
     // Update tenant registry
     await this.updateTenantConnectionState(instanceName, mappedState);
+
+    // Push the change to the operator's UI in real time (only on transition, to
+    // avoid spamming clients on repeated identical webhooks).
+    if (prev !== mappedState) {
+      await this.publisher.publish({
+        type: 'connection.update',
+        instancia: instanceName,
+        jid: '',
+        ts: Date.now(),
+        payload: { state: mappedState },
+      });
+    }
 
     this.logger.log(`onboarding.connection-${mappedState} instance=${instanceName}`);
   }
