@@ -13,8 +13,9 @@ describe('WebhookService indexes processed conversations', () => {
     } as any;
     const publisher = { publish: vi.fn(async () => undefined) } as any;
     const index = { addJid: vi.fn(async () => undefined) } as any;
+    const tenants = { updateState: vi.fn(async () => undefined) } as any;
 
-    const svc = new WebhookService(redis, publisher, index);
+    const svc = new WebhookService(redis, publisher, index, tenants);
 
     await svc.processEvolutionEvent({
       event: 'messages.upsert',

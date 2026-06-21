@@ -4,6 +4,7 @@ import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { RedisKeys } from '@nexus/shared';
 import { EventTranslator } from './event.translator';
 import { EventPublisher } from './event.publisher';
+import { ConversationProjectionService } from '../conversation/conversation-projection.service';
 
 @Injectable()
 export class KeyspaceListener implements OnModuleInit, OnModuleDestroy {
@@ -31,6 +32,7 @@ export class KeyspaceListener implements OnModuleInit, OnModuleDestroy {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly translator: EventTranslator,
     private readonly publisher: EventPublisher,
+    private readonly projection: ConversationProjectionService,
   ) {}
 
   async onModuleInit() {
@@ -50,12 +52,21 @@ export class KeyspaceListener implements OnModuleInit, OnModuleDestroy {
         if (event) {
           await this.publisher.publish(event);
 
-          // Self-heal the conversation index on every persisted message.
-          if (event.type === 'message.received' && event.instancia && event.jid) {
-            await this.redis
-              .sadd(RedisKeys.conversationIndex(event.instancia), event.jid)
+          if (event.instancia && event.jid) {
+            // Self-heal the conversation index on every persisted message.
+            if (event.type === 'message.received') {
+              await this.redis
+                .sadd(RedisKeys.conversationIndex(event.instancia), event.jid)
+                .catch((err: Error) =>
+                  this.logger.warn(`index self-heal failed: ${err.message}`),
+                );
+            }
+            // Write-behind: projeta o estado atual do Redis no Postgres. Cobre as
+            // mudanças dirigidas pelo N8N (followup_step, chathistory, payment).
+            await this.projection
+              .project(event.instancia, event.jid)
               .catch((err: Error) =>
-                this.logger.warn(`index self-heal failed: ${err.message}`),
+                this.logger.warn(`projection failed: ${err.message}`),
               );
           }
         }

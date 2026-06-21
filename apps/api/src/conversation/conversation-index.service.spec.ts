@@ -44,20 +44,18 @@ describe('ConversationIndexService', () => {
   });
 
   it('backfills an empty index from existing followup_step and chathistory keys', async () => {
-    const registry = JSON.stringify({ tenants: [{ instancia: 'nexusdev' }] });
     const byPattern: Record<string, string[]> = {
       'chat:nexusdev:*:followup_step': ['chat:nexusdev:5511@s.whatsapp.net:followup_step'],
       'chathistory:nexusdev-*': ['chathistory:nexusdev-262246475239430@lid'],
     };
     const r = {
-      get: vi.fn(async (k: string) => (k === 'tenant:registry' ? registry : null)),
       scard: vi.fn(async () => 0), // index empty → backfill runs
       scan: vi.fn(async (_c: string, _m: string, pattern: string) => ['0', byPattern[pattern] ?? []]),
       sadd: vi.fn(async () => 1),
     } as any;
     const s = new ConversationIndexService(r);
 
-    await s.onApplicationBootstrap();
+    await s.backfillIfEmpty('nexusdev');
 
     expect(r.sadd).toHaveBeenCalledTimes(1);
     const [key, ...members] = r.sadd.mock.calls[0];
@@ -69,16 +67,14 @@ describe('ConversationIndexService', () => {
   });
 
   it('skips backfill when the index already has entries', async () => {
-    const registry = JSON.stringify({ tenants: [{ instancia: 'nexusdev' }] });
     const r = {
-      get: vi.fn(async () => registry),
       scard: vi.fn(async () => 5), // already populated
       scan: vi.fn(async () => ['0', []]),
       sadd: vi.fn(async () => 1),
     } as any;
     const s = new ConversationIndexService(r);
 
-    await s.onApplicationBootstrap();
+    await s.backfillIfEmpty('nexusdev');
 
     expect(r.scan).not.toHaveBeenCalled();
     expect(r.sadd).not.toHaveBeenCalled();

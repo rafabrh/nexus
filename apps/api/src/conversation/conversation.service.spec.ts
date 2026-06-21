@@ -2,22 +2,20 @@ import { describe, it, expect, vi } from 'vitest';
 import { ConversationService } from './conversation.service';
 
 describe('ConversationService', () => {
-  it('lists conversations from the index, not a global scan', async () => {
-    const repo = {
-      buildListItem: vi.fn(async (_i: string, jid: string) => ({
-        jid, lastActivity: new Date().toISOString(), stage: 'S0', aiState: 'ON',
-      })),
-    } as any;
-    const index = { listJids: vi.fn(async () => ['a@s.whatsapp.net', 'b@lid']) } as any;
-    const redis = { get: vi.fn(async () => null), set: vi.fn(async () => 'OK') } as any;
-    const svc = new ConversationService(repo, {} as any, {} as any, redis, index);
+  it('lists conversations from the durable Postgres projection, not a Redis fan-out', async () => {
+    const items = [
+      { jid: 'a@s.whatsapp.net', stage: 'S0', aiState: 'ON' },
+      { jid: 'b@lid', stage: 'S0', aiState: 'ON' },
+    ];
+    const projection = { list: vi.fn(async () => items), project: vi.fn() } as any;
+    const svc = new ConversationService({} as any, {} as any, {} as any, {} as any, {} as any, projection);
 
-    const result = await svc.listConversations('shk', {});
-    expect(index.listJids).toHaveBeenCalledWith('shk');
+    const result = await svc.listConversations('shk', { stage: 'S0' });
+    expect(projection.list).toHaveBeenCalledWith('shk', { stage: 'S0' });
     expect(result).toHaveLength(2);
   });
 
-  it('persists the outbound message, pauses AI, and indexes the jid', async () => {
+  it('persists the outbound message, pauses AI, indexes the jid, and reprojects', async () => {
     const calls: any = { rpush: [], set: [] };
     const redis = {
       get: vi.fn(async () => null),
@@ -27,7 +25,8 @@ describe('ConversationService', () => {
     } as any;
     const evolution = { sendTextMessage: vi.fn(async () => undefined) } as any;
     const index = { addJid: vi.fn(async () => undefined), listJids: vi.fn() } as any;
-    const svc = new ConversationService({} as any, evolution, {} as any, redis, index);
+    const projection = { list: vi.fn(), project: vi.fn(async () => undefined) } as any;
+    const svc = new ConversationService({} as any, evolution, {} as any, redis, index, projection);
 
     await svc.sendMessage('shk', '5511@s.whatsapp.net', 'oi');
 
@@ -36,6 +35,7 @@ describe('ConversationService', () => {
     expect(JSON.parse(calls.rpush[0][1]).data.content).toBe('oi');
     expect(redis.set).toHaveBeenCalled(); // humanControlUntil
     expect(index.addJid).toHaveBeenCalledWith('shk', '5511@s.whatsapp.net');
+    expect(projection.project).toHaveBeenCalledWith('shk', '5511@s.whatsapp.net');
   });
 
   it('normalizes a bare phone to the canonical jid when updating stage', async () => {
@@ -45,13 +45,15 @@ describe('ConversationService', () => {
     } as any;
     const index = { addJid: vi.fn(async () => undefined) } as any;
     const publisher = { publish: vi.fn(async () => undefined) } as any;
-    const svc = new ConversationService({} as any, {} as any, publisher, redis, index);
+    const projection = { list: vi.fn(), project: vi.fn(async () => undefined) } as any;
+    const svc = new ConversationService({} as any, {} as any, publisher, redis, index, projection);
 
     await svc.updateStage('shk', '5511952480228', 'S3');
 
     // followup_step key uses the canonical jid, not the bare phone
     expect(calls.set[0][0]).toBe('chat:shk:5511952480228@s.whatsapp.net:followup_step');
     expect(index.addJid).toHaveBeenCalledWith('shk', '5511952480228@s.whatsapp.net');
+    expect(projection.project).toHaveBeenCalledWith('shk', '5511952480228@s.whatsapp.net');
     expect(publisher.publish).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'funnel.changed', jid: '5511952480228@s.whatsapp.net', payload: { stage: 'S3' } }),
     );

@@ -1,9 +1,10 @@
 import { Injectable, Inject, Logger, NotFoundException } from '@nestjs/common';
-import type Redis from 'ioredis';
-import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { randomUUID } from 'crypto';
-import { RedisKeys } from '@nexus/shared';
+import { and, asc, eq, lte } from 'drizzle-orm';
+import { DB, type Database } from '../core/db/db.module';
+import { reminders } from '../core/db/schema';
 import type { Reminder, ReminderStatus } from '@nexus/shared';
+import type { ReminderRow } from '../core/db/schema';
 import { EventPublisher } from '../realtime/event.publisher';
 
 @Injectable()
@@ -11,13 +12,22 @@ export class RemindersService {
   private readonly logger = new Logger(RemindersService.name);
 
   constructor(
-    @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    @Inject(DB) private readonly db: Database,
     private readonly publisher: EventPublisher,
   ) {}
 
-  /**
-   * Create a new reminder.
-   */
+  private toDto(row: ReminderRow): Reminder {
+    return {
+      id: row.id,
+      instancia: row.instancia,
+      jid: row.jid,
+      text: row.text,
+      triggerAt: row.triggerAt.getTime(),
+      createdBy: row.createdBy,
+      status: row.status as ReminderStatus,
+    };
+  }
+
   async create(
     instancia: string,
     jid: string,
@@ -26,167 +36,106 @@ export class RemindersService {
     createdBy: string,
   ): Promise<Reminder> {
     const id = randomUUID();
-    const reminder: Reminder = {
-      id,
-      instancia,
-      jid,
-      text,
-      triggerAt,
-      createdBy,
-      status: 'pending',
-    };
-
-    // Store reminder hash
-    const hashKey = RedisKeys.reminder(instancia, id);
-    await this.redis.set(hashKey, JSON.stringify(reminder));
-
-    // Add to sorted set (score = triggerAt)
-    const setKey = RedisKeys.reminders(instancia);
-    await this.redis.zadd(setKey, triggerAt, id);
-
-    this.logger.log(`Reminder created: ${id} for ${instancia}/${jid} at ${new Date(triggerAt).toISOString()}`);
-    return reminder;
+    const [row] = await this.db
+      .insert(reminders)
+      .values({
+        id,
+        instancia,
+        jid,
+        text,
+        triggerAt: new Date(triggerAt),
+        createdBy,
+        status: 'pending',
+      })
+      .returning();
+    this.logger.log(
+      `Reminder created: ${id} for ${instancia}/${jid} at ${new Date(triggerAt).toISOString()}`,
+    );
+    return this.toDto(row);
   }
 
-  /**
-   * List reminders for a tenant, optionally filtered by status.
-   */
   async list(instancia: string, status?: ReminderStatus): Promise<Reminder[]> {
-    const setKey = RedisKeys.reminders(instancia);
-    const ids = await this.redis.zrange(setKey, 0, -1);
-
-    if (ids.length === 0) return [];
-
-    const pipeline = this.redis.pipeline();
-    for (const id of ids) {
-      pipeline.get(RedisKeys.reminder(instancia, id));
-    }
-    const results = await pipeline.exec();
-
-    const reminders: Reminder[] = [];
-    for (const [, val] of results!) {
-      if (val) {
-        try {
-          const reminder: Reminder = JSON.parse(val as string);
-          if (!status || reminder.status === status) {
-            reminders.push(reminder);
-          }
-        } catch {
-          // skip malformed
-        }
-      }
-    }
-
-    // Sort by triggerAt ascending
-    return reminders.sort((a, b) => a.triggerAt - b.triggerAt);
+    const where = status
+      ? and(eq(reminders.instancia, instancia), eq(reminders.status, status))
+      : eq(reminders.instancia, instancia);
+    const rows = await this.db
+      .select()
+      .from(reminders)
+      .where(where)
+      .orderBy(asc(reminders.triggerAt));
+    return rows.map((r) => this.toDto(r));
   }
 
-  /**
-   * Update a reminder (dismiss, change text, etc.).
-   */
   async update(
     instancia: string,
     id: string,
     updates: { text?: string; triggerAt?: number; status?: ReminderStatus },
   ): Promise<Reminder> {
-    const hashKey = RedisKeys.reminder(instancia, id);
-    const raw = await this.redis.get(hashKey);
-    if (!raw) {
+    const set: Partial<ReminderRow> = {};
+    if (updates.text !== undefined) set.text = updates.text;
+    if (updates.status !== undefined) set.status = updates.status;
+    if (updates.triggerAt !== undefined) set.triggerAt = new Date(updates.triggerAt);
+
+    const [row] = await this.db
+      .update(reminders)
+      .set(set)
+      .where(and(eq(reminders.id, id), eq(reminders.instancia, instancia)))
+      .returning();
+    if (!row) {
       throw new NotFoundException(`Reminder ${id} not found`);
     }
-
-    const reminder: Reminder = JSON.parse(raw);
-
-    if (updates.text !== undefined) reminder.text = updates.text;
-    if (updates.status !== undefined) reminder.status = updates.status;
-    if (updates.triggerAt !== undefined) {
-      reminder.triggerAt = updates.triggerAt;
-      // Update sorted set score
-      const setKey = RedisKeys.reminders(instancia);
-      await this.redis.zadd(setKey, updates.triggerAt, id);
-    }
-
-    await this.redis.set(hashKey, JSON.stringify(reminder));
-
     this.logger.log(`Reminder updated: ${id} for ${instancia}`);
-    return reminder;
+    return this.toDto(row);
   }
 
-  /**
-   * Delete a reminder completely.
-   */
   async remove(instancia: string, id: string): Promise<void> {
-    const hashKey = RedisKeys.reminder(instancia, id);
-    const setKey = RedisKeys.reminders(instancia);
-
-    await this.redis.del(hashKey);
-    await this.redis.zrem(setKey, id);
-
+    const deleted = await this.db
+      .delete(reminders)
+      .where(and(eq(reminders.id, id), eq(reminders.instancia, instancia)))
+      .returning({ id: reminders.id });
+    if (deleted.length === 0) {
+      throw new NotFoundException(`Reminder ${id} not found`);
+    }
     this.logger.log(`Reminder deleted: ${id} for ${instancia}`);
   }
 
   /**
-   * Check for due reminders and emit events.
-   * Called by the scheduler interval.
+   * Dispara lembretes vencidos. Antes varria todas as sorted sets `reminders:*`
+   * (O(keyspace)); agora é uma única query indexada por (status, trigger_at).
    */
   async processDueReminders(): Promise<void> {
-    // We need to scan all tenant registries to find instances.
-    // For efficiency, scan all reminders:* sorted sets.
-    const setKeys = await this.scanKeys('reminders:*');
+    const due = await this.db
+      .select()
+      .from(reminders)
+      .where(and(eq(reminders.status, 'pending'), lte(reminders.triggerAt, new Date())));
 
-    for (const setKey of setKeys) {
-      const instancia = setKey.replace('reminders:', '');
-      const now = Date.now();
+    for (const row of due) {
+      try {
+        // Marca como triggered de forma condicional — se outra réplica já pegou,
+        // o WHERE status='pending' garante que só uma dispara o evento.
+        const claimed = await this.db
+          .update(reminders)
+          .set({ status: 'triggered' })
+          .where(and(eq(reminders.id, row.id), eq(reminders.status, 'pending')))
+          .returning({ id: reminders.id });
+        if (claimed.length === 0) continue;
 
-      // Get all reminders due (score <= now)
-      const dueIds = await this.redis.zrangebyscore(setKey, 0, now);
+        await this.publisher.publish({
+          type: 'note.added', // Reaproveita note.added para a notificação de lembrete
+          instancia: row.instancia,
+          jid: row.jid,
+          ts: Date.now(),
+          payload: {
+            reminderId: row.id,
+            text: row.text,
+            reminderTriggered: true,
+          },
+        });
 
-      for (const id of dueIds) {
-        const hashKey = RedisKeys.reminder(instancia, id);
-        const raw = await this.redis.get(hashKey);
-        if (!raw) {
-          // Orphaned entry — clean up
-          await this.redis.zrem(setKey, id);
-          continue;
-        }
-
-        try {
-          const reminder: Reminder = JSON.parse(raw);
-          if (reminder.status !== 'pending') continue;
-
-          // Mark as triggered
-          reminder.status = 'triggered';
-          await this.redis.set(hashKey, JSON.stringify(reminder));
-
-          // Emit realtime event
-          await this.publisher.publish({
-            type: 'note.added', // Reuse note.added for reminder notification
-            instancia,
-            jid: reminder.jid,
-            ts: Date.now(),
-            payload: {
-              reminderId: reminder.id,
-              text: reminder.text,
-              reminderTriggered: true,
-            },
-          });
-
-          this.logger.log(`Reminder triggered: ${id} for ${instancia}/${reminder.jid}`);
-        } catch (err: any) {
-          this.logger.warn(`Failed to process reminder ${id}: ${err.message}`);
-        }
+        this.logger.log(`Reminder triggered: ${row.id} for ${row.instancia}/${row.jid}`);
+      } catch (err: any) {
+        this.logger.warn(`Failed to process reminder ${row.id}: ${err.message}`);
       }
     }
-  }
-
-  private async scanKeys(pattern: string): Promise<string[]> {
-    const results: string[] = [];
-    let cursor = '0';
-    do {
-      const [next, keys] = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
-      cursor = next;
-      results.push(...keys);
-    } while (cursor !== '0');
-    return results;
   }
 }

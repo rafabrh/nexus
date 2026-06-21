@@ -10,7 +10,11 @@
     "start:prod": "node dist/main",
     "clean": "rimraf dist",
     "lint": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@fastify/cookie": "^8.3.0",
@@ -30,6 +34,7 @@
     "class-transformer": "^0.5",
     "class-validator": "^0.14",
     "cockatiel": "^3.2",
+    "drizzle-orm": "^0.45.2",
     "fastify": "^4.28.1",
     "googleapis": "^140",
     "ioredis": "^5.4",
@@ -37,6 +42,7 @@
     "nestjs-pino": "^4.1",
     "pino": "^9.3",
     "pino-pretty": "^11.2",
+    "postgres": "^3.4.9",
     "prom-client": "^15.1",
     "reflect-metadata": "^0.2",
     "resend": "^3.5",
@@ -47,6 +53,7 @@
     "@nestjs/cli": "^10.4",
     "@nestjs/schematics": "^10.1",
     "@nestjs/testing": "^10.4",
+    "drizzle-kit": "^0.31.10",
     "rimraf": "^5.0",
     "supertest": "^7.0",
     "typescript": "^5.5",

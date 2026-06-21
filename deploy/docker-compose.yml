@@ -14,6 +14,7 @@ services:
       - NODE_ENV=production
       - PORT=4000
       - REDIS_URL=redis://:${REDIS_PASSWORD}@nexus-redis:6379
+      - DATABASE_URL=postgres://nexus:${POSTGRES_PASSWORD}@nexus-postgres:5432/nexus
       - EVOLUTION_API_URL=${EVOLUTION_API_URL}
       - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
       - SHEETS_DOCUMENT_ID=${SHEETS_DOCUMENT_ID}
@@ -35,6 +36,36 @@ services:
     depends_on:
       nexus-redis:
         condition: service_healthy
+      nexus-postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+
+  # Postgres é o sistema de registro do painel (tenants, usuários, reminders,
+  # quick replies e a projeção durável de conversas). O Redis segue como
+  # barramento do N8N. As migrations são aplicadas no boot do nexus-api.
+  nexus-postgres:
+    image: postgres:16-alpine
+    container_name: nexus-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=nexus
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=nexus
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - nexus-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexus -d nexus"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     deploy:
       resources:
         limits:
@@ -53,8 +84,8 @@ services:
       --save 900 1
       --save 300 10
       --notify-keyspace-events KEA
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
+      --maxmemory 384mb
+      --maxmemory-policy volatile-lru
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
@@ -69,7 +100,35 @@ services:
     deploy:
       resources:
         limits:
-          memory: 300M
+          memory: 512M
+
+  # Backup off-host: o RDB/AOF no volume redis-data NAO e backup (perda do
+  # volume = perda do dado). Este sidecar tira um snapshot RDB a cada 6h para
+  # ./backups, retem 7 dias e deve ser sincronizado para object storage
+  # (ex.: cron no host com `rclone copy ./backups remote:nexus-redis-backups`).
+  nexus-redis-backup:
+    image: redis:7-alpine
+    container_name: nexus-redis-backup
+    restart: unless-stopped
+    depends_on:
+      nexus-redis:
+        condition: service_healthy
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - ./backups:/backups
+    networks:
+      - nexus-network
+    entrypoint:
+      - sh
+      - -c
+      - |
+        while true; do
+          redis-cli -h nexus-redis -a "$$REDIS_PASSWORD" --no-auth-warning \
+            --rdb /backups/dump-$$(date +%Y%m%d-%H%M).rdb || echo "backup falhou";
+          find /backups -name 'dump-*.rdb' -mtime +7 -delete;
+          sleep 21600;
+        done
 
   prometheus:
     image: prom/prometheus:v2.53.0
@@ -88,6 +147,7 @@ services:
 
 volumes:
   redis-data:
+  postgres-data:
   prometheus-data:
 
 networks:

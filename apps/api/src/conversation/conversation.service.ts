@@ -9,6 +9,7 @@ import type {
 } from '@nexus/shared';
 import { ConversationRepository } from './conversation.repository';
 import { ConversationIndexService } from './conversation-index.service';
+import { ConversationProjectionService } from './conversation-projection.service';
 import { EvolutionClient } from '../whatsapp/evolution.client';
 import { EventPublisher } from '../realtime/event.publisher';
 
@@ -22,70 +23,17 @@ export class ConversationService {
     private readonly publisher: EventPublisher,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly index: ConversationIndexService,
+    private readonly projection: ConversationProjectionService,
   ) {}
 
   async listConversations(
     instancia: string,
     filters: { stage?: string; search?: string; aiState?: string },
   ): Promise<ConversationListItem[]> {
-    // Cache-aside: check for cached result (only for unfiltered requests)
-    const hasFilters = filters.stage || filters.search || filters.aiState;
-    if (!hasFilters) {
-      const cached = await this.redis.get(RedisKeys.cacheConversations(instancia));
-      if (cached) {
-        try {
-          return JSON.parse(cached) as ConversationListItem[];
-        } catch {
-          // Corrupted cache, fall through to rebuild
-        }
-      }
-    }
-
-    // 1. Discover all JIDs from the per-tenant index (no global SCAN)
-    const jids = await this.index.listJids(instancia);
-
-    // 2. Build ConversationListItem for each JID in parallel
-    const conversations = await Promise.all(
-      jids.map((jid) => this.repo.buildListItem(instancia, jid)),
-    );
-
-    // 3. Sort by lastActivity descending
-    const sorted = conversations.sort(
-      (a, b) =>
-        new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime(),
-    );
-
-    // 4. Cache unfiltered result (TTL 30s)
-    if (!hasFilters) {
-      await this.redis.set(
-        RedisKeys.cacheConversations(instancia),
-        JSON.stringify(sorted),
-        'EX',
-        30,
-      );
-    }
-
-    // 5. Apply filters (after caching the full list)
-    let result = sorted;
-
-    if (filters.stage) {
-      result = result.filter((c) => c.stage === filters.stage);
-    }
-
-    if (filters.aiState) {
-      result = result.filter((c) => c.aiState === filters.aiState);
-    }
-
-    if (filters.search) {
-      const term = filters.search.toLowerCase();
-      result = result.filter(
-        (c) =>
-          c.contactName?.toLowerCase().includes(term) ||
-          c.jid.toLowerCase().includes(term),
-      );
-    }
-
-    return result;
+    // Lê da projeção Postgres: uma query indexada por (instancia, last_activity),
+    // sem fan-out de N chaves Redis e sem o cache-aside de 30s que servia para
+    // amortizar aquele fan-out. aiState é recomputado na leitura (sensível ao tempo).
+    return this.projection.list(instancia, filters);
   }
 
   async getConversationDetail(instancia: string, jid: string): Promise<ConversationDetail> {
@@ -122,11 +70,13 @@ export class ConversationService {
 
   async addTag(instancia: string, jid: string, tag: string): Promise<{ message: string }> {
     await this.repo.addTag(instancia, jid, tag);
+    await this.projection.project(instancia, jid); // tags não são watched por keyspace
     return { message: 'Tag adicionada' };
   }
 
   async removeTag(instancia: string, jid: string, tag: string): Promise<{ message: string }> {
     await this.repo.removeTag(instancia, jid, tag);
+    await this.projection.project(instancia, jid);
     return { message: 'Tag removida' };
   }
 
@@ -143,7 +93,7 @@ export class ConversationService {
     await this.redis.set(RedisKeys.humanControlUntil(instancia, jid), String(until));
 
     await this.index.addJid(instancia, jid);
-    await this.redis.del(RedisKeys.cacheConversations(instancia));
+    await this.projection.project(instancia, jid);
 
     this.logger.log(`Message sent + persisted for ${instancia}/${jid}`);
     return { message: 'Mensagem enviada' };
@@ -160,6 +110,7 @@ export class ConversationService {
     const key = RedisKeys.followupStep(instancia, canonicalJid);
     await this.redis.set(key, stage);
     await this.index.addJid(instancia, canonicalJid);
+    await this.projection.project(instancia, canonicalJid);
 
     await this.publisher.publish({
       type: 'funnel.changed',
@@ -183,6 +134,7 @@ export class ConversationService {
     } else {
       await this.redis.del(key);
     }
+    await this.projection.project(instancia, jid); // isHot manual não é watched por keyspace
 
     await this.publisher.publish({
       type: 'lead.hot',

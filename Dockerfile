@@ -37,6 +37,9 @@ COPY --from=builder --chown=nexus:nexus /app/packages/shared/dist ./packages/sha
 COPY --from=builder --chown=nexus:nexus /app/packages/shared/package.json ./packages/shared/
 COPY --from=builder --chown=nexus:nexus /app/apps/api/dist ./apps/api/dist
 COPY --from=builder --chown=nexus:nexus /app/apps/api/package.json ./apps/api/
+# Drizzle migrations are applied at boot by main.ts (drizzle-kit is dev-only and
+# pruned from this image, so the SQL files must travel with it).
+COPY --from=builder --chown=nexus:nexus /app/apps/api/drizzle ./apps/api/drizzle
 
 RUN mkdir -p /secrets && chown nexus:nexus /secrets
 

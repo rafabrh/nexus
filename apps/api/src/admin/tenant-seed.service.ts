@@ -5,10 +5,11 @@ import { TenantService } from './tenant.service';
 /**
  * Dev-only safety net for the tenant registry.
  *
- * The whole login flow resolves an email to a tenant via the Redis
- * `tenant:registry` key. Against a fresh/empty Redis that key is missing, so
- * every magic-link request resolves to "unknown email" and nobody can log in.
- * This seeds a single admin tenant on boot so local development just works.
+ * The whole login flow resolves an email to a tenant via Postgres
+ * (TenantRepository.findByEmail). Against a fresh/empty database there are no
+ * tenants, so every magic-link request resolves to "unknown email" and nobody
+ * can log in. This seeds a single admin tenant on boot so local development just
+ * works.
  *
  * Two independent guards keep this out of production:
  *  1. NODE_ENV === 'production' → never runs.

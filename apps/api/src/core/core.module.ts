@@ -3,6 +3,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { TerminusModule } from '@nestjs/terminus';
 import { RedisModule } from './redis/redis.module';
 import { RedisService } from './redis/redis.service';
+import { DbModule } from './db/db.module';
 import { HealthModule } from './health/health.module';
 import { MetricsService } from './metrics/metrics.service';
 import { MetricsController } from './metrics/metrics.controller';
@@ -11,6 +12,7 @@ import { MetricsController } from './metrics/metrics.controller';
 @Module({
   imports: [
     RedisModule,
+    DbModule,
     LoggerModule.forRoot({
       pinoHttp: {
         transport:

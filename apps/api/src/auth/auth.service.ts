@@ -9,7 +9,8 @@ import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { NexusJwtService } from './jwt.service';
 import { MagicLinkService } from './magic-link.service';
 import { RedisKeys } from '@nexus/shared';
-import type { TenantRegistry, TenantEntry } from '@nexus/shared';
+import type { TenantEntry } from '@nexus/shared';
+import { TenantRepository } from '../admin/tenant.repository';
 
 interface TokenPair {
   accessToken: string;
@@ -24,6 +25,7 @@ export class AuthService {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly jwt: NexusJwtService,
     private readonly magicLink: MagicLinkService,
+    private readonly tenants: TenantRepository,
   ) {}
 
   /**
@@ -142,18 +144,11 @@ export class AuthService {
 
   /**
    * Find the tenant entry that contains the given email.
+   * Resolvido via índice Postgres ix_user_email — O(log n), não varredura de blob.
    */
   private async findTenantByEmail(
     email: string,
   ): Promise<TenantEntry | null> {
-    const raw = await this.redis.get(RedisKeys.tenantRegistry());
-    if (!raw) return null;
-
-    const registry: TenantRegistry = JSON.parse(raw);
-    return (
-      registry.tenants.find((t) =>
-        t.users.some((u) => u.email.toLowerCase() === email),
-      ) ?? null
-    );
+    return this.tenants.findByEmail(email);
   }
 }

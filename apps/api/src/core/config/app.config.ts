@@ -10,6 +10,10 @@ export class AppConfig {
   @IsString()
   REDIS_PASSWORD?: string;
 
+  // ---- Postgres (sistema de registro) ----
+  @IsString()
+  DATABASE_URL!: string;
+
   // ---- JWT ----
   @IsString()
   JWT_SECRET!: string;
@@ -37,8 +41,8 @@ export class AppConfig {
   ADMIN_EMAIL: string = 'rafa@shkgroups.com';
 
   // ---- Dev seed (non-production safety net) ----
-  // When SEED_INSTANCE is set AND the tenant registry is empty, the API seeds a
-  // single admin tenant on boot so local logins work against a fresh Redis.
+  // When SEED_INSTANCE is set AND there are no tenants, the API seeds a single
+  // admin tenant on boot so local logins work against a fresh Postgres.
   // Ignored entirely when NODE_ENV=production. SEED_ADMIN_EMAIL falls back to
   // ADMIN_EMAIL when omitted.
   @IsOptional()

@@ -3,7 +3,7 @@ import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { RedisKeys } from '@nexus/shared';
 import type { DashboardData } from '@nexus/shared';
-import { ConversationRepository } from '../conversation/conversation.repository';
+import { ConversationProjectionService } from '../conversation/conversation-projection.service';
 import { SheetsClient } from '../lead/sheets.client';
 
 @Injectable()
@@ -11,7 +11,7 @@ export class DashboardService {
   private readonly logger = new Logger(DashboardService.name);
 
   constructor(
-    private readonly conversationRepo: ConversationRepository,
+    private readonly projection: ConversationProjectionService,
     private readonly sheets: SheetsClient,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
@@ -28,8 +28,8 @@ export class DashboardService {
       }
     }
 
-    const [jids, leadsData] = await Promise.all([
-      this.conversationRepo.findAllJids(instancia),
+    const [activeCount, leadsData] = await Promise.all([
+      this.projection.countActive(instancia), // count indexado no Postgres (era SCAN global)
       this.sheets.getLeadsForDashboard(instancia),
     ]);
 
@@ -37,7 +37,7 @@ export class DashboardService {
       ts: new Date().toISOString(),
       period: 'today',
       leadsNew: leadsData.newToday,
-      leadsActive: jids.length,
+      leadsActive: activeCount,
       leadsQualified: leadsData.qualified,
       leadsPaid: leadsData.paid,
       revenueToday: leadsData.revenueToday,

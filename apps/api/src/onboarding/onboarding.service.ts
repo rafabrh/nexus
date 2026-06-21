@@ -9,9 +9,9 @@ import { ConfigService } from '@nestjs/config';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { RedisKeys } from '@nexus/shared';
-import type { TenantRegistry } from '@nexus/shared';
 import { EvolutionClient } from '../whatsapp/evolution.client';
 import { SyncService } from './sync.service';
+import { TenantRepository } from '../admin/tenant.repository';
 
 export interface OnboardingState {
   instanceExists: boolean;
@@ -28,6 +28,7 @@ export class OnboardingService {
     private readonly evolution: EvolutionClient,
     private readonly config: ConfigService,
     private readonly sync: SyncService,
+    private readonly tenants: TenantRepository,
   ) {}
 
   async getState(instancia: string): Promise<OnboardingState> {
@@ -207,28 +208,12 @@ export class OnboardingService {
     connectionState?: string,
     syncStatus?: string,
   ): Promise<void> {
-    const raw = await this.redis.get(RedisKeys.tenantRegistry());
-    if (!raw) return;
-
     try {
-      const registry: TenantRegistry = JSON.parse(raw);
-      const tenant = registry.tenants.find((t) => t.instancia === instancia);
-      if (!tenant) return;
-
-      if (connectionState !== undefined) {
-        tenant.connectionState = connectionState as TenantRegistry['tenants'][number]['connectionState'];
-      }
-      if (syncStatus !== undefined) {
-        tenant.syncStatus = syncStatus as TenantRegistry['tenants'][number]['syncStatus'];
-      }
-      if (connectionState === 'open' && !tenant.connectedAt) {
-        tenant.connectedAt = new Date().toISOString();
-      }
-
-      registry.version++;
-      await this.redis.set(RedisKeys.tenantRegistry(), JSON.stringify(registry));
+      // UPDATE por linha no Postgres (connectedAt é gravado uma única vez na
+      // primeira conexão pelo próprio repositório).
+      await this.tenants.updateState(instancia, { connectionState, syncStatus });
     } catch {
-      this.logger.warn('Failed to update tenant registry connection state');
+      this.logger.warn('Failed to update tenant connection state');
     }
   }
 }

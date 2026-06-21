@@ -5,6 +5,7 @@ import { RedisKeys } from '@nexus/shared';
 import { EventPublisher } from '../realtime/event.publisher';
 import { resolvePersonalJid } from '../core/whatsapp/jid.util';
 import { ConversationIndexService } from '../conversation/conversation-index.service';
+import { TenantRepository } from '../admin/tenant.repository';
 
 /** Keywords that indicate a hot lead */
 const HOT_KEYWORDS = [
@@ -23,6 +24,7 @@ export class WebhookService {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly publisher: EventPublisher,
     private readonly index: ConversationIndexService,
+    private readonly tenants: TenantRepository,
   ) {}
 
   async processEvolutionEvent(payload: Record<string, unknown>): Promise<void> {
@@ -310,23 +312,12 @@ export class WebhookService {
   }
 
   private async updateTenantConnectionState(instanceName: string, connectionState: string): Promise<void> {
-    const raw = await this.redis.get(RedisKeys.tenantRegistry());
-    if (!raw) return;
-
     try {
-      const registry = JSON.parse(raw);
-      const tenant = registry.tenants?.find((t: any) => t.instancia === instanceName);
-      if (!tenant) return;
-
-      tenant.connectionState = connectionState;
-      if (connectionState === 'open' && !tenant.connectedAt) {
-        tenant.connectedAt = new Date().toISOString();
-      }
-
-      registry.version = (registry.version || 0) + 1;
-      await this.redis.set(RedisKeys.tenantRegistry(), JSON.stringify(registry));
+      // UPDATE por linha no Postgres — sem RMW de blob, sem lost-update contra
+      // um registerTenant/onboarding concorrente.
+      await this.tenants.updateState(instanceName, { connectionState });
     } catch {
-      this.logger.warn('Failed to update tenant registry from webhook');
+      this.logger.warn('Failed to update tenant connection state from webhook');
     }
   }
 }

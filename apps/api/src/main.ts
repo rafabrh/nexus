@@ -8,11 +8,14 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
 import fastifyCookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
+import { migrate } from 'drizzle-orm/postgres-js/migrator';
+import { join } from 'path';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './core/filters/http-exception.filter';
 import { AllExceptionsFilter } from './core/filters/all-exceptions.filter';
 import { RedisIoAdapter } from './realtime/redis-io.adapter';
 import { REDIS_CLIENT } from './core/redis/redis.module';
+import { DB, type Database } from './core/db/db.module';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -23,6 +26,14 @@ async function bootstrap() {
 
   // Pino structured logging
   app.useLogger(app.get(Logger));
+
+  // Apply pending DB migrations BEFORE serving traffic. This must run before
+  // app.listen() — that call fires the onApplicationBootstrap backfills, which
+  // already query Postgres. The drizzle/ folder is shipped in the runtime image
+  // (drizzle-kit is a devDependency and is pruned from production).
+  const migrationsFolder = join(__dirname, '..', 'drizzle');
+  await migrate(app.get<Database>(DB), { migrationsFolder });
+  app.get(Logger).log(`Database migrations applied (${migrationsFolder})`);
 
   // Helmet — security headers
   await app.register(helmet, {

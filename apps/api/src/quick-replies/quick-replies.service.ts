@@ -1,40 +1,35 @@
 import { Injectable, Inject, Logger, NotFoundException } from '@nestjs/common';
-import type Redis from 'ioredis';
-import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { randomUUID } from 'crypto';
-import { RedisKeys } from '@nexus/shared';
+import { and, eq } from 'drizzle-orm';
+import { DB, type Database } from '../core/db/db.module';
+import { quickReplies } from '../core/db/schema';
 import type { QuickReply } from '@nexus/shared';
+import type { QuickReplyRow } from '../core/db/schema';
 
 @Injectable()
 export class QuickRepliesService {
   private readonly logger = new Logger(QuickRepliesService.name);
 
-  constructor(
-    @Inject(REDIS_CLIENT) private readonly redis: Redis,
-  ) {}
+  constructor(@Inject(DB) private readonly db: Database) {}
 
-  /**
-   * List all quick replies for a tenant.
-   */
-  async list(instancia: string): Promise<QuickReply[]> {
-    const key = RedisKeys.quickReplies(instancia);
-    const all = await this.redis.hgetall(key);
-
-    const replies: QuickReply[] = [];
-    for (const [, val] of Object.entries(all)) {
-      try {
-        replies.push(JSON.parse(val));
-      } catch {
-        // skip malformed
-      }
-    }
-
-    return replies.sort((a, b) => a.name.localeCompare(b.name));
+  private toDto(row: QuickReplyRow): QuickReply {
+    return {
+      id: row.id,
+      name: row.name,
+      content: row.content,
+      shortcut: row.shortcut ?? undefined,
+    };
   }
 
-  /**
-   * Create a new quick reply template.
-   */
+  async list(instancia: string): Promise<QuickReply[]> {
+    const rows = await this.db
+      .select()
+      .from(quickReplies)
+      .where(eq(quickReplies.instancia, instancia))
+      .orderBy(quickReplies.name);
+    return rows.map((r) => this.toDto(r));
+  }
+
   async create(
     instancia: string,
     name: string,
@@ -42,48 +37,42 @@ export class QuickRepliesService {
     shortcut?: string,
   ): Promise<QuickReply> {
     const id = randomUUID();
-    const reply: QuickReply = { id, name, content, shortcut };
-
-    const key = RedisKeys.quickReplies(instancia);
-    await this.redis.hset(key, id, JSON.stringify(reply));
-
+    const [row] = await this.db
+      .insert(quickReplies)
+      .values({ id, instancia, name, content, shortcut: shortcut ?? null })
+      .returning();
     this.logger.log(`Quick reply created: ${id} for ${instancia}`);
-    return reply;
+    return this.toDto(row);
   }
 
-  /**
-   * Update an existing quick reply.
-   */
   async update(
     instancia: string,
     id: string,
     updates: { name?: string; content?: string; shortcut?: string },
   ): Promise<QuickReply> {
-    const key = RedisKeys.quickReplies(instancia);
-    const raw = await this.redis.hget(key, id);
-    if (!raw) {
+    const set: Partial<QuickReplyRow> = {};
+    if (updates.name !== undefined) set.name = updates.name;
+    if (updates.content !== undefined) set.content = updates.content;
+    if (updates.shortcut !== undefined) set.shortcut = updates.shortcut;
+
+    const [row] = await this.db
+      .update(quickReplies)
+      .set(set)
+      .where(and(eq(quickReplies.id, id), eq(quickReplies.instancia, instancia)))
+      .returning();
+    if (!row) {
       throw new NotFoundException(`Quick reply ${id} not found`);
     }
-
-    const reply: QuickReply = JSON.parse(raw);
-
-    if (updates.name !== undefined) reply.name = updates.name;
-    if (updates.content !== undefined) reply.content = updates.content;
-    if (updates.shortcut !== undefined) reply.shortcut = updates.shortcut;
-
-    await this.redis.hset(key, id, JSON.stringify(reply));
-
     this.logger.log(`Quick reply updated: ${id} for ${instancia}`);
-    return reply;
+    return this.toDto(row);
   }
 
-  /**
-   * Delete a quick reply.
-   */
   async remove(instancia: string, id: string): Promise<void> {
-    const key = RedisKeys.quickReplies(instancia);
-    const deleted = await this.redis.hdel(key, id);
-    if (deleted === 0) {
+    const deleted = await this.db
+      .delete(quickReplies)
+      .where(and(eq(quickReplies.id, id), eq(quickReplies.instancia, instancia)))
+      .returning({ id: quickReplies.id });
+    if (deleted.length === 0) {
       throw new NotFoundException(`Quick reply ${id} not found`);
     }
     this.logger.log(`Quick reply deleted: ${id} for ${instancia}`);

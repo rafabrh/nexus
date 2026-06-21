@@ -27,11 +27,13 @@ function build(opts: {
   };
   const config = { get: vi.fn((_k: string, d?: string) => d ?? 'http://localhost:4000') };
   const sync = { syncAll: vi.fn() };
+  const tenants = { updateState: vi.fn(async () => undefined) };
   const service = new OnboardingService(
     redis as never,
     evolution as never,
     config as never,
     sync as never,
+    tenants as never,
   );
   return { service, evolution, redis };
 }
