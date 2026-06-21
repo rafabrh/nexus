@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Loader2, QrCode, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
+import { queryClient } from '@/lib/query-client';
 import {
   useOnboardingState,
   useCreateInstance,
@@ -76,9 +77,12 @@ export default function ConnectPage() {
     }
   }, [state?.connectionState, state?.syncStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Redirect when done
+  // Already connected: refresh the conversation caches, then go to the panel.
   useEffect(() => {
     if (phase === 'done') {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       const timer = setTimeout(() => router.replace('/conversations'), 1500);
       return () => clearTimeout(timer);
     }

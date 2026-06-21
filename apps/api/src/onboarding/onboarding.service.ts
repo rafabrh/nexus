@@ -51,31 +51,29 @@ export class OnboardingService {
     const syncStatus = await this.redis.get(RedisKeys.syncStatus(instancia));
 
     // The Evolution instance is the SINGLE SOURCE OF TRUTH for connectivity.
-    // Even when Redis says 'open', the instance may have been deleted or
-    // disconnected externally — serving stale conversations would lie to the
-    // operator (the exact bug: a deleted instance still showed chats). So we
-    // revalidate against Evolution on EVERY state read, throttled so we never
-    // hammer the API (at most one probe per PROBE_THROTTLE_SECONDS per
-    // instance; the connection.update webhook still pushes faster updates).
-    if (connectionState !== null) {
-      const probedRecently = await this.redis.get(
+    // We revalidate against Evolution on EVERY state read — even when Redis has
+    // no record at all — so the panel never (a) serves a deleted instance's
+    // stale chats, nor (b) tries to re-create an instance that already exists on
+    // Evolution (the 409 "foreign instance" bug). Throttled to one probe per
+    // PROBE_THROTTLE_SECONDS; the connection.update webhook pushes faster.
+    const probedRecently = await this.redis.get(
+      RedisKeys.instanceProbeAt(instancia),
+    );
+
+    if (!probedRecently) {
+      await this.redis.set(
         RedisKeys.instanceProbeAt(instancia),
+        Date.now().toString(),
+        'EX',
+        OnboardingService.PROBE_THROTTLE_SECONDS,
       );
 
-      if (!probedRecently) {
-        await this.redis.set(
-          RedisKeys.instanceProbeAt(instancia),
-          Date.now().toString(),
-          'EX',
-          OnboardingService.PROBE_THROTTLE_SECONDS,
-        );
+      const probe = await this.probeInstance(instancia);
 
-        const probe = await this.probeInstance(instancia);
-
-        if (probe.status === 'absent') {
-          // Evolution CONFIRMED (404) the instance no longer exists. Reset the
-          // stale Redis state so the panel stops serving dead conversations and
-          // routes the operator back to (re)connect.
+      if (probe.status === 'absent') {
+        // Evolution CONFIRMED (404) the instance does not exist. Clear any stale
+        // Redis state so the guard routes the operator to create/(re)connect.
+        if (connectionState !== null) {
           this.logger.warn(
             `Instance ${instancia} not found on Evolution API, resetting Redis state`,
           );
@@ -84,22 +82,23 @@ export class OnboardingService {
             this.redis.del(RedisKeys.syncStatus(instancia)),
           ]);
           await this.updateTenantRegistry(instancia, 'absent', 'pending');
-          return { instanceExists: false, connectionState: null, syncStatus: null };
         }
-
-        if (probe.status === 'exists' && probe.state !== connectionState) {
-          // Drift between Redis and Evolution (a connection.update webhook was
-          // missed, in either direction) — reconcile to the real state.
-          await this.redis.set(RedisKeys.instanceState(instancia), probe.state);
-          await this.updateTenantRegistry(instancia, probe.state);
-          connectionState = probe.state;
-          this.logger.log(
-            `onboarding.state-reconciled instancia=${instancia} -> ${probe.state}`,
-          );
-        }
-        // probe.status === 'unknown' (Evolution unreachable): keep current state
-        // — a transient error must never wipe a real instance's state.
+        return { instanceExists: false, connectionState: null, syncStatus: null };
       }
+
+      if (probe.status === 'exists' && probe.state !== connectionState) {
+        // Adopt the real Evolution state. Covers both drift (missed webhook) and
+        // discovery (instance exists on Evolution but Redis had no record yet) —
+        // the latter is what stops the panel from wrongly trying to re-create it.
+        await this.redis.set(RedisKeys.instanceState(instancia), probe.state);
+        await this.updateTenantRegistry(instancia, probe.state);
+        connectionState = probe.state;
+        this.logger.log(
+          `onboarding.state-reconciled instancia=${instancia} -> ${probe.state}`,
+        );
+      }
+      // probe.status === 'unknown' (Evolution unreachable): keep current state
+      // — a transient error must never wipe a real instance's state.
     }
 
     return {
