@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { timingSafeEqual } from 'crypto';
 import { WebhookService } from './webhook.service';
 
 @Controller('webhook')
@@ -35,11 +36,19 @@ export class WebhookController {
       throw new UnauthorizedException('Webhook not configured');
     }
 
-    if (apiKey !== expectedKey) {
+    if (!this.constantTimeEqual(apiKey, expectedKey)) {
       this.logger.warn('webhook.invalid-apikey from Evolution API');
       throw new UnauthorizedException('Invalid API key');
     }
 
     await this.service.processEvolutionEvent(payload);
+  }
+
+  /** Constant-time comparison to avoid leaking the key via timing. */
+  private constantTimeEqual(provided: string | undefined, expected: string): boolean {
+    if (!provided) return false;
+    const a = Buffer.from(provided);
+    const b = Buffer.from(expected);
+    return a.length === b.length && timingSafeEqual(a, b);
   }
 }

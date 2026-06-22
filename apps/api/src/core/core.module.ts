@@ -7,6 +7,7 @@ import { DbModule } from './db/db.module';
 import { HealthModule } from './health/health.module';
 import { MetricsService } from './metrics/metrics.service';
 import { MetricsController } from './metrics/metrics.controller';
+import { MetricsAuthGuard } from './metrics/metrics-auth.guard';
 
 @Global()
 @Module({
@@ -20,6 +21,17 @@ import { MetricsController } from './metrics/metrics.controller';
             ? { target: 'pino-pretty', options: { colorize: true } }
             : undefined,
         level: process.env.LOG_LEVEL ?? 'info',
+        // Never log credentials. pino-http logs req/res headers by default,
+        // which would leak the JWT cookies and Authorization bearer tokens.
+        redact: {
+          paths: [
+            'req.headers.cookie',
+            'req.headers.authorization',
+            'res.headers["set-cookie"]',
+            'req.headers.apikey',
+          ],
+          censor: '[REDACTED]',
+        },
         autoLogging: {
           ignore: (req: { url?: string }) =>
             req.url === '/health' ||
@@ -32,7 +44,7 @@ import { MetricsController } from './metrics/metrics.controller';
     TerminusModule,
     HealthModule,
   ],
-  providers: [RedisService, MetricsService],
+  providers: [RedisService, MetricsService, MetricsAuthGuard],
   controllers: [MetricsController],
   exports: [RedisService, MetricsService],
 })

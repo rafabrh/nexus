@@ -28,6 +28,11 @@ export class JwtAuthGuard implements CanActivate {
     try {
       const payload = await this.jwt.verify(token);
 
+      // A refresh token must never grant API access (it lives 30 days).
+      if (payload.type !== 'access') {
+        throw new UnauthorizedException('Tipo de token invalido');
+      }
+
       // Check if token is blacklisted (logout)
       const blacklisted = await this.redis.get(
         RedisKeys.sessionBlacklist(payload.jti!),

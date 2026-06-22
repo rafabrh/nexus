@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { CoreModule } from './core/core.module';
 import { AuthModule } from './auth/auth.module';
 import { ConversationModule } from './conversation/conversation.module';
@@ -48,6 +49,12 @@ import { validate } from './core/config/app.config';
     OnboardingModule,
     RemindersModule,
     QuickRepliesModule,
+  ],
+  providers: [
+    // Global rate limiting. Without this guard the @Throttle decorators (e.g.
+    // magic-link 5/h) are silently ignored. Default: 60 req / 60s per IP.
+    // NOTE: in-memory storage — for multi-replica, back it with Redis storage.
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}

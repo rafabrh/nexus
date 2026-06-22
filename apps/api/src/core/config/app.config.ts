@@ -1,5 +1,5 @@
 import { plainToInstance, Type } from 'class-transformer';
-import { IsString, IsNumber, IsOptional, Min, validateSync } from 'class-validator';
+import { IsString, IsNumber, IsOptional, Min, MinLength, validateSync } from 'class-validator';
 
 export class AppConfig {
   // ---- Redis ----
@@ -15,7 +15,10 @@ export class AppConfig {
   DATABASE_URL!: string;
 
   // ---- JWT ----
+  // HS256 requires a high-entropy secret of at least 256 bits (32 bytes).
+  // A short/guessable secret makes every token forgeable.
   @IsString()
+  @MinLength(32, { message: 'JWT_SECRET must be at least 32 characters (256-bit)' })
   JWT_SECRET!: string;
 
   @IsOptional()
@@ -89,6 +92,13 @@ export class AppConfig {
   @IsOptional()
   @IsString()
   LOG_LEVEL: string = 'info';
+
+  // ---- Metrics scrape auth ----
+  // Bearer token required to read /metrics. In production, if unset, /metrics is
+  // denied (must be configured); outside production it stays open for dev tools.
+  @IsOptional()
+  @IsString()
+  METRICS_TOKEN?: string;
 
   // ---- Google Sheets ----
   @IsOptional()

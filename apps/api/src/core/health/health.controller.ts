@@ -1,5 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import {
   HealthCheck,
   HealthCheckService,
@@ -10,6 +11,7 @@ import { EvolutionHealthIndicator } from './evolution.health';
 
 @Controller('health')
 @ApiTags('Health')
+@SkipThrottle()
 export class HealthController {
   constructor(
     private readonly health: HealthCheckService,

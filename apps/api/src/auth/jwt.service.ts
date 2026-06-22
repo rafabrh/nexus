@@ -3,12 +3,19 @@ import { ConfigService } from '@nestjs/config';
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
 import { randomUUID } from 'crypto';
 
+export type TokenType = 'access' | 'refresh';
+
 export interface NexusJwtPayload extends JWTPayload {
   sub: string;
   instancia: string;
   role: 'admin' | 'operator';
   jti: string;
+  /** Distinguishes an access token from a refresh token so a long-lived
+   *  refresh token can't be used as an access token (and vice-versa). */
+  type: TokenType;
 }
+
+type SignablePayload = Omit<NexusJwtPayload, 'jti' | 'iat' | 'exp' | 'type'>;
 
 @Injectable()
 export class NexusJwtService {
@@ -28,10 +35,8 @@ export class NexusJwtService {
     );
   }
 
-  async signAccess(
-    payload: Omit<NexusJwtPayload, 'jti' | 'iat' | 'exp'>,
-  ): Promise<string> {
-    return new SignJWT({ ...payload })
+  async signAccess(payload: SignablePayload): Promise<string> {
+    return new SignJWT({ ...payload, type: 'access' satisfies TokenType })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
       .setExpirationTime(`${this.accessTtlSec}s`)
@@ -39,10 +44,8 @@ export class NexusJwtService {
       .sign(this.secret);
   }
 
-  async signRefresh(
-    payload: Omit<NexusJwtPayload, 'jti' | 'iat' | 'exp'>,
-  ): Promise<string> {
-    return new SignJWT({ ...payload })
+  async signRefresh(payload: SignablePayload): Promise<string> {
+    return new SignJWT({ ...payload, type: 'refresh' satisfies TokenType })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
       .setExpirationTime(`${this.refreshTtlSec}s`)
@@ -50,8 +53,12 @@ export class NexusJwtService {
       .sign(this.secret);
   }
 
+  /** Verifies signature + expiry, pinning the algorithm to HS256 to prevent
+   *  algorithm-confusion attacks. Does NOT check the token type — callers must. */
   async verify(token: string): Promise<NexusJwtPayload> {
-    const { payload } = await jwtVerify(token, this.secret);
+    const { payload } = await jwtVerify(token, this.secret, {
+      algorithms: ['HS256'],
+    });
     return payload as NexusJwtPayload;
   }
 }

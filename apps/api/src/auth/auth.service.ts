@@ -91,6 +91,11 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token invalido');
     }
 
+    // Only a refresh token can be exchanged here — never an access token.
+    if (payload.type !== 'refresh') {
+      throw new UnauthorizedException('Refresh token invalido');
+    }
+
     // Check if jti is blacklisted
     const blacklisted = await this.redis.get(
       RedisKeys.sessionBlacklist(payload.jti!),

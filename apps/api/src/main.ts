@@ -4,6 +4,7 @@ import {
   type NestFastifyApplication,
 } from '@nestjs/platform-fastify';
 import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
 import fastifyCookie from '@fastify/cookie';
@@ -40,9 +41,10 @@ async function bootstrap() {
     contentSecurityPolicy: false, // CSP managed by frontend/proxy
   });
 
-  // Fastify cookie plugin
+  // Fastify cookie plugin — reuse the validated JWT secret (no weak fallback).
+  const configService = app.get(ConfigService);
   await app.register(fastifyCookie, {
-    secret: process.env.JWT_SECRET ?? 'cookie-secret',
+    secret: configService.getOrThrow<string>('JWT_SECRET'),
   });
 
   // Global prefix

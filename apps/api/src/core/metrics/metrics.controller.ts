@@ -1,10 +1,14 @@
-import { Controller, Get, Header, Res } from '@nestjs/common';
+import { Controller, Get, Res, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiProduces } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import type { FastifyReply } from 'fastify';
 import { MetricsService } from './metrics.service';
+import { MetricsAuthGuard } from './metrics-auth.guard';
 
 @Controller('metrics')
 @ApiTags('Metrics')
+@SkipThrottle()
+@UseGuards(MetricsAuthGuard)
 export class MetricsController {
   constructor(private readonly metrics: MetricsService) {}
 
