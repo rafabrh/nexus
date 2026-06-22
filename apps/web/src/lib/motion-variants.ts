@@ -2,18 +2,18 @@ import type { Variants } from 'framer-motion';
 
 // Cinematic easing curves
 const EASE_OUT_EXPO = [0.16, 1, 0.3, 1] as const;
-const SPRING_SOFT = { type: 'spring', stiffness: 380, damping: 32 } as const;
-const SPRING_POP = { type: 'spring', stiffness: 460, damping: 26 } as const;
+const SPRING_SOFT = { type: 'spring', stiffness: 360, damping: 24 } as const;
+const SPRING_POP = { type: 'spring', stiffness: 500, damping: 19 } as const;
 
-// ---- Page navigation: bold, cinematic depth (scale + lift + slight blur) ----
+// ---- Page navigation: bold, cinematic depth (scale + lift + blur) ----
 export const pageTransition: Variants = {
-  initial: { opacity: 0, y: 22, scale: 0.965, filter: 'blur(6px)' },
+  initial: { opacity: 0, y: 28, scale: 0.95, filter: 'blur(9px)' },
   animate: { opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' },
-  exit: { opacity: 0, y: -16, scale: 0.98, filter: 'blur(4px)' },
+  exit: { opacity: 0, y: -20, scale: 0.97, filter: 'blur(6px)' },
 };
 
 export const pageTransitionConfig = {
-  duration: 0.5,
+  duration: 0.55,
   ease: EASE_OUT_EXPO,
 };
 
@@ -119,9 +119,9 @@ export const aiMessageEntrance: Variants = {
     scale: 1,
     boxShadow: [
       '0 0 0px rgba(139,92,246,0)',
-      '0 0 28px rgba(139,92,246,0.35)',
+      '0 0 42px rgba(139,92,246,0.55)',
       '0 0 0px rgba(139,92,246,0)',
     ],
-    transition: { duration: 0.7, ease: EASE_OUT_EXPO, boxShadow: { duration: 1.1 } },
+    transition: { duration: 0.7, ease: EASE_OUT_EXPO, boxShadow: { duration: 1.2 } },
   },
 };
