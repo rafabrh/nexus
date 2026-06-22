@@ -138,3 +138,19 @@ export function useToggleHot(jid: string) {
     },
   });
 }
+
+export function useResetConversation(jid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api(`/api/v1/conversations/${encodeURIComponent(jid)}/reset`, {
+        method: 'POST',
+        body: '{}',
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['conversation-detail', jid] });
+      qc.invalidateQueries({ queryKey: ['ai-control', jid] });
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+}

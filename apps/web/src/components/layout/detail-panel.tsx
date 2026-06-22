@@ -14,6 +14,7 @@ import {
   Plus,
   Trash2,
   Flame,
+  RotateCcw,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -32,8 +33,13 @@ import {
   useDeleteTag,
   useUpdateStage,
   useToggleHot,
+  useResetConversation,
 } from '@/hooks/use-conversations';
-import { useQuickReplies } from '@/hooks/use-quick-replies';
+import {
+  useQuickReplies,
+  useCreateQuickReply,
+  useDeleteQuickReply,
+} from '@/hooks/use-quick-replies';
 import { useReminders, useCreateReminder } from '@/hooks/use-reminders';
 import { FunnelStage, type AiState, type FunnelStageKey } from '@nexus/shared';
 import { timeAgo } from '@/lib/utils';
@@ -101,7 +107,10 @@ export function DetailPanel({ jid }: DetailPanelProps) {
   const deleteTag = useDeleteTag(jid);
   const updateStage = useUpdateStage(jid);
   const toggleHot = useToggleHot(jid);
+  const resetConversation = useResetConversation(jid);
   const { data: quickReplies } = useQuickReplies();
+  const createQuickReply = useCreateQuickReply();
+  const deleteQuickReply = useDeleteQuickReply();
   const { data: reminders } = useReminders('pending');
   const createReminder = useCreateReminder();
 
@@ -109,26 +118,60 @@ export function DetailPanel({ jid }: DetailPanelProps) {
   const [tagText, setTagText] = useState('');
   const [reminderText, setReminderText] = useState('');
   const [reminderMinutes, setReminderMinutes] = useState('30');
+  const [qrName, setQrName] = useState('');
+  const [qrContent, setQrContent] = useState('');
 
   const stages = FunnelStage.all();
   const jidReminders = reminders?.filter((r) => r.jid === jid) ?? [];
 
+  // ON = reativa; OFF = desliga por 24h (comando `off`).
   const handleAiToggle = (state: AiState) => {
-    const expireAt =
-      state === 'OFF_UNTIL'
-        ? new Date(Date.now() + 30 * 60000).toISOString()
-        : undefined;
-    const label =
-      state === 'ON'
-        ? 'ativada'
-        : state === 'OFF_UNTIL'
-        ? 'pausada por 30min'
-        : 'desligada por 24h';
-    toggleAi.mutate({ state, expireAt }, {
+    const label = state === 'ON' ? 'ativada' : 'desligada por 24h';
+    toggleAi.mutate({ state }, {
       onSuccess: () => toast.success(`IA ${label}`),
       onError: () => toast.error('Erro ao alterar IA'),
     });
   };
+
+  // OFF_UNTIL com duração flexível (comando `off + tempo`).
+  const handleAiPause = (minutes: number, label: string) => {
+    const expireAt = new Date(Date.now() + minutes * 60000).toISOString();
+    toggleAi.mutate({ state: 'OFF_UNTIL', expireAt }, {
+      onSuccess: () => toast.success(`IA pausada por ${label}`),
+      onError: () => toast.error('Erro ao alterar IA'),
+    });
+  };
+
+  // Comando `reset`: reativa a IA e limpa flags transitórias (escopo seguro).
+  const handleReset = () => {
+    if (!window.confirm('Resetar o estado deste lead? Reativa a IA e limpa flags transitórias. Histórico, etapa, tags e notas são mantidos.')) return;
+    resetConversation.mutate(undefined, {
+      onSuccess: () => toast.success('Estado resetado — IA reativada'),
+      onError: () => toast.error('Erro ao resetar estado'),
+    });
+  };
+
+  const handleAddQuickReply = () => {
+    if (!qrName.trim() || !qrContent.trim()) return;
+    createQuickReply.mutate(
+      { name: qrName.trim(), content: qrContent.trim() },
+      {
+        onSuccess: () => {
+          setQrName('');
+          setQrContent('');
+          toast.success('Resposta rápida salva');
+        },
+        onError: () => toast.error('Erro ao salvar resposta'),
+      },
+    );
+  };
+
+  const PAUSE_OPTIONS = [
+    { label: '30min', m: 30 },
+    { label: '1h', m: 60 },
+    { label: '2h', m: 120 },
+    { label: '6h', m: 360 },
+  ];
 
   const handleAddNote = () => {
     if (!noteText.trim()) return;
@@ -303,16 +346,6 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                     <motion.div whileTap={{ scale: 0.97 }}>
                       <Button
                         size="xs"
-                        variant={aiControl?.state === 'OFF_UNTIL' ? 'danger' : 'secondary'}
-                        onClick={() => handleAiToggle('OFF_UNTIL')}
-                        disabled={toggleAi.isPending}
-                      >
-                        Pausar 30min
-                      </Button>
-                    </motion.div>
-                    <motion.div whileTap={{ scale: 0.97 }}>
-                      <Button
-                        size="xs"
                         variant={aiControl?.state === 'OFF' ? 'danger' : 'secondary'}
                         onClick={() => handleAiToggle('OFF')}
                         disabled={toggleAi.isPending}
@@ -321,6 +354,33 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                       </Button>
                     </motion.div>
                   </div>
+
+                  {/* Pausar por tempo flexível (comando off + tempo) */}
+                  <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                    <span className="text-xs text-text-muted">Pausar por:</span>
+                    {PAUSE_OPTIONS.map((opt) => (
+                      <motion.button
+                        key={opt.label}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => handleAiPause(opt.m, opt.label)}
+                        disabled={toggleAi.isPending}
+                        className="px-2 py-0.5 rounded-badge text-xs font-medium text-text-secondary transition-colors duration-150 disabled:opacity-50"
+                        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)' }}
+                      >
+                        {opt.label}
+                      </motion.button>
+                    ))}
+                  </div>
+
+                  {/* Reset (comando reset) */}
+                  <button
+                    onClick={handleReset}
+                    disabled={resetConversation.isPending}
+                    className="flex items-center gap-1.5 mt-1 px-2 py-1 rounded-badge text-xs text-text-muted hover:text-error transition-colors duration-150 disabled:opacity-50"
+                  >
+                    <RotateCcw size={12} className={resetConversation.isPending ? 'animate-spin' : ''} />
+                    Resetar estado do lead
+                  </button>
                 </div>
               </Section>
 
@@ -455,21 +515,67 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                 </div>
               </Section>
 
-              {/* Quick Replies */}
+              {/* Quick Replies — create/list/delete */}
               <Section title="Respostas Rapidas" icon={Zap} defaultOpen={false}>
-                <div className="space-y-1 max-h-32 overflow-y-auto">
+                <div className="space-y-1.5 mb-2 max-h-40 overflow-y-auto">
                   {(!quickReplies || quickReplies.length === 0) && (
                     <span className="text-xs text-text-muted">Nenhuma resposta rapida</span>
                   )}
-                  {quickReplies?.map((qr) => (
-                    <div
-                      key={qr.id}
-                      className="p-2 rounded-badge bg-bg-elevated text-xs text-text-secondary"
-                    >
-                      <div className="font-medium text-text-primary">{qr.name}</div>
-                      <div className="text-text-muted mt-0.5 truncate">{qr.content}</div>
-                    </div>
-                  ))}
+                  <AnimatePresence>
+                    {quickReplies?.map((qr) => (
+                      <motion.div
+                        key={qr.id}
+                        variants={staggerItem}
+                        initial="initial"
+                        animate="animate"
+                        exit={{ opacity: 0, y: -4, transition: { duration: 0.15 } }}
+                        className="p-2 rounded-badge bg-bg-elevated text-xs group"
+                      >
+                        <div className="flex items-start gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-text-primary">{qr.name}</div>
+                            <div className="text-text-muted mt-0.5">{qr.content}</div>
+                          </div>
+                          <button
+                            onClick={() => deleteQuickReply.mutate(qr.id, { onSuccess: () => toast.success('Resposta removida') })}
+                            className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-error transition-all flex-shrink-0"
+                            aria-label="Remover resposta rapida"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+
+                {/* Create a new personalized quick reply */}
+                <div className="space-y-1.5">
+                  <Input
+                    placeholder="Nome (ex: Saudacao)"
+                    value={qrName}
+                    onChange={(e) => setQrName(e.target.value)}
+                    className="h-7 text-xs"
+                  />
+                  <div className="flex gap-1.5">
+                    <Input
+                      placeholder="Mensagem personalizada..."
+                      value={qrContent}
+                      onChange={(e) => setQrContent(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleAddQuickReply()}
+                      className="h-7 text-xs"
+                    />
+                    <motion.div whileTap={{ scale: 0.97 }}>
+                      <Button
+                        size="xs"
+                        variant="secondary"
+                        onClick={handleAddQuickReply}
+                        disabled={createQuickReply.isPending}
+                      >
+                        <Plus size={12} />
+                      </Button>
+                    </motion.div>
+                  </div>
                 </div>
               </Section>
 

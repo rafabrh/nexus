@@ -100,6 +100,23 @@ export class ConversationService {
   }
 
   /**
+   * Reset the lead's transient state: clears human-takeover (re-enables the AI),
+   * the processing flag and the message buffer. History, stage, tags and notes
+   * are intentionally preserved — this only returns the conversation to the
+   * automatic flow (mirrors the WhatsApp `reset` command, "safe" scope).
+   */
+  async resetState(instancia: string, jid: string): Promise<{ message: string }> {
+    await Promise.all([
+      this.redis.del(RedisKeys.humanControlUntil(instancia, jid)),
+      this.redis.del(RedisKeys.processing(instancia, jid)),
+      this.redis.del(RedisKeys.buffer(instancia, jid)),
+    ]);
+    await this.projection.project(instancia, jid);
+    this.logger.log(`Conversation state reset for ${instancia}/${jid}`);
+    return { message: 'Estado resetado' };
+  }
+
+  /**
    * Update the funnel stage (followup_step) for a conversation.
    */
   async updateStage(instancia: string, jid: string, stage: string): Promise<{ message: string; stage: string }> {

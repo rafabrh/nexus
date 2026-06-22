@@ -141,4 +141,14 @@ export class ConversationController {
   ) {
     return this.service.toggleHot(instancia, jid, dto.isHot);
   }
+
+  @Post(':jid/reset')
+  @UseInterceptors(IdempotencyInterceptor)
+  @ApiOperation({ summary: 'Resetar estado do lead (controle humano + flags transitorias)' })
+  async resetState(
+    @Tenant() instancia: string,
+    @Param('jid') jid: string,
+  ) {
+    return this.service.resetState(instancia, jid);
+  }
 }
