@@ -63,9 +63,9 @@ export function KpiCard({ icon: Icon, label, value, subtitle, accentColor }: Kpi
         transition: 'border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease',
       }}
       whileHover={{
-        y: -2,
-        borderColor: `${accentColor}33`,
-        boxShadow: `0 0 20px 0 ${accentColor}22`,
+        y: -3,
+        borderColor: `${accentColor}66`,
+        boxShadow: `0 10px 36px rgba(0,0,0,0.45), 0 0 38px 0 ${accentColor}44`,
         transition: { duration: 0.2 },
       }}
     >
@@ -74,7 +74,7 @@ export function KpiCard({ icon: Icon, label, value, subtitle, accentColor }: Kpi
         style={{
           position: 'absolute',
           inset: 0,
-          background: `radial-gradient(ellipse at 30% 0%, ${accentColor}12 0%, transparent 65%)`,
+          background: `radial-gradient(ellipse at 30% 0%, ${accentColor}24 0%, transparent 65%)`,
           pointerEvents: 'none',
         }}
       />

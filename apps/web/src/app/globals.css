@@ -81,29 +81,29 @@
   --glass-blur: 16px;
   --glass-blur-heavy: 24px;
 
-  /* === NEW: Glow === */
-  --glow-primary: 0 0 20px rgba(45, 212, 191, 0.15);
-  --glow-primary-strong: 0 0 40px rgba(45, 212, 191, 0.25);
-  --glow-success: 0 0 20px rgba(34, 197, 94, 0.15);
-  --glow-warning: 0 0 20px rgba(245, 158, 11, 0.15);
-  --glow-error: 0 0 20px rgba(239, 68, 68, 0.15);
-  --glow-info: 0 0 20px rgba(59, 130, 246, 0.15);
-  --glow-ai: 0 0 24px rgba(139, 92, 246, 0.25);
-  --glow-ai-strong: 0 0 44px rgba(139, 92, 246, 0.35);
+  /* === Glow (intensified) === */
+  --glow-primary: 0 0 30px rgba(45, 212, 191, 0.28);
+  --glow-primary-strong: 0 0 60px rgba(45, 212, 191, 0.45);
+  --glow-success: 0 0 28px rgba(34, 197, 94, 0.28);
+  --glow-warning: 0 0 28px rgba(245, 158, 11, 0.28);
+  --glow-error: 0 0 28px rgba(239, 68, 68, 0.28);
+  --glow-info: 0 0 28px rgba(59, 130, 246, 0.28);
+  --glow-ai: 0 0 34px rgba(139, 92, 246, 0.4);
+  --glow-ai-strong: 0 0 64px rgba(139, 92, 246, 0.55);
 
-  /* === NEW: Gradients === */
+  /* === Gradients (richer) === */
   --gradient-primary: linear-gradient(135deg, #14B8A6, #10B981);
-  --gradient-primary-subtle: linear-gradient(135deg, rgba(20, 184, 166, 0.12), rgba(16, 185, 129, 0.06));
+  --gradient-primary-subtle: linear-gradient(135deg, rgba(20, 184, 166, 0.18), rgba(16, 185, 129, 0.09));
   --gradient-surface: linear-gradient(180deg, #161B24, #141820);
-  --gradient-radial-hero: radial-gradient(ellipse at 50% 0%, rgba(45, 212, 191, 0.08) 0%, transparent 60%);
-  --gradient-mesh-login: radial-gradient(at 20% 80%, rgba(45, 212, 191, 0.06) 0%, transparent 50%), radial-gradient(at 80% 20%, rgba(16, 185, 129, 0.04) 0%, transparent 50%);
+  --gradient-radial-hero: radial-gradient(ellipse at 50% 0%, rgba(45, 212, 191, 0.14) 0%, transparent 60%);
+  --gradient-mesh-login: radial-gradient(at 18% 82%, rgba(45, 212, 191, 0.12) 0%, transparent 50%), radial-gradient(at 82% 18%, rgba(139, 92, 246, 0.1) 0%, transparent 50%), radial-gradient(at 50% 50%, rgba(16, 185, 129, 0.05) 0%, transparent 60%);
 
   /* === NEW: Extended shadows === */
   --shadow-glow-sm: 0 0 8px rgba(45, 212, 191, 0.1);
   --shadow-glow-md: 0 0 20px rgba(45, 212, 191, 0.15);
   --shadow-glow-lg: 0 0 40px rgba(45, 212, 191, 0.2);
   --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.03);
-  --shadow-card-hover: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(45, 212, 191, 0.1);
+  --shadow-card-hover: 0 16px 48px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(45, 212, 191, 0.22), 0 0 36px rgba(45, 212, 191, 0.14);
 
   /* === NEW: Animation tokens === */
   --duration-instant: 100ms;
@@ -142,7 +142,13 @@ html {
 body {
   font-family: var(--font-sans);
   font-size: var(--text-base);
-  background: var(--bg-base);
+  /* Ambient aurora: a teal halo up top and a violet (AI) bloom on the side give
+     the whole app cinematic depth without touching component backgrounds. */
+  background:
+    radial-gradient(ellipse 90% 55% at 50% -12%, rgba(45, 212, 191, 0.08), transparent 60%),
+    radial-gradient(ellipse 55% 50% at 102% 4%, rgba(139, 92, 246, 0.07), transparent 55%),
+    var(--bg-base);
+  background-attachment: fixed;
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
