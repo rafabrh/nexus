@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useUiStore } from '@/stores/ui.store';
+import { useConversationStore } from '@/stores/conversation.store';
 import {
   useConversationDetail,
   useAiControl,
@@ -98,6 +99,7 @@ function Section({
 
 export function DetailPanel({ jid }: DetailPanelProps) {
   const { detailPanelOpen, setDetailPanelOpen } = useUiStore();
+  const insertIntoComposer = useConversationStore((s) => s.insertIntoComposer);
   const { data: detail } = useConversationDetail(jid);
   const { data: aiControl } = useAiControl(jid);
   const toggleAi = useToggleAi(jid);
@@ -529,13 +531,21 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                         initial="initial"
                         animate="animate"
                         exit={{ opacity: 0, y: -4, transition: { duration: 0.15 } }}
-                        className="p-2 rounded-badge bg-bg-elevated text-xs group"
+                        className="p-2 rounded-badge bg-bg-elevated text-xs group transition-colors duration-150 hover:bg-bg-hover"
                       >
                         <div className="flex items-start gap-2">
-                          <div className="flex-1 min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              insertIntoComposer(qr.content);
+                              toast.success('Resposta inserida no chat');
+                            }}
+                            title="Clique para preencher o chat (voce edita e envia)"
+                            className="flex-1 min-w-0 text-left cursor-pointer"
+                          >
                             <div className="font-medium text-text-primary">{qr.name}</div>
                             <div className="text-text-muted mt-0.5">{qr.content}</div>
-                          </div>
+                          </button>
                           <button
                             onClick={() => deleteQuickReply.mutate(qr.id, { onSuccess: () => toast.success('Resposta removida') })}
                             className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-error transition-all flex-shrink-0"

@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Zap, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSendMessage } from '@/hooks/use-messages';
 import { useQuickReplies } from '@/hooks/use-quick-replies';
+import { useConversationStore } from '@/stores/conversation.store';
 import { toast } from 'sonner';
 import type { AiState, QuickReply } from '@nexus/shared';
 
@@ -20,8 +21,27 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
   const sendMessage = useSendMessage(jid);
   const { data: quickReplies } = useQuickReplies();
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const composerInsert = useConversationStore((s) => s.composerInsert);
+  const clearComposerInsert = useConversationStore((s) => s.clearComposerInsert);
 
   const hasText = text.trim().length > 0;
+
+  // Fill (never send) the composer when a quick reply is clicked elsewhere
+  // (detail panel). Appends if the operator already typed something.
+  useEffect(() => {
+    if (!composerInsert) return;
+    setText((prev) => (prev.trim() ? `${prev} ${composerInsert.text}` : composerInsert.text));
+    clearComposerInsert();
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (el) {
+        el.focus();
+        el.style.height = 'auto';
+        el.style.height = Math.min(el.scrollHeight, 96) + 'px';
+        el.setSelectionRange(el.value.length, el.value.length);
+      }
+    });
+  }, [composerInsert, clearComposerInsert]);
 
   const handleSend = () => {
     const trimmed = text.trim();
