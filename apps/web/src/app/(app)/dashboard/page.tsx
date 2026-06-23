@@ -80,7 +80,7 @@ export default function DashboardPage() {
                   label="Conversao"
                   value={`${data.conversionRate}%`}
                   subtitle={`${data.leadsQualified} qualificados`}
-                  accentColor="#14B8A6"
+                  accentColor="var(--accent-500)"
                 />
               </motion.div>
               <motion.div variants={cardEntrance}>

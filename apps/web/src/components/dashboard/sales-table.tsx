@@ -6,12 +6,13 @@ import { timeAgo } from '@/lib/utils';
 import { useConversations } from '@/hooks/use-conversations';
 import { staggerContainer, staggerItem } from '@/lib/motion-variants';
 
-const glassStyle: React.CSSProperties = {
-  background: 'rgba(20,24,32,0.72)',
-  backdropFilter: 'blur(12px) saturate(1.2)',
-  border: '1px solid rgba(255,255,255,0.06)',
-  borderRadius: '12px',
+const cardStyle: React.CSSProperties = {
+  background: 'var(--bg-surface)',
+  backdropFilter: 'blur(12px) saturate(1.4)',
+  border: '1px solid var(--separator)',
+  borderRadius: 'var(--radius-card)',
   padding: '16px',
+  boxShadow: 'var(--shadow-control)',
 };
 
 export function SalesTable() {
@@ -22,7 +23,7 @@ export function SalesTable() {
 
   if (isLoading) {
     return (
-      <div style={glassStyle}>
+      <div style={cardStyle}>
         <div className="h-4 w-24 skeleton mb-4" />
         <div className="space-y-2">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -34,7 +35,7 @@ export function SalesTable() {
   }
 
   return (
-    <div style={glassStyle}>
+    <div style={cardStyle}>
       <h3 className="text-sm font-medium text-text-secondary mb-4">Vendas Recentes</h3>
 
       {paid.length === 0 ? (
@@ -48,17 +49,20 @@ export function SalesTable() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-                <th className="text-left pb-2 font-medium text-text-muted uppercase tracking-wide text-[10px]">
+              <tr
+                className="border-b"
+                style={{ borderColor: 'var(--separator)' }}
+              >
+                <th className="text-left pb-2 font-medium text-text-secondary uppercase tracking-wide text-[10px]">
                   Nome
                 </th>
-                <th className="text-left pb-2 font-medium text-text-muted uppercase tracking-wide text-[10px]">
+                <th className="text-left pb-2 font-medium text-text-secondary uppercase tracking-wide text-[10px]">
                   Telefone
                 </th>
-                <th className="text-right pb-2 font-medium text-text-muted uppercase tracking-wide text-[10px]">
+                <th className="text-right pb-2 font-medium text-text-secondary uppercase tracking-wide text-[10px]">
                   Pagamento
                 </th>
-                <th className="text-right pb-2 font-medium text-text-muted uppercase tracking-wide text-[10px]">
+                <th className="text-right pb-2 font-medium text-text-secondary uppercase tracking-wide text-[10px]">
                   Quando
                 </th>
               </tr>
@@ -68,9 +72,9 @@ export function SalesTable() {
                 <motion.tr
                   key={conv.jid}
                   variants={staggerItem}
-                  className="border-b last:border-b-0 transition-colors duration-150"
-                  style={{ borderColor: 'rgba(255,255,255,0.04)' }}
-                  whileHover={{ backgroundColor: 'rgba(31,39,51,0.3)' }}
+                  className="border-b last:border-b-0 transition-colors duration-150 cursor-default"
+                  style={{ borderColor: 'var(--separator)' }}
+                  whileHover={{ backgroundColor: 'var(--bg-hover)' }}
                 >
                   <td className="py-2 text-text-primary">
                     {conv.contactName || conv.phoneDisplay}
@@ -81,8 +85,8 @@ export function SalesTable() {
                       className="inline-block rounded-full px-2 py-0.5 font-medium text-success"
                       style={{
                         fontSize: 10,
-                        background: 'rgba(34,197,94,0.1)',
-                        border: '1px solid rgba(34,197,94,0.2)',
+                        background: 'color-mix(in srgb, var(--success) 12%, transparent)',
+                        border: '1px solid color-mix(in srgb, var(--success) 25%, transparent)',
                       }}
                     >
                       {conv.paymentStatus}

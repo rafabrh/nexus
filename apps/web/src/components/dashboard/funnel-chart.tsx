@@ -5,13 +5,15 @@ import { gsap } from 'gsap';
 import { BarChart3 } from 'lucide-react';
 import { useConversations } from '@/hooks/use-conversations';
 import { FunnelStage } from '@nexus/shared';
+import { stageColorToken } from '@/lib/stage-colors';
 
-const glassStyle: React.CSSProperties = {
-  background: 'rgba(20,24,32,0.72)',
-  backdropFilter: 'blur(12px) saturate(1.2)',
-  border: '1px solid rgba(255,255,255,0.06)',
-  borderRadius: '12px',
+const cardStyle: React.CSSProperties = {
+  background: 'var(--bg-surface)',
+  backdropFilter: 'blur(12px) saturate(1.4)',
+  border: '1px solid var(--separator)',
+  borderRadius: 'var(--radius-card)',
   padding: '16px',
+  boxShadow: 'var(--shadow-control)',
 };
 
 export function FunnelChart() {
@@ -39,6 +41,7 @@ export function FunnelChart() {
           widthPct: (count / max) * 100,
           totalPct: tot > 0 ? Math.round((count / tot) * 100) : 0,
           dropoff,
+          colorToken: stageColorToken(s.key),
         };
       }),
     };
@@ -81,7 +84,7 @@ export function FunnelChart() {
 
   if (isLoading) {
     return (
-      <div style={glassStyle}>
+      <div style={cardStyle}>
         <div className="h-4 w-32 skeleton mb-4" />
         <div className="space-y-3">
           {Array.from({ length: 7 }).map((_, i) => (
@@ -93,10 +96,10 @@ export function FunnelChart() {
   }
 
   return (
-    <div style={glassStyle}>
+    <div style={cardStyle}>
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <BarChart3 size={15} className="text-primary-400" />
+          <BarChart3 size={15} className="text-accent-500" />
           <h3 className="text-sm font-medium text-text-secondary">Funil de Vendas</h3>
         </div>
         <span className="text-xs text-text-muted tabular-nums">
@@ -115,8 +118,7 @@ export function FunnelChart() {
                   style={{
                     width: 7,
                     height: 7,
-                    backgroundColor: stage.color,
-                    boxShadow: `0 0 6px ${stage.color}aa`,
+                    backgroundColor: stage.colorToken,
                   }}
                 />
                 <span className="text-xs text-text-secondary truncate">{stage.label}</span>
@@ -124,24 +126,22 @@ export function FunnelChart() {
 
               {/* Bar track */}
               <div
-                className="flex-1 h-7 rounded-md overflow-hidden relative"
-                style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.03)' }}
+                className="flex-1 h-6 rounded overflow-hidden relative"
+                style={{
+                  background: 'var(--bg-hover)',
+                  border: '1px solid var(--separator)',
+                }}
               >
                 <div
                   ref={(el) => { barRefs.current[i] = el; }}
-                  className="h-full rounded-md relative transition-[filter,box-shadow] duration-200 group-hover:brightness-110"
+                  className="h-full rounded transition-[filter] duration-200 group-hover:brightness-110"
                   style={{
                     width: '0%',
                     minWidth: stage.count > 0 ? 6 : 0,
-                    background: `linear-gradient(90deg, ${stage.color}cc, ${stage.color}66)`,
-                    boxShadow: `inset 0 0 0 1px ${stage.color}40`,
+                    backgroundColor: stage.colorToken,
+                    opacity: 0.75,
                   }}
-                >
-                  <div
-                    className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 rounded-md"
-                    style={{ boxShadow: `0 0 14px 1px ${stage.color}88` }}
-                  />
-                </div>
+                />
               </div>
 
               {/* Count + share */}
