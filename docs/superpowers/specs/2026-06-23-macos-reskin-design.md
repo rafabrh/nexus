@@ -153,9 +153,26 @@ vars; estes consomem hex direto e precisam ser reescritos para tokens (ou pares 
 `dashboard/conversion-gauge`, `dashboard/page`, `feed/page`, `layout/top-bar`, `layout/sidebar`,
 `ui/button`, `ui/input`, `ui/badge`, `ui/toast-provider`, `app/login/page`,
 `(app)/settings/page`, `three/login-particles` (este é removido).
-Atenção especial às **cores de funil** (`stageColor` S0–S6) e **status de IA** vindas do backend
-como hex literais: decidir se permanecem (são dados semânticos do produto) ou ganham variação por
-tema — recomendação: mantê-las, validando contraste sobre os materiais claros e escuros.
+As **cores de funil** (`stageColor` S0–S6) e de **status de IA** são **reinterpretadas na paleta
+macOS** (system colors, com pares light/dark) — ver tabela abaixo. Como vêm do backend como hex
+literais, a sobrescrita é no frontend: o frontend mapeia `stage`/`aiState` → token de tema (não usa
+mais o hex cru do backend para pintar). Validar contraste sobre vibrancy claro e escuro (WCAG AA).
+
+### Cores de funil e status de IA — reinterpretação macOS
+
+| Estágio / status | Antes | macOS Light | macOS Dark | System color |
+|---|---|---|---|---|
+| S0 Primeiro contato | `#6B7280` | `#8E8E93` | `#98989D` | systemGray |
+| S1 Interesse | `#3B82F6` | `#32ADE6` | `#64D2FF` | systemCyan |
+| S2 Descoberta | `#8B5CF6` | `#5856D6` | `#5E5CE6` | systemIndigo (violeta fica reservado à IA) |
+| S3 Apresentação | `#F59E0B` | `#FF9500` | `#FF9F0A` | systemOrange |
+| S4 Proposta | `#EF4444` | `#FF3B30` | `#FF453A` | systemRed |
+| S5 Negociação | `#10B981` | `#34C759` | `#30D158` | systemGreen |
+| S6 Fechamento | `#F97316` | `#00C7BE` | `#66D4CF` | systemMint (distinto do laranja de S3) |
+| IA on | `#22C55E` | `#34C759` | `#30D158` | systemGreen |
+| IA paused | `#F59E0B` | `#FF9500` | `#FF9F0A` | systemOrange |
+| IA off | `#8B95A5` | `#8E8E93` | `#98989D` | systemGray |
+| IA thinking | `#8B5CF6` | `#8B5CF6` | `#A78BFA` | violeta da IA (mantido — assinatura) |
 
 ## Acessibilidade
 
