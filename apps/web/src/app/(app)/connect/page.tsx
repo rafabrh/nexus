@@ -34,6 +34,57 @@ function resolvePhase(
   return 'syncing';
 }
 
+/** Badge indicating connection state with semantic colour token. */
+function ConnectionBadge({ phase }: { phase: Phase }) {
+  const stateMap: Record<Phase, { label: string; token: string }> = {
+    done: { label: 'Conectado', token: 'var(--success)' },
+    syncing: { label: 'Sincronizando', token: 'var(--warning)' },
+    scan: { label: 'Aguardando scan', token: 'var(--warning)' },
+    reconnect: { label: 'Desconectado', token: 'var(--error)' },
+    error: { label: 'Erro', token: 'var(--error)' },
+    loading: { label: 'Verificando', token: 'var(--info)' },
+    create: { label: 'Configurando', token: 'var(--info)' },
+    creating: { label: 'Configurando', token: 'var(--info)' },
+  };
+
+  const { label, token } = stateMap[phase] ?? stateMap.loading;
+
+  return (
+    <div
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '4px 10px',
+        borderRadius: '9999px',
+        background: `color-mix(in srgb, ${token} 12%, transparent)`,
+        border: `1px solid color-mix(in srgb, ${token} 25%, transparent)`,
+        marginBottom: '20px',
+      }}
+    >
+      <span
+        style={{
+          width: '6px',
+          height: '6px',
+          borderRadius: '50%',
+          background: token,
+          flexShrink: 0,
+        }}
+      />
+      <span
+        style={{
+          fontSize: '11px',
+          fontWeight: 600,
+          letterSpacing: '0.04em',
+          color: token,
+        }}
+      >
+        {label}
+      </span>
+    </div>
+  );
+}
+
 export default function ConnectPage() {
   const router = useRouter();
   const createCalledRef = useRef(false);
@@ -89,29 +140,44 @@ export default function ConnectPage() {
   }, [phase, router]);
 
   return (
-    <div className="min-h-screen bg-bg-base flex items-center justify-center p-4">
+    <div
+      className="min-h-screen flex items-center justify-center p-4"
+      style={{ background: 'var(--bg-base)' }}
+    >
       <div className="w-full max-w-md">
         <AnimatePresence mode="wait">
           {/* Loading */}
           {phase === 'loading' && (
-            <PhaseCard key="loading">
-              <Loader2 size={40} className="animate-spin text-primary-400 mx-auto" />
+            <PhaseCard key="loading" phase={phase}>
+              <Loader2
+                size={36}
+                className="animate-spin mx-auto"
+                style={{ color: 'var(--accent-500)' }}
+              />
               <p className="text-sm text-text-secondary mt-3">Verificando conexao...</p>
             </PhaseCard>
           )}
 
           {/* Creating instance */}
           {(phase === 'create' || phase === 'creating') && (
-            <PhaseCard key="create">
-              <Loader2 size={40} className="animate-spin text-primary-400 mx-auto" />
+            <PhaseCard key="create" phase={phase}>
+              <Loader2
+                size={36}
+                className="animate-spin mx-auto"
+                style={{ color: 'var(--accent-500)' }}
+              />
               <p className="text-sm text-text-secondary mt-3">Criando instancia WhatsApp...</p>
             </PhaseCard>
           )}
 
           {/* QR Code scan */}
           {(phase === 'scan' || phase === 'reconnect') && (
-            <PhaseCard key="scan">
-              <QrCode size={32} className="text-primary-400 mx-auto mb-2" />
+            <PhaseCard key="scan" phase={phase}>
+              <QrCode
+                size={28}
+                className="mx-auto mb-3"
+                style={{ color: 'var(--accent-500)' }}
+              />
               <h2 className="text-lg font-semibold text-text-primary mb-1">
                 {phase === 'reconnect' ? 'Reconectar WhatsApp' : 'Conectar WhatsApp'}
               </h2>
@@ -120,15 +186,40 @@ export default function ConnectPage() {
               </p>
 
               {qrData?.qrCode ? (
-                <div className="bg-white p-4 rounded-lg mx-auto w-fit">
+                /* QR code in its own clean card — white bg required for scanner */
+                <div
+                  style={{
+                    background: '#FFFFFF',
+                    borderRadius: 'var(--radius-card)',
+                    padding: '16px',
+                    display: 'inline-flex',
+                    margin: '0 auto',
+                  }}
+                >
                   <img
-                    src={qrData.qrCode.startsWith('data:') ? qrData.qrCode : `data:image/png;base64,${qrData.qrCode}`}
-                    alt="QR Code"
-                    className="w-64 h-64"
+                    src={
+                      qrData.qrCode.startsWith('data:')
+                        ? qrData.qrCode
+                        : `data:image/png;base64,${qrData.qrCode}`
+                    }
+                    alt="QR Code WhatsApp"
+                    className="w-56 h-56"
                   />
                 </div>
               ) : (
-                <div className="w-64 h-64 mx-auto bg-bg-elevated rounded-lg flex items-center justify-center">
+                <div
+                  style={{
+                    width: '224px',
+                    height: '224px',
+                    margin: '0 auto',
+                    background: 'var(--bg-elevated)',
+                    borderRadius: 'var(--radius-card)',
+                    border: '1px solid var(--separator)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
                   <Loader2 size={24} className="animate-spin text-text-muted" />
                 </div>
               )}
@@ -141,8 +232,12 @@ export default function ConnectPage() {
 
           {/* Syncing */}
           {phase === 'syncing' && (
-            <PhaseCard key="syncing">
-              <Loader2 size={40} className="animate-spin text-primary-400 mx-auto" />
+            <PhaseCard key="syncing" phase={phase}>
+              <Loader2
+                size={36}
+                className="animate-spin mx-auto"
+                style={{ color: 'var(--accent-500)' }}
+              />
               <h2 className="text-lg font-semibold text-text-primary mt-3 mb-1">
                 Sincronizando conversas
               </h2>
@@ -154,11 +249,13 @@ export default function ConnectPage() {
 
           {/* Done */}
           {phase === 'done' && (
-            <PhaseCard key="done">
-              <CheckCircle2 size={40} className="text-success mx-auto" />
-              <h2 className="text-lg font-semibold text-text-primary mt-3 mb-1">
-                Tudo pronto!
-              </h2>
+            <PhaseCard key="done" phase={phase}>
+              <CheckCircle2
+                size={40}
+                className="mx-auto"
+                style={{ color: 'var(--success)' }}
+              />
+              <h2 className="text-lg font-semibold text-text-primary mt-3 mb-1">Tudo pronto!</h2>
               <p className="text-sm text-text-secondary">
                 Redirecionando para suas conversas...
               </p>
@@ -167,8 +264,12 @@ export default function ConnectPage() {
 
           {/* Error */}
           {phase === 'error' && (
-            <PhaseCard key="error">
-              <AlertCircle size={40} className="text-error mx-auto" />
+            <PhaseCard key="error" phase={phase}>
+              <AlertCircle
+                size={40}
+                className="mx-auto"
+                style={{ color: 'var(--error)' }}
+              />
               <h2 className="text-lg font-semibold text-text-primary mt-3 mb-1">
                 Erro no onboarding
               </h2>
@@ -189,7 +290,12 @@ export default function ConnectPage() {
                 }}
                 disabled={createInstance.isPending || startSync.isPending}
               >
-                <RefreshCw size={16} className={(createInstance.isPending || startSync.isPending) ? 'animate-spin' : ''} />
+                <RefreshCw
+                  size={16}
+                  className={
+                    createInstance.isPending || startSync.isPending ? 'animate-spin' : ''
+                  }
+                />
                 <span className="ml-2">Tentar novamente</span>
               </Button>
             </PhaseCard>
@@ -200,15 +306,23 @@ export default function ConnectPage() {
   );
 }
 
-function PhaseCard({ children }: { children: React.ReactNode }) {
+function PhaseCard({ children, phase }: { children: React.ReactNode; phase: Phase }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
       transition={{ duration: 0.2 }}
-      className="bg-bg-surface border border-border rounded-modal p-8 text-center"
+      className="glass"
+      style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--separator)',
+        borderRadius: 'var(--radius-card)',
+        padding: '32px 28px',
+        textAlign: 'center',
+      }}
     >
+      <ConnectionBadge phase={phase} />
       {children}
     </motion.div>
   );

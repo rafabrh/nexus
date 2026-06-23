@@ -38,29 +38,21 @@ export default function FeedPage() {
               gap: '6px',
               padding: '5px 12px',
               borderRadius: '9999px',
-              background: connected ? 'rgba(239,68,68,0.06)' : 'rgba(107,114,128,0.06)',
-              border: connected ? '1px solid rgba(239,68,68,0.12)' : '1px solid rgba(107,114,128,0.12)',
+              background: connected
+                ? 'color-mix(in srgb, var(--error) 8%, transparent)'
+                : 'color-mix(in srgb, var(--separator) 20%, transparent)',
+              border: connected
+                ? '1px solid color-mix(in srgb, var(--error) 20%, transparent)'
+                : '1px solid var(--separator)',
             }}
           >
-            {connected && (
-              <span
-                style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  backgroundColor: '#EF4444',
-                  display: 'inline-block',
-                  animation: 'live-pulse 1.5s ease-in-out infinite',
-                  flexShrink: 0,
-                }}
-              />
-            )}
+            {connected && <span className="live-dot flex-shrink-0" />}
             <span
               style={{
                 fontSize: '11px',
                 fontWeight: 600,
                 letterSpacing: '0.05em',
-                color: connected ? '#EF4444' : 'var(--color-text-muted)',
+                color: connected ? 'var(--error)' : 'var(--color-text-muted)',
               }}
             >
               {connected ? 'AO VIVO' : 'DESCONECTADO'}
@@ -71,11 +63,11 @@ export default function FeedPage() {
         {/* Events */}
         {events.length === 0 ? (
           <div
+            className="glass"
             style={{
-              background: 'rgba(20,24,32,0.72)',
-              backdropFilter: 'blur(12px) saturate(1.2)',
-              border: '1px solid rgba(255,255,255,0.06)',
-              borderRadius: '12px',
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--separator)',
+              borderRadius: 'var(--radius-card)',
               padding: '48px 16px',
               textAlign: 'center',
             }}
