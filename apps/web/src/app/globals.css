@@ -8,7 +8,7 @@
    ============================================================ */
 :root {
   /* Fonts — macOS-first stack */
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, var(--font-inter), 'Inter', system-ui, sans-serif;
   --font-mono: 'SF Mono', var(--font-geist-mono), 'JetBrains Mono', monospace;
 
   /* Font sizes */
