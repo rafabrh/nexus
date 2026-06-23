@@ -2,17 +2,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import dynamic from 'next/dynamic';
 import { Bot, Mail, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { gsap } from 'gsap';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
-
-const LoginParticles = dynamic(
-  () => import('@/components/three/login-particles').then((m) => ({ default: m.LoginParticles })),
-  { ssr: false },
-);
 
 type LoginState = 'idle' | 'loading' | 'success' | 'error';
 
@@ -490,9 +484,6 @@ export default function LoginPage() {
     >
       {/* Animated mesh background */}
       <MeshBackground />
-
-      {/* R3F particles (lazy, ssr: false) */}
-      <LoginParticles />
 
       {/* Card */}
       <motion.div
