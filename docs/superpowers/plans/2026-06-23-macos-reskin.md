@@ -53,7 +53,8 @@ A única lógica pura testável (`resolveTheme`) ganha um teste leve em Node (se
 
 - [ ] **Step 1: Substituir o bloco `:root` por tokens compartilhados + dois temas**
 
-Manter no `:root` os tokens **invariáveis** (font sizes, radii, durations, easings, z-index). Mover os tokens **de cor/material** para dois blocos. Usar os valores do spec:
+**ATENÇÃO — preservar tokens legados no `:root` compartilhado.** O `globals.css` hoje é um único `:root` (tema dark fixo). Só mover para os blocos `data-theme` os tokens **de cor/material**. Manter no `:root` compartilhado, sem renomear, TODOS estes tokens invariáveis que já têm consumidores (no CSS e no `tailwind.config.ts`):
+`--text-xs..2xl`, os radii legados `--radius-badge/input/card/modal/lg/xl/pill`, `--shadow-sm/md/lg`, `--glass-blur`/`--glass-blur-heavy`, todas as `--duration-*`, todos os `--ease-*`/`--ease-out-expo` etc., e todos os `--z-*`. Remover apenas os tokens de cor que migram (backgrounds, primary→accent, text, border, semantic, ai, glass-bg/border, gradientes/glows). Usar os valores do spec:
 
 ```css
 :root {
@@ -140,7 +141,7 @@ html[data-theme='dark'] {
 
 - [ ] **Step 2: Remover a camada cinematográfica do globals.css**
 
-Remover: `body::before` (aurora) e o `@keyframes aurora-drift`; o `body::after` global (mover o film grain para componente na Task 18 — por ora remover o `background` de vinheta global); todos os tokens `--glow-*`, `--gradient-mesh-login`, `--gradient-radial-hero`, `--gradient-primary*`, `--shadow-card-hover` (teal). Atualizar `.glass`/`.glass-heavy` para usar `--glass-bg`/`--glass-border` com `var(--vibrancy-fallback)` via `@supports`:
+Remover: `body::before` (aurora) e o `@keyframes aurora-drift`; o `body::after` global (mover o film grain para componente na Task 18 — por ora remover o `background` de vinheta global); todos os tokens `--glow-*`, `--gradient-mesh-login`, `--gradient-radial-hero`, `--gradient-primary*`, `--shadow-card-hover` (teal). **Remover também a regra global `html { color-scheme: dark; }`** — o `color-scheme` agora é definido por tema dentro de cada bloco `html[data-theme=...]` (light/dark). Atualizar `.glass`/`.glass-heavy` para usar `--glass-bg`/`--glass-border` com `var(--vibrancy-fallback)` via `@supports`:
 
 ```css
 .glass {
@@ -196,7 +197,13 @@ git commit -m "feat(web): tokens macOS (accent/vibrancy/stage) no tailwind; remo
 **Files:**
 - Modify: `apps/web/src/app/layout.tsx`
 
-- [ ] **Step 1: Adicionar Inter e expor a CSS var**
+- [ ] **Step 1: Confirmar a estratégia da fonte**
+
+O `apps/web` hoje usa `GeistSans`/`GeistMono` do pacote `geist` — **Inter não está self-hosted**, só aparece como string de fallback. Escolher:
+- **Preferido (com rede no build):** `next/font/google` `Inter`. Funciona no build padrão; **falha em build offline/CI sem rede**.
+- **Offline/CI:** `next/font/local` apontando para um arquivo `.woff2` do Inter adicionado em `apps/web/src/app/fonts/`.
+
+Confirmar antes se o build tem acesso à rede; se não, usar `next/font/local`. Implementação (variante google):
 
 ```tsx
 import { Inter } from 'next/font/google';
@@ -239,7 +246,13 @@ export function resolveTheme(pref: ThemePref, systemPrefersDark: boolean): Resol
   return pref;
 }
 
-/** Lê a preferência persistida pelo zustand persist (chave nexus-settings). */
+/**
+ * Lê a preferência persistida pelo zustand persist (chave nexus-settings).
+ * CONTRATO: o store usa `persist({ name: 'nexus-settings' })` sem `partialize`,
+ * então o zustand grava `{ "state": { ...campos, theme }, "version": N }`.
+ * `theme` PRECISA permanecer no slice persistido — não adicionar `partialize`
+ * que o exclua, senão o anti-FOUC cai no fallback abaixo.
+ */
 export function readPersistedThemePref(): ThemePref {
   try {
     const raw = localStorage.getItem('nexus-settings');
@@ -294,8 +307,7 @@ console.log('theme.test: OK');
 
 - [ ] **Step 2: Rodar e ver passar**
 
-Run: `cd apps/web && npx tsx src/lib/theme.test.mjs`
-Expected: imprime `theme.test: OK`. (Se `tsx` não estiver disponível, marcar a verificação como manual via leitura — não adicionar dependência só pra isso.)
+Primeiro checar disponibilidade: `cd apps/web && npx --no-install tsx --version`. Se existir: `npx tsx src/lib/theme.test.mjs` → imprime `theme.test: OK`. Se `tsx` **não** estiver disponível, **não** adicionar dependência: a verificação de `resolveTheme` passa a ser por leitura da tabela-verdade no próprio teste (revisão manual). Anotar qual caminho foi usado.
 
 - [ ] **Step 3: Commit**
 
@@ -311,12 +323,12 @@ git commit -m "test(web): tabela-verdade de resolveTheme"
 
 - [ ] **Step 1: Adicionar `theme` e `setTheme`**
 
-Importar `ThemePref` de `@/lib/theme`. Adicionar à interface `theme: ThemePref;` e `setTheme: (t: ThemePref) => void;`. No estado inicial `theme: 'system'` e `setTheme: (theme) => set({ theme })`. (Persistido automaticamente sob `nexus-settings` — alinhado com o script anti-FOUC.)
+Importar `ThemePref` de `@/lib/theme`. Adicionar à interface `theme: ThemePref;` e `setTheme: (t: ThemePref) => void;`. No estado inicial `theme: 'system'` e `setTheme: (theme) => set({ theme })`. **Não** introduzir `partialize` (o `theme` deve ficar no slice persistido — ver contrato em `lib/theme.ts`). Mantém `{ name: 'nexus-settings' }`.
 
-- [ ] **Step 2: Verificar**
+- [ ] **Step 2: Verificar (typecheck + formato do storage)**
 
-Run: `cd apps/web && npx tsc --noEmit`
-Expected: PASS.
+Run: `cd apps/web && npx tsc --noEmit` → PASS.
+Verificação manual do contrato anti-FOUC: rodar o dev, alternar o tema, e no console do browser conferir que `JSON.parse(localStorage['nexus-settings']).state.theme` reflete a escolha. Se o caminho `.state.theme` não existir, o anti-FOUC e o `readPersistedThemePref` precisam ser ajustados ao formato real **antes** de seguir.
 
 - [ ] **Step 3: Commit**
 
@@ -419,7 +431,7 @@ git commit -m "feat(web): anti-FOUC script + ThemeProvider no layout raiz"
 - Trocar o `font-medium` (já existe) — peso CSS 500. Remover refs a `--glow-primary` no hover (usar `var(--shadow-control)` + `y:-1`).
 - Atualizar `focus-visible:ring-primary-500` → manter (alias aponta pro accent).
 
-Adicionar `glass` ao enum de `variant` no CVA (com classe base apropriada) e ao `variantStyles`/`variantHover`.
+Adicionar `glass` ao enum de `variant` no CVA (com classe base apropriada) e ao `variantStyles`/`variantHover`. **Preservar** as variantes existentes `danger` e `success` do CVA (re-tokenizando os hex para `var(--error)`/`var(--success)`) — não removê-las, pois têm consumidores; rodar `grep` (ferramenta de busca) por `variant="danger"`/`variant="success"` antes para confirmar.
 
 - [ ] **Step 2: Verificar**
 
@@ -464,10 +476,12 @@ Container raio `var(--radius-control)`, fundo `color-mix(in srgb, var(--text-pri
 
 ```tsx
 'use client';
+import { useId } from 'react';
 import { motion } from 'framer-motion';
 export interface SegOption<T extends string> { label: string; value: T; }
 export function SegmentedControl<T extends string>({ options, value, onChange, 'aria-label': ariaLabel }:
   { options: SegOption<T>[]; value: T; onChange: (v: T) => void; 'aria-label'?: string }) {
+  const groupId = useId(); // id único por instância — evita colisão de layoutId entre dois controles
   return (
     <div role="radiogroup" aria-label={ariaLabel}
       className="relative inline-flex p-0.5 rounded-control"
@@ -479,7 +493,7 @@ export function SegmentedControl<T extends string>({ options, value, onChange, '
             className="relative z-10 px-3 h-7 text-sm font-medium rounded-[5px] transition-colors"
             style={{ color: active ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
             {active && (
-              <motion.span layoutId={`seg-${ariaLabel}`} className="absolute inset-0 -z-10 rounded-[5px]"
+              <motion.span layoutId={`seg-${groupId}`} className="absolute inset-0 -z-10 rounded-[5px]"
                 style={{ background: 'var(--control-fill)', boxShadow: 'var(--shadow-control)' }}
                 transition={{ type: 'spring', stiffness: 380, damping: 32 }} />
             )}
@@ -613,6 +627,8 @@ git commit -m "feat(web): toggle de tema no menu do usuario e em settings"
 
 ## Fase 5 — Telas restantes + remoção da camada cinematográfica
 
+> **Estado intermediário esperado:** a Task 1 remove o `body::after` global (grain), mas o grain só volta como componente nesta Task 18. Entre a Fase 0 e aqui, a abertura (login/welcome) fica **sem grain** — isso é esperado, não é regressão.
+
 ### Task 18: Escopar o film grain só na abertura
 
 **Files:**
@@ -629,7 +645,7 @@ git commit -m "feat(web): toggle de tema no menu do usuario e em settings"
 - Delete: `apps/web/src/components/three/ambient-network.tsx`, `apps/web/src/components/three/login-particles.tsx`
 - Modify: consumidores (provável `(app)/layout.tsx` ou onde `AmbientNetwork` é montado; `login/page.tsx` para `LoginParticles`)
 
-- [ ] **Step 1:** Localizar consumidores: `cd apps/web && grep -rl "AmbientNetwork\|login-particles\|LoginParticles" src`. Remover imports/usos e deletar os arquivos. Login ganha fundo macOS (gradiente neutro sutil + janela de vidro).
+- [ ] **Step 1:** Localizar consumidores com a **ferramenta de busca do agente** (Grep) por `AmbientNetwork`, `LoginParticles`, `login-particles`, `ambient-network` em `apps/web/src` (não usar `grep` de shell — ambiente primário é PowerShell). Remover imports/usos e deletar os arquivos. Login ganha fundo macOS (gradiente neutro sutil + janela de vidro).
 - [ ] **Step 2:** Verificar — `npx tsc --noEmit` → PASS (sem refs órfãs).
 - [ ] **Step 3:** Commit `chore(web): remove constelacao 3D e particulas de login (three.js)`.
 
@@ -674,9 +690,9 @@ git commit -m "feat(web): toggle de tema no menu do usuario e em settings"
 ### Task 24: Varredura de resíduos hardcoded
 
 **Files:**
-- Modify: `ui/badge.tsx`, `ui/toast-provider.tsx`, e qualquer hex remanescente
+- Modify: `ui/badge.tsx`, `ui/toast-provider.tsx`, `ui/modal.tsx`, e qualquer hex remanescente (incluir command-palette se existir)
 
-- [ ] **Step 1:** Run `cd apps/web && grep -rn "#[0-9A-Fa-f]\{6\}" src | grep -v node_modules`. Para cada hex restante, decidir: token de tema ou cor semântica de produto (funil/IA — já tokenizadas). Substituir os que faltam. Badge e toast em material macOS.
+- [ ] **Step 1:** Buscar hex remanescentes com a **ferramenta de busca do agente** (Grep), padrão `#[0-9A-Fa-f]{6}` em `apps/web/src` — não usar `grep` no shell (ambiente primário é PowerShell; evita fricção de shell). Garantir que a busca cobre também `ui/modal.tsx`, `ui/badge.tsx`, `ui/toast-provider.tsx` e qualquer `command-palette`. Para cada hex restante, decidir: token de tema ou cor semântica de produto (funil/IA — já tokenizadas). Substituir os que faltam; modal/sheets e toast em material macOS (vibrancy + raio `panel`).
 - [ ] **Step 2:** Verificar — `npx tsc --noEmit` + visual.
 - [ ] **Step 3:** Commit `chore(web): varredura final de cores hardcoded`.
 
