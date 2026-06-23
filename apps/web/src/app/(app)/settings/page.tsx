@@ -14,8 +14,10 @@ import {
   LogOut,
   Wifi,
   WifiOff,
+  Palette,
 } from 'lucide-react';
 import { useSettingsStore, REFRESH_OPTIONS } from '@/stores/settings.store';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { useAuthStore } from '@/stores/auth.store';
 import { useRealtimeStore } from '@/stores/realtime.store';
 import {
@@ -255,6 +257,17 @@ export default function SettingsPage() {
                 );
               })}
             </div>
+          </div>
+        </Section>
+
+        {/* APARÊNCIA */}
+        <Section icon={Palette} title="Aparência" desc="Escolha o esquema de cores da interface.">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-sm text-text-primary">Tema</div>
+              <div className="text-xs text-text-muted">Sistema segue a preferência do SO; Claro ou Escuro fixam a escolha.</div>
+            </div>
+            <ThemeToggle />
           </div>
         </Section>
 

@@ -3,7 +3,7 @@
 import { useRef, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Bot, Bell, Wifi, WifiOff, User, Settings, LogOut } from 'lucide-react';
+import { Bot, Bell, Wifi, WifiOff, User, Settings, LogOut, Sun } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import gsap from 'gsap';
 import { cn } from '@/lib/utils';
@@ -11,6 +11,7 @@ import { useRealtimeStore } from '@/stores/realtime.store';
 import { useReminders } from '@/hooks/use-reminders';
 import { useAuthStore } from '@/stores/auth.store';
 import { useSettingsStore } from '@/stores/settings.store';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { api } from '@/lib/api';
 
 /** Decodes the `sub` (email) claim from the JWT for display. */
@@ -63,7 +64,7 @@ function UserMenu() {
         onClick={() => setOpen((v) => !v)}
         aria-label="Menu do usuario"
         className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white transition-transform duration-150 hover:scale-105"
-        style={{ background: 'linear-gradient(135deg, #0d9488, #10b981)' }}
+        style={{ background: 'var(--accent-500)' }}
       >
         {initial}
       </button>
@@ -77,14 +78,14 @@ function UserMenu() {
             transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
             className="absolute right-0 mt-2 w-56 rounded-xl overflow-hidden z-50"
             style={{
-              background: 'rgba(20,24,32,0.92)',
-              backdropFilter: 'blur(16px) saturate(1.3)',
-              WebkitBackdropFilter: 'blur(16px) saturate(1.3)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
+              background: 'var(--glass-bg)',
+              backdropFilter: 'blur(20px) saturate(1.4)',
+              WebkitBackdropFilter: 'blur(20px) saturate(1.4)',
+              border: '1px solid var(--glass-border)',
+              boxShadow: 'var(--shadow-panel)',
             }}
           >
-            <div className="px-4 py-3 border-b border-white/[0.06]">
+            <div className="px-4 py-3 border-b border-separator">
               <div className="flex items-center gap-2">
                 <User size={14} className="text-text-muted flex-shrink-0" />
                 <span className="text-xs text-text-secondary truncate" title={email ?? undefined}>
@@ -93,10 +94,19 @@ function UserMenu() {
               </div>
             </div>
 
+            {/* Tema */}
+            <div className="px-4 py-3 border-b border-separator">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Sun size={13} className="text-text-muted flex-shrink-0" />
+                <span className="text-xs text-text-secondary">Tema</span>
+              </div>
+              <ThemeToggle />
+            </div>
+
             <Link
               href="/settings"
               onClick={() => setOpen(false)}
-              className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-white/[0.04] transition-colors duration-150"
+              className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors duration-150"
             >
               <Settings size={15} />
               Configurações
