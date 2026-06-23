@@ -7,6 +7,7 @@ import { Inbox } from 'lucide-react';
 import { KanbanCard } from './kanban-card';
 import { useConversations } from '@/hooks/use-conversations';
 import { FunnelStage, type FunnelStageKey, type ConversationListItem } from '@nexus/shared';
+import { stageColorToken } from '@/lib/stage-colors';
 import { api } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { cardEntrance, staggerContainer } from '@/lib/motion-variants';
@@ -17,12 +18,11 @@ function ColumnSkeleton() {
       className="w-[260px] flex-shrink-0 rounded-xl flex flex-col"
       style={{
         height: '100%',
-        background: 'rgba(20,24,32,0.6)',
-        backdropFilter: 'blur(8px) saturate(1.1)',
-        border: '1px solid rgba(255,255,255,0.06)',
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border-default)',
       }}
     >
-      <div className="p-3 border-b border-white/[0.04]">
+      <div className="p-3 border-b" style={{ borderColor: 'var(--border-default)' }}>
         <div className="h-4 w-24 skeleton" />
       </div>
       <div className="p-2 space-y-2">
@@ -85,9 +85,8 @@ export function KanbanBoard() {
         <div
           className="flex-shrink-0 px-5 py-4"
           style={{
-            background: 'rgba(20,24,32,0.72)',
-            backdropFilter: 'blur(12px)',
-            borderBottom: '1px solid rgba(255,255,255,0.04)',
+            background: 'var(--bg-surface)',
+            borderBottom: '1px solid var(--border-default)',
           }}
         >
           <div className="h-5 w-36 skeleton mb-1" />
@@ -104,21 +103,20 @@ export function KanbanBoard() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Glass header */}
+      {/* Header */}
       <div
         className="flex-shrink-0 px-5 py-4"
         style={{
-          background: 'rgba(20,24,32,0.72)',
-          backdropFilter: 'blur(12px)',
-          borderBottom: '1px solid rgba(255,255,255,0.04)',
+          background: 'var(--bg-surface)',
+          borderBottom: '1px solid var(--border-default)',
         }}
       >
         <h1
           style={{
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: 'var(--font-sans)',
             fontWeight: 600,
-            fontSize: '20px',
-            color: 'rgba(255,255,255,0.92)',
+            fontSize: 'var(--text-lg)',
+            color: 'var(--text-primary)',
             lineHeight: 1.2,
           }}
         >
@@ -137,6 +135,7 @@ export function KanbanBoard() {
         {stages.map((stage) => {
           const stageConvs = convByStage[stage.key];
           const isOver = dragOverStage === stage.key;
+          const colColor = stageColorToken(stage.key);
 
           return (
             <div
@@ -146,16 +145,13 @@ export function KanbanBoard() {
                 height: '100%',
                 scrollSnapAlign: 'start',
                 background: isOver
-                  ? `color-mix(in srgb, ${stage.color} 3%, rgba(20,24,32,0.6))`
-                  : 'rgba(20,24,32,0.6)',
-                backdropFilter: 'blur(8px) saturate(1.1)',
+                  ? `color-mix(in srgb, ${colColor} 6%, var(--bg-surface))`
+                  : 'var(--bg-surface)',
                 border: isOver
-                  ? `1px solid ${stage.color}66`
-                  : '1px solid rgba(255,255,255,0.06)',
-                boxShadow: isOver
-                  ? `0 0 0 1px ${stage.color}29, 0 4px 24px ${stage.color}18`
-                  : 'none',
-                transition: 'border-color 0.15s, box-shadow 0.15s, background 0.15s',
+                  ? `1px solid color-mix(in srgb, ${colColor} 40%, var(--border-default))`
+                  : '1px solid var(--border-default)',
+                boxShadow: isOver ? 'var(--shadow-panel)' : 'var(--shadow-control)',
+                transition: 'border-color var(--duration-fast), box-shadow var(--duration-fast), background var(--duration-fast)',
               }}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -167,33 +163,40 @@ export function KanbanBoard() {
                 handleDrop(stage.key);
               }}
             >
-              {/* Column header */}
+              {/* Column header — macOS section style */}
               <div className="px-3 pt-3 pb-2 flex-shrink-0">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <span
                       className="rounded-full flex-shrink-0"
                       style={{
-                        width: 10,
-                        height: 10,
-                        backgroundColor: stage.color,
-                        boxShadow: `0 0 0 2px ${stage.color}4D`,
+                        width: 8,
+                        height: 8,
+                        backgroundColor: colColor,
+                        boxShadow: `0 0 0 2px color-mix(in srgb, ${colColor} 25%, transparent)`,
                       }}
                     />
-                    <span className="text-sm font-medium text-text-primary">
+                    <span
+                      className="font-semibold text-text-secondary"
+                      style={{ fontSize: 11, letterSpacing: '0.02em', textTransform: 'uppercase' }}
+                    >
                       {stage.label}
                     </span>
                   </div>
                   <span
                     className="text-xs font-medium text-text-muted rounded-full px-2 py-0.5 tabular-nums"
-                    style={{ background: '#0C0F12' }}
+                    style={{
+                      background: 'var(--bg-elevated)',
+                      border: '1px solid var(--border-default)',
+                    }}
                   >
                     {stageConvs.length}
                   </span>
                 </div>
+                {/* Stage accent line */}
                 <div
                   className="w-full rounded-full"
-                  style={{ height: 2, background: stage.color, opacity: 0.3 }}
+                  style={{ height: 2, background: colColor, opacity: 0.4 }}
                 />
               </div>
 

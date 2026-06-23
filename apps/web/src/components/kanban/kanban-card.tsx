@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion';
 import { Flame } from 'lucide-react';
 import { timeAgo } from '@/lib/utils';
+import { stageColorToken } from '@/lib/stage-colors';
 import type { ConversationListItem } from '@nexus/shared';
 
 interface KanbanCardProps {
@@ -10,10 +11,10 @@ interface KanbanCardProps {
   onDragStart: (e: React.DragEvent) => void;
 }
 
-function aiBadge(aiState: string): { label: string; color: string } {
-  if (aiState === 'ON') return { label: 'IA', color: '#22C55E' };
-  if (aiState === 'OFF' || aiState === 'OFF_UNTIL') return { label: 'Humano', color: '#F59E0B' };
-  return { label: 'IA off', color: '#8B95A5' };
+function aiBadgeTokens(aiState: string): { label: string; color: string } {
+  if (aiState === 'ON') return { label: 'IA', color: 'var(--ai-on)' };
+  if (aiState === 'OFF' || aiState === 'OFF_UNTIL') return { label: 'Humano', color: 'var(--ai-paused)' };
+  return { label: 'IA off', color: 'var(--ai-off)' };
 }
 
 export function KanbanCard({ conv, onDragStart }: KanbanCardProps) {
@@ -24,34 +25,48 @@ export function KanbanCard({ conv, onDragStart }: KanbanCardProps) {
     .slice(0, 2)
     .join('')
     .toUpperCase();
-  const ai = aiBadge(conv.aiState);
+  const ai = aiBadgeTokens(conv.aiState);
+  const stageColor = stageColorToken(conv.stage);
 
   return (
     <motion.div
       draggable
       onDragStart={onDragStart as unknown as (event: MouseEvent | TouchEvent | PointerEvent) => void}
       whileHover={{
-        y: -1,
-        boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
-        borderColor: '#2A3545',
+        y: -2,
+        boxShadow: 'var(--shadow-panel)',
       }}
       className="cursor-grab active:cursor-grabbing"
       style={{
-        background: '#141820',
-        border: '1px solid #1E2530',
-        borderRadius: 10,
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border-default)',
+        borderRadius: 'var(--radius-card)',
         padding: 12,
-        transition: 'border-color 0.15s',
+        boxShadow: 'var(--shadow-control)',
+        transition: 'border-color var(--duration-fast), box-shadow var(--duration-fast)',
       }}
     >
+      {/* Stage accent line */}
+      <div
+        style={{
+          height: 2,
+          borderRadius: 1,
+          background: stageColor,
+          marginBottom: 10,
+          opacity: 0.7,
+        }}
+      />
+
       {/* Avatar + name + phone + hot flag */}
       <div className="flex items-center gap-2 mb-2">
         <div
-          className="flex-shrink-0 flex items-center justify-center rounded-full text-[10px] font-semibold text-text-secondary"
+          className="flex-shrink-0 flex items-center justify-center rounded-full text-[10px] font-semibold"
           style={{
             width: 30,
             height: 30,
-            background: 'linear-gradient(135deg, #1A2029, #1F2733)',
+            background: 'var(--bg-elevated)',
+            color: 'var(--text-secondary)',
+            border: '1px solid var(--border-default)',
           }}
         >
           {initials}
@@ -62,13 +77,13 @@ export function KanbanCard({ conv, onDragStart }: KanbanCardProps) {
           </div>
           <div
             className="text-text-muted truncate leading-tight"
-            style={{ fontFamily: 'monospace', fontSize: 10 }}
+            style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}
           >
             {conv.phoneDisplay}
           </div>
         </div>
         {conv.isHot && (
-          <Flame size={13} className="flex-shrink-0" style={{ color: '#F59E0B' }} />
+          <Flame size={13} className="flex-shrink-0" style={{ color: 'var(--warning)' }} />
         )}
       </div>
 
@@ -84,8 +99,8 @@ export function KanbanCard({ conv, onDragStart }: KanbanCardProps) {
         <span
           className="rounded-full px-1.5 py-0.5 font-medium"
           style={{
-            background: '#1A2029',
-            border: '1px solid #1E2530',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border-default)',
             fontSize: 10,
             color: ai.color,
           }}
@@ -96,7 +111,11 @@ export function KanbanCard({ conv, onDragStart }: KanbanCardProps) {
           <span
             key={t}
             className="rounded-full px-1.5 py-0.5 font-medium text-text-muted truncate max-w-[80px]"
-            style={{ background: '#1A2029', border: '1px solid #1E2530', fontSize: 10 }}
+            style={{
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border-default)',
+              fontSize: 10,
+            }}
           >
             {t}
           </span>
@@ -104,7 +123,11 @@ export function KanbanCard({ conv, onDragStart }: KanbanCardProps) {
         {conv.tags.length > 2 && (
           <span
             className="rounded-full px-1.5 py-0.5 font-medium text-text-muted"
-            style={{ background: '#1A2029', border: '1px solid #1E2530', fontSize: 10 }}
+            style={{
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border-default)',
+              fontSize: 10,
+            }}
           >
             +{conv.tags.length - 2}
           </span>
