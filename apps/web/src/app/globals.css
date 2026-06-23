@@ -396,3 +396,33 @@ body {
 .btn-loading-pulse {
   animation: btn-pulse 1.5s ease-in-out infinite;
 }
+
+/* Film grain — montado apenas na abertura (login). Overlay de ruído sutil. */
+.film-grain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 250;
+  opacity: 0.038;
+  mix-blend-mode: overlay;
+  will-change: transform;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 140px 140px;
+  animation: grain-shift 1.2s steps(8) infinite;
+}
+
+@keyframes grain-shift {
+  0%   { transform: translate(0, 0); }
+  12%  { transform: translate(-2%, 1.5%); }
+  25%  { transform: translate(1.5%, -2%); }
+  37%  { transform: translate(-1%, 1%); }
+  50%  { transform: translate(2%, -1%); }
+  62%  { transform: translate(-1.5%, -1.5%); }
+  75%  { transform: translate(1%, 2%); }
+  87%  { transform: translate(-2%, 0.5%); }
+  100% { transform: translate(0, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .film-grain { animation: none; }
+}
