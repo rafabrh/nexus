@@ -51,33 +51,19 @@ function TypingIndicator() {
       transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
     >
       <div
-        className="px-3 py-2 flex flex-col gap-1.5"
-        style={{
-          background: '#1A2029',
-          border: '1px solid rgba(255,255,255,0.04)',
-          borderRadius: '4px 12px 12px 12px',
-        }}
+        className="px-3 py-2 flex flex-col gap-1.5 bg-bubble-them border border-border rounded-[4px_16px_16px_16px]"
       >
         {/* Label */}
-        <span
-          className="uppercase tracking-wide"
-          style={{
-            fontFamily: 'Inter, sans-serif',
-            fontWeight: 500,
-            fontSize: 10,
-            color: 'var(--color-text-muted, #6b7280)',
-            letterSpacing: '0.08em',
-          }}
-        >
+        <span className="uppercase tracking-[0.08em] text-[10px] font-medium text-text-muted">
           NEXUS IA
         </span>
-        {/* Dots */}
+        {/* Dots — violeta da IA via var(--ai-thinking) */}
         <div className="flex items-center gap-1">
           {[0, 1, 2].map((i) => (
             <motion.span
               key={i}
               className="rounded-full"
-              style={{ width: 6, height: 6, background: '#2DD4BF', display: 'block' }}
+              style={{ width: 6, height: 6, background: 'var(--ai-thinking)', display: 'block' }}
               animate={{ opacity: [0.3, 1, 0.3] }}
               transition={{
                 duration: 1.2,
@@ -112,16 +98,7 @@ export function MessageList({ jid }: MessageListProps) {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
         >
-          <div
-            className="flex items-center justify-center"
-            style={{
-              width: 64,
-              height: 64,
-              borderRadius: '50%',
-              background: '#141820',
-              border: '1px solid #1E2530',
-            }}
-          >
+          <div className="flex items-center justify-center w-16 h-16 rounded-full bg-bg-elevated border border-border">
             <MessageSquare size={24} className="text-text-muted" />
           </div>
           <p className="text-sm text-text-muted">Nenhuma mensagem</p>

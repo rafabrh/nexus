@@ -70,13 +70,8 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
 
   return (
     <div
-      className="flex-shrink-0"
-      style={{
-        background: 'rgba(20,24,32,0.72)',
-        backdropFilter: 'blur(12px) saturate(1.2)',
-        WebkitBackdropFilter: 'blur(12px) saturate(1.2)',
-        borderTop: '1px solid rgba(255,255,255,0.04)',
-      }}
+      className="flex-shrink-0 glass"
+      style={{ borderTop: '1px solid var(--separator)' }}
     >
       {/* AI warning */}
       {aiState === 'ON' && (
@@ -140,8 +135,8 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
           rows={1}
           className="flex-1 resize-none text-sm text-text-primary placeholder:text-text-muted focus:outline-none transition-colors duration-150 max-h-24 min-h-[36px]"
           style={{
-            background: '#0C0F12',
-            border: '1px solid rgba(255,255,255,0.06)',
+            background: 'var(--control-fill)',
+            border: '1px solid var(--border-default)',
             borderRadius: 10,
             padding: '8px 12px',
             height: 'auto',
@@ -149,13 +144,13 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
           }}
           onFocus={(e) => {
             (e.target as HTMLTextAreaElement).style.border =
-              '1px solid rgba(13,148,136,0.6)';
+              '1px solid var(--border-active)';
             (e.target as HTMLTextAreaElement).style.boxShadow =
-              '0 0 0 3px rgba(13,148,136,0.1)';
+              '0 0 0 3px color-mix(in srgb, var(--accent-500) 15%, transparent)';
           }}
           onBlur={(e) => {
             (e.target as HTMLTextAreaElement).style.border =
-              '1px solid rgba(255,255,255,0.06)';
+              '1px solid var(--border-default)';
             (e.target as HTMLTextAreaElement).style.boxShadow = 'none';
           }}
           onInput={(e) => {
@@ -172,18 +167,16 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
               key="active"
               onClick={handleSend}
               disabled={sendMessage.isPending}
-              className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-white"
+              className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-white rounded-lg"
               style={{
-                background: 'linear-gradient(135deg, #0d9488, #10b981)',
-                borderRadius: 8,
-                boxShadow: '0 0 0 0px rgba(13,148,136,0)',
+                background: 'var(--accent-500)',
               }}
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               transition={{ type: 'spring', stiffness: 400, damping: 22 }}
               whileHover={{
-                boxShadow: '0 0 12px rgba(13,148,136,0.45)',
+                filter: 'brightness(1.1)',
               }}
               whileTap={{ scale: 0.93 }}
             >
@@ -193,8 +186,7 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
             <motion.button
               key="inactive"
               disabled
-              className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-text-muted"
-              style={{ background: '#141820', borderRadius: 8 }}
+              className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-text-muted rounded-lg bg-bg-elevated"
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}

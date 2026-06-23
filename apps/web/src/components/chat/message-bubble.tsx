@@ -45,21 +45,12 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       animate="animate"
     >
       <div
-        className="max-w-[70%] px-3 py-2 text-sm text-text-primary"
-        style={
+        className={cn(
+          'max-w-[70%] px-3 py-2 text-sm',
           isUser
-            ? {
-                background: '#1A2029',
-                border: '1px solid rgba(255,255,255,0.04)',
-                borderRadius: '4px 12px 12px 12px',
-              }
-            : {
-                background:
-                  'linear-gradient(135deg, rgba(139,92,246,0.14), rgba(13,148,136,0.10))',
-                border: '1px solid rgba(139,92,246,0.16)',
-                borderRadius: '12px 4px 12px 12px',
-              }
-        }
+            ? 'bg-bubble-them text-text-primary rounded-[4px_16px_16px_16px]'
+            : 'bg-accent-500 text-white rounded-[16px_4px_16px_16px]',
+        )}
       >
         <MediaIndicator mediaType={message.mediaType} />
         <p className="whitespace-pre-wrap break-words leading-relaxed">
@@ -67,12 +58,10 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         </p>
         {message.ts && (
           <div
-            className={cn('text-[10px] mt-1')}
-            style={
-              isUser
-                ? { color: 'var(--color-text-muted, #6b7280)' }
-                : { color: 'rgba(45,212,191,0.4)' }
-            }
+            className={cn(
+              'text-[10px] mt-1',
+              isUser ? 'text-text-muted' : 'text-white/60',
+            )}
           >
             {formatTime(message.ts)}
           </div>
