@@ -10,9 +10,10 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        primary: 'text-[#0C0F12]',
-        secondary: 'text-text-secondary border hover:text-text-primary',
+        primary: 'text-white',
+        secondary: 'text-text-primary border border-border-default hover:text-text-primary',
         ghost: 'text-text-secondary hover:text-text-primary',
+        glass: 'text-text-primary rounded-pill',
         danger: 'bg-error/10 text-error hover:bg-error/20 active:bg-error/30',
         success: 'bg-success/10 text-success hover:bg-success/20 active:bg-success/30',
       },
@@ -40,32 +41,43 @@ export interface ButtonProps
 
 const variantStyles: Record<string, React.CSSProperties> = {
   primary: {
-    background: 'linear-gradient(135deg, #14B8A6, #10B981)',
-    color: '#0C0F12',
+    background:
+      'linear-gradient(180deg, color-mix(in srgb, var(--accent-500) 88%, white), var(--accent-500))',
+    color: '#fff',
+    boxShadow: 'inset 0 1px 0 rgba(255,255,255,.3), var(--shadow-control)',
   },
   secondary: {
-    backdropFilter: 'blur(8px)',
-    WebkitBackdropFilter: 'blur(8px)',
-    border: '1px solid rgba(255,255,255,0.08)',
-    background: 'rgba(20,24,32,0.5)',
+    background: 'var(--control-fill)',
+    boxShadow: 'var(--shadow-control)',
+    color: 'var(--text-primary)',
   },
   ghost: {
     background: 'transparent',
+    color: 'var(--text-secondary)',
+  },
+  glass: {
+    background: 'var(--glass-bg)',
+    backdropFilter: 'blur(20px) saturate(1.4)',
+    WebkitBackdropFilter: 'blur(20px) saturate(1.4)',
+    border: '1px solid var(--glass-border)',
+    boxShadow: 'inset 0 1px 0 rgba(255,255,255,.4), var(--shadow-panel)',
+    color: 'var(--text-primary)',
   },
 };
 
 const variantHover: Record<string, object> = {
   primary: {
-    boxShadow: 'var(--glow-primary)',
     y: -1,
-    background: 'linear-gradient(135deg, #2DD4BF, #34D399)',
+    boxShadow: '0 2px 8px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.3)',
   },
   secondary: {
-    borderColor: 'rgba(255,255,255,0.12)',
-    background: 'rgba(31,39,51,0.6)',
+    background: 'var(--bg-hover)',
   },
   ghost: {
-    background: 'rgba(31,39,51,0.4)',
+    background: 'var(--bg-hover)',
+  },
+  glass: {
+    background: 'var(--glass-bg-hover, color-mix(in srgb, var(--glass-bg) 90%, white 10%))',
   },
 };
 
