@@ -1,8 +1,12 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { CoreModule } from './core/core.module';
+import { RedisThrottlerStorage } from './core/throttler/redis-throttler.storage';
+import { TenantThrottlerGuard } from './core/throttler/tenant-throttler.guard';
+import { REDIS_CLIENT } from './core/redis/redis.module';
+import type Redis from 'ioredis';
 import { AuthModule } from './auth/auth.module';
 import { ConversationModule } from './conversation/conversation.module';
 import { ConversationDataModule } from './conversation/conversation-data.module';
@@ -27,13 +31,15 @@ import { validate } from './core/config/app.config';
       envFilePath: ['.env', '../../.env'],
       validate,
     }),
-    ThrottlerModule.forRoot([
-      {
-        name: 'default',
-        ttl: 60000,
-        limit: 60,
-      },
-    ]),
+    // Redis-backed so counters are shared across replicas (in-memory would let
+    // each replica grant the full quota). Limits unchanged: 60 req / 60s.
+    ThrottlerModule.forRootAsync({
+      inject: [REDIS_CLIENT],
+      useFactory: (redis: Redis) => ({
+        throttlers: [{ name: 'default', ttl: 60000, limit: 60 }],
+        storage: new RedisThrottlerStorage(redis),
+      }),
+    }),
     CoreModule,
     TenantModule,
     ConversationDataModule,
@@ -53,8 +59,8 @@ import { validate } from './core/config/app.config';
   providers: [
     // Global rate limiting. Without this guard the @Throttle decorators (e.g.
     // magic-link 5/h) are silently ignored. Default: 60 req / 60s per IP.
-    // NOTE: in-memory storage — for multi-replica, back it with Redis storage.
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // Redis-backed + tenant/user-aware tracker (see TenantThrottlerGuard).
+    { provide: APP_GUARD, useClass: TenantThrottlerGuard },
   ],
 })
 export class AppModule {}
