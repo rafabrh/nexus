@@ -69,35 +69,6 @@
   --z-modal: 80;
   --z-toast: 90;
   --z-command-palette: 100;
-
-  /* ----------------------------------------------------------------
-     Legacy tokens kept for tailwind.config.ts consumers until Task 2
-     removes / remaps them. These reference tokens that no longer have
-     a semantic dual-theme counterpart; set to neutral/transparent so
-     they don't blow up layouts.
-  ---------------------------------------------------------------- */
-  /* primary-* (teal brand) — kept neutral until tailwind.config is updated */
-  --primary-400: #2DD4BF;
-  --primary-500: #14B8A6;
-  --primary-600: #0D9488;
-  --primary-700: #0F766E;
-  --primary-800: #115E59;
-
-  /* Glow & shadow tokens referenced by tailwind.config.ts box-shadow entries.
-     Zeroed out / neutralised to prevent teal glows while keeping the utility
-     classes from disappearing. Task 2 will remove or remap these. */
-  --glow-primary: none;
-  --glow-primary-strong: none;
-  --glow-success: none;
-  --glow-warning: none;
-  --glow-error: none;
-  --glow-info: none;
-  --glow-ai: none;
-  --glow-ai-strong: none;
-  --shadow-glow-sm: none;
-  --shadow-glow-md: none;
-  --shadow-glow-lg: none;
-  --shadow-card-hover: 0 20px 56px rgba(0, 0, 0, 0.7);
 }
 
 /* ============================================================

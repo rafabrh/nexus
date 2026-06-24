@@ -195,10 +195,7 @@ export function TopBar() {
                   <motion.span
                     layoutId="tab-indicator"
                     className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full"
-                    style={{
-                      background:
-                        'linear-gradient(90deg, var(--color-primary-400), var(--color-primary-600))',
-                    }}
+                    style={{ background: 'var(--accent-500)' }}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}

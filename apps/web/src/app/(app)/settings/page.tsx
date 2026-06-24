@@ -208,7 +208,8 @@ export default function SettingsPage() {
               />
               <button
                 onClick={() => { setDisplayName(nameDraft.trim()); toast.success('Nome atualizado'); }}
-                className="px-3 py-1.5 rounded-input text-sm btn-gradient-primary"
+                className="px-3 py-1.5 rounded-input text-sm font-medium text-white"
+                style={{ background: 'var(--accent-500)' }}
               >
                 Salvar
               </button>
@@ -245,8 +246,8 @@ export default function SettingsPage() {
                     onClick={() => setRefreshIntervalMs(opt.value)}
                     className="px-2.5 py-1 rounded-input text-xs font-medium transition-colors duration-150"
                     style={{
-                      background: active ? 'var(--gradient-primary)' : 'var(--bg-elevated)',
-                      color: active ? 'var(--text-inverse)' : 'var(--text-secondary)',
+                      background: active ? 'var(--accent-500)' : 'var(--bg-elevated)',
+                      color: active ? '#fff' : 'var(--text-secondary)',
                       border: '1px solid var(--border-default)',
                     }}
                   >
