@@ -13,7 +13,7 @@ const buttonVariants = cva(
         primary: 'text-white',
         secondary: 'text-text-primary border border-border-default hover:text-text-primary',
         ghost: 'text-text-secondary hover:text-text-primary',
-        glass: 'text-text-primary rounded-pill',
+        glass: 'glass-popup text-text-primary rounded-pill',
         danger: 'bg-error/10 text-error hover:bg-error/20 active:bg-error/30',
         success: 'bg-success/10 text-success hover:bg-success/20 active:bg-success/30',
       },
@@ -56,9 +56,8 @@ const variantStyles: Record<string, React.CSSProperties> = {
     color: 'var(--text-secondary)',
   },
   glass: {
-    background: 'var(--glass-bg)',
-    backdropFilter: 'blur(20px) saturate(1.4)',
-    WebkitBackdropFilter: 'blur(20px) saturate(1.4)',
+    // backdrop-filter + @supports fallback is handled by .glass-popup CSS class
+    // applied via className in the CVA variants below
     border: '1px solid var(--glass-border)',
     boxShadow: 'inset 0 1px 0 rgba(255,255,255,.4), var(--shadow-panel)',
     color: 'var(--text-primary)',

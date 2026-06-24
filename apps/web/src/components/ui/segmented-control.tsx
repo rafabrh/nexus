@@ -39,7 +39,7 @@ export function SegmentedControl<T extends string>({
             role="radio"
             aria-checked={active}
             onClick={() => onChange(opt.value)}
-            className="relative z-10 px-3 h-7 text-sm font-medium rounded-[5px] transition-colors"
+            className="relative z-10 px-3 h-7 text-sm font-medium rounded-[5px] transition-colors focus-ring"
             style={{ color: active ? 'var(--text-primary)' : 'var(--text-secondary)' }}
           >
             {active && (

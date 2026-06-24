@@ -318,6 +318,51 @@ body {
   .glass-heavy { background: var(--vibrancy-fallback); }
 }
 
+/* Vibrancy panel — translucent surface using vibrancy-bg token */
+.vibrancy-panel {
+  background: var(--vibrancy-bg);
+  backdrop-filter: blur(20px) saturate(1.6);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .vibrancy-panel { background: var(--vibrancy-fallback); }
+}
+
+/* Vibrancy bar — top-bar fixed header */
+.vibrancy-bar {
+  background: var(--vibrancy-bg);
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .vibrancy-bar { background: var(--vibrancy-fallback); }
+}
+
+/* Glass popup — dropdowns / popovers */
+.glass-popup {
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid var(--glass-border);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-popup { background: var(--vibrancy-fallback); }
+}
+
+/* Glass card — dashboard cards using bg-surface + subtle blur */
+.glass-card {
+  background: var(--bg-surface);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-card { background: var(--bg-surface); }
+}
+
 /* Connection badge pulse */
 .connection-dot {
   width: 6px;

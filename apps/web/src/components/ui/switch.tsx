@@ -16,7 +16,7 @@ export function Switch({ checked, onCheckedChange, disabled, 'aria-label': ariaL
       onCheckedChange={onCheckedChange}
       disabled={disabled}
       aria-label={ariaLabel}
-      className="relative inline-flex h-[25px] w-[42px] items-center rounded-pill disabled:opacity-50 disabled:cursor-not-allowed"
+      className="relative inline-flex h-[25px] w-[42px] items-center rounded-pill disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-500)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-base)]"
       style={{
         background: checked ? 'var(--accent-500)' : 'var(--bg-active)',
         transition: 'background 200ms var(--ease-out-expo)',

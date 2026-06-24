@@ -63,7 +63,7 @@ function UserMenu() {
       <button
         onClick={() => setOpen((v) => !v)}
         aria-label="Menu do usuario"
-        className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white transition-transform duration-150 hover:scale-105"
+        className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white transition-transform duration-150 hover:scale-105 focus-ring"
         style={{ background: 'var(--accent-500)' }}
       >
         {initial}
@@ -76,12 +76,8 @@ function UserMenu() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.97 }}
             transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute right-0 mt-2 w-56 rounded-xl overflow-hidden z-50"
+            className="glass-popup absolute right-0 mt-2 w-56 rounded-xl overflow-hidden z-50"
             style={{
-              background: 'var(--glass-bg)',
-              backdropFilter: 'blur(20px) saturate(1.4)',
-              WebkitBackdropFilter: 'blur(20px) saturate(1.4)',
-              border: '1px solid var(--glass-border)',
               boxShadow: 'var(--shadow-panel)',
             }}
           >
@@ -164,12 +160,9 @@ export function TopBar() {
 
   return (
     <header
-      className="fixed top-0 left-0 right-0 z-50 h-12 flex items-center"
+      className="vibrancy-bar fixed top-0 left-0 right-0 z-50 h-12 flex items-center"
       style={{
-        background: 'rgba(20,24,32,0.72)',
-        backdropFilter: 'blur(16px) saturate(1.3)',
-        WebkitBackdropFilter: 'blur(16px) saturate(1.3)',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        borderBottom: '1px solid var(--separator)',
       }}
     >
       {/* Logo zone — 320px */}
@@ -242,7 +235,7 @@ export function TopBar() {
         <button
           ref={bellRef}
           aria-label="Notificacoes"
-          className="relative w-8 h-8 rounded-input bg-bg-elevated border border-border flex items-center justify-center hover:bg-bg-hover transition-colors duration-150"
+          className="relative w-8 h-8 rounded-input bg-bg-elevated border border-border flex items-center justify-center hover:bg-bg-hover transition-colors duration-150 focus-ring"
         >
           <Bell size={14} className="text-text-secondary" />
           {pendingCount > 0 && (

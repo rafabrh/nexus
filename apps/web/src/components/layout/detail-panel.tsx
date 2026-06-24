@@ -228,11 +228,8 @@ export function DetailPanel({ jid }: DetailPanelProps) {
           initial="initial"
           animate="animate"
           exit="exit"
-          className="fixed top-12 right-0 bottom-0 w-[380px] z-40 flex flex-col overflow-y-auto"
+          className="vibrancy-panel fixed top-12 right-0 bottom-0 w-[380px] z-40 flex flex-col overflow-y-auto"
           style={{
-            background: 'var(--vibrancy-bg)',
-            backdropFilter: 'blur(20px) saturate(1.6)',
-            WebkitBackdropFilter: 'blur(20px) saturate(1.6)',
             borderLeft: '1px solid var(--separator)',
           }}
         >
@@ -245,7 +242,7 @@ export function DetailPanel({ jid }: DetailPanelProps) {
             <button
               onClick={() => setDetailPanelOpen(false)}
               aria-label="Fechar painel de detalhes"
-              className="flex items-center justify-center text-text-muted hover:text-text-secondary transition-colors duration-150"
+              className="flex items-center justify-center text-text-muted hover:text-text-secondary transition-colors duration-150 focus-ring"
               style={{
                 width: 28,
                 height: 28,

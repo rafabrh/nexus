@@ -70,7 +70,7 @@ function ConversationItem({
       variants={staggerItem}
       onClick={onClick}
       className={cn(
-        'w-full text-left mx-1.5 px-3 py-3 flex gap-3 transition-colors duration-150',
+        'w-full text-left mx-1.5 px-3 py-3 flex gap-3 transition-colors duration-150 focus-ring',
         !selected && !conversation.isHot && 'hover:bg-bg-hover',
         !selected && conversation.isHot && 'hover:bg-bg-hover border-l-2 border-l-warning',
       )}
