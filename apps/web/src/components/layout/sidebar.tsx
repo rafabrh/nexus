@@ -230,6 +230,7 @@ export function Sidebar() {
       {/* Filter — SegmentedControl */}
       <div className="px-3 pb-2">
         <SegmentedControl<FilterKey>
+          variant="mirror"
           options={FILTERS.map((f) => ({ label: f.label, value: f.key }))}
           value={filter}
           onChange={setFilter}

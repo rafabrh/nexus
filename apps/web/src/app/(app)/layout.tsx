@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { MotionConfig } from 'framer-motion';
 import { queryClient } from '@/lib/query-client';
 import { ToastProvider } from '@/components/ui/toast-provider';
 import { TopBar } from '@/components/layout/top-bar';
@@ -107,14 +108,18 @@ function ConnectionGuard({ children, pathname }: { children: React.ReactNode; pa
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthGuard>
-        <SocketManager />
-        <TopBar />
-        <main className="pt-12 min-h-screen bg-bg-base">
-          {children}
-        </main>
-        <ToastProvider />
-      </AuthGuard>
+      {/* Honor the OS "Reduce Motion" setting across all Framer Motion
+          animations (layout pills, springs, stagger) — Apple HIG / Inclusion. */}
+      <MotionConfig reducedMotion="user">
+        <AuthGuard>
+          <SocketManager />
+          <TopBar />
+          <main className="pt-12 min-h-screen bg-bg-base">
+            {children}
+          </main>
+          <ToastProvider />
+        </AuthGuard>
+      </MotionConfig>
     </QueryClientProvider>
   );
 }

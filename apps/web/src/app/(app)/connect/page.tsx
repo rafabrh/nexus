@@ -141,10 +141,19 @@ export default function ConnectPage() {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center p-4"
+      className="relative min-h-screen flex items-center justify-center p-4 overflow-hidden"
       style={{ background: 'var(--bg-base)' }}
     >
-      <div className="w-full max-w-md">
+      {/* Ambient backdrop so the glass sheet has light to refract (macOS depth) */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'radial-gradient(60% 50% at 50% 28%, color-mix(in srgb, var(--accent-500) 16%, transparent), transparent 70%), radial-gradient(55% 45% at 50% 105%, color-mix(in srgb, var(--accent-500) 10%, transparent), transparent 72%)',
+        }}
+      />
+      <div className="relative w-full max-w-md">
         <AnimatePresence mode="wait">
           {/* Loading */}
           {phase === 'loading' && (
@@ -190,10 +199,12 @@ export default function ConnectPage() {
                 <div
                   style={{
                     background: '#FFFFFF',
-                    borderRadius: 'var(--radius-card)',
+                    borderRadius: 'var(--radius-xl)',
                     padding: '16px',
                     display: 'inline-flex',
                     margin: '0 auto',
+                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.9), var(--shadow-panel)',
+                    border: '1px solid var(--glass-border)',
                   }}
                 >
                   <img
@@ -213,7 +224,7 @@ export default function ConnectPage() {
                     height: '224px',
                     margin: '0 auto',
                     background: 'var(--bg-elevated)',
-                    borderRadius: 'var(--radius-card)',
+                    borderRadius: 'var(--radius-xl)',
                     border: '1px solid var(--separator)',
                     display: 'flex',
                     alignItems: 'center',
@@ -313,11 +324,9 @@ function PhaseCard({ children, phase }: { children: React.ReactNode; phase: Phas
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
       transition={{ duration: 0.2 }}
-      className="glass"
+      className="glass-heavy"
       style={{
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--separator)',
-        borderRadius: 'var(--radius-card)',
+        borderRadius: 'var(--radius-xl)',
         padding: '32px 28px',
         textAlign: 'center',
       }}

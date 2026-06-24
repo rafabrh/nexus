@@ -3,7 +3,6 @@
 import { Bot, Flame, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { useUiStore } from '@/stores/ui.store';
 import { stageColorToken } from '@/lib/stage-colors';
 import type { ConversationListItem, AiState } from '@nexus/shared';
@@ -36,11 +35,15 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
 
   return (
     <div
-      className="h-14 flex items-center justify-between px-4 flex-shrink-0 glass"
-      style={{ borderBottom: '1px solid var(--separator)' }}
+      className="h-14 flex items-center justify-between px-4 flex-shrink-0 glass mirror"
+      style={{
+        borderBottom: '1px solid var(--separator)',
+        boxShadow: 'inset 0 1px 0 var(--mirror-edge)',
+      }}
     >
-      {/* Left — contact info */}
-      <div className="flex items-center gap-3">
+      {/* Left — contact info. Lifted above the header's specular sheen so the
+          reflection sits behind the content, not over the text. */}
+      <div className="relative z-10 flex items-center gap-3">
         {/* Avatar 34px */}
         <div
           className="rounded-full flex items-center justify-center text-xs font-medium text-text-secondary flex-shrink-0 bg-bg-elevated border border-border"
@@ -74,8 +77,9 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
         </div>
       </div>
 
-      {/* Right — actions */}
-      <div className="flex items-center gap-2">
+      {/* Right — actions. Lifted above the header sheen (z-10) so the toggle's
+          hover/click area is never sitting under the decorative overlay. */}
+      <div className="relative z-10 flex items-center gap-2">
         {/* AI status pill */}
         <div
           className={cn(
@@ -113,19 +117,47 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
           </span>
         </div>
 
-        {/* Toggle detail panel */}
-        <Button
-          variant="ghost"
-          size="icon"
+        {/* Toggle detail panel — Liquid Glass button: translucent glass fill,
+            specular top edge + soft shadow, with the icon lifted above the
+            button's own sheen. Tints to accent when the panel is open. */}
+        <button
+          type="button"
           onClick={toggleDetailPanel}
-          title={detailPanelOpen ? 'Fechar painel' : 'Abrir painel'}
+          aria-label={detailPanelOpen ? 'Fechar painel de detalhes' : 'Abrir painel de detalhes'}
+          title={detailPanelOpen ? 'Fechar Detalhes' : 'Abrir Detalhes'}
+          className="mirror relative z-10 flex items-center justify-center transition-[transform,filter,box-shadow] duration-150 active:scale-95 focus-ring"
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 'var(--radius-input)',
+            color: detailPanelOpen ? 'var(--accent-500)' : 'var(--text-secondary)',
+            background: detailPanelOpen
+              ? 'color-mix(in srgb, var(--accent-500) 16%, var(--glass-bg))'
+              : 'var(--glass-bg)',
+            border: `1px solid ${
+              detailPanelOpen
+                ? 'color-mix(in srgb, var(--accent-500) 45%, var(--glass-border))'
+                : 'var(--glass-border)'
+            }`,
+            boxShadow: 'inset 0 1px 0 var(--mirror-edge), var(--shadow-control)',
+            backdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
+            WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.filter = 'brightness(1.07)';
+            e.currentTarget.style.boxShadow =
+              'inset 0 1px 0 var(--mirror-edge), 0 3px 12px rgba(0,0,0,0.16)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.filter = '';
+            e.currentTarget.style.boxShadow =
+              'inset 0 1px 0 var(--mirror-edge), var(--shadow-control)';
+          }}
         >
-          {detailPanelOpen ? (
-            <PanelRightClose size={16} className="text-text-secondary" />
-          ) : (
-            <PanelRightOpen size={16} className="text-text-secondary" />
-          )}
-        </Button>
+          <span className="pointer-events-none relative z-10 inline-flex">
+            {detailPanelOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+          </span>
+        </button>
       </div>
     </div>
   );

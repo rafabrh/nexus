@@ -13,7 +13,6 @@ export function ThemeToggle() {
       value={theme}
       onChange={setTheme}
       options={[
-        { label: 'Sistema', value: 'system' },
         { label: 'Claro', value: 'light' },
         { label: 'Escuro', value: 'dark' },
       ]}

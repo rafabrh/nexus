@@ -6,8 +6,11 @@ import {
   OnGatewayDisconnect,
   SubscribeMessage,
 } from '@nestjs/websockets';
-import { Logger } from '@nestjs/common';
+import { Logger, Inject } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
+import type Redis from 'ioredis';
+import { RedisKeys } from '@nexus/shared';
+import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { NexusJwtService } from '../auth/jwt.service';
 import { EventPublisher } from './event.publisher';
 import { StreamReplayService } from './stream-replay.service';
@@ -30,6 +33,7 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     private readonly jwt: NexusJwtService,
     private readonly publisher: EventPublisher,
     private readonly replay: StreamReplayService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
   afterInit(server: Server) {
@@ -48,6 +52,22 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
       }
 
       const payload = await this.jwt.verify(token);
+
+      // Parity with the HTTP guard: a refresh token must never open a socket,
+      // and a token revoked at logout must be rejected even mid-session.
+      if (payload.type !== 'access') {
+        client.disconnect(true);
+        return;
+      }
+
+      const blacklisted = await this.redis.get(
+        RedisKeys.sessionBlacklist(payload.jti!),
+      );
+      if (blacklisted) {
+        client.disconnect(true);
+        return;
+      }
+
       const room = `tenant:${payload.instancia}`;
 
       client.data.user = payload;

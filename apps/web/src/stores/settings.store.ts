@@ -31,13 +31,25 @@ export const useSettingsStore = create<SettingsState>()(
       displayName: '',
       soundEnabled: false,
       refreshIntervalMs: 45_000,
-      theme: 'system',
+      theme: 'dark',
       setDisplayName: (displayName) => set({ displayName }),
       setSoundEnabled: (soundEnabled) => set({ soundEnabled }),
       setRefreshIntervalMs: (refreshIntervalMs) => set({ refreshIntervalMs }),
       setTheme: (theme) => set({ theme }),
     }),
-    { name: 'nexus-settings' },
+    {
+      name: 'nexus-settings',
+      version: 1,
+      // v0 tinha a opção 'system' (resolvida como escuro). Migra o valor
+      // persistido para 'dark' agora que só existem Claro/Escuro.
+      migrate: (persisted, version) => {
+        const state = persisted as Partial<SettingsState> | undefined;
+        if (version < 1 && state && (state.theme as string) === 'system') {
+          state.theme = 'dark';
+        }
+        return state as SettingsState;
+      },
+    },
   ),
 );
 

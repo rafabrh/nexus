@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { useSendMessage } from '@/hooks/use-messages';
 import { useQuickReplies } from '@/hooks/use-quick-replies';
 import { useConversationStore } from '@/stores/conversation.store';
-import { toast } from 'sonner';
+import { notify } from '@/lib/notify';
 import type { AiState, QuickReply } from '@nexus/shared';
 
 interface MessageInputProps {
@@ -51,7 +51,7 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
         setText('');
         inputRef.current?.focus();
       },
-      onError: () => toast.error('Erro ao enviar mensagem'),
+      onError: () => notify.error('Erro ao enviar mensagem'),
     });
   };
 
@@ -70,8 +70,11 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
 
   return (
     <div
-      className="flex-shrink-0 glass"
-      style={{ borderTop: '1px solid var(--separator)' }}
+      className="flex-shrink-0 glass mirror"
+      style={{
+        borderTop: '1px solid var(--separator)',
+        boxShadow: 'inset 0 1px 0 var(--mirror-edge)',
+      }}
     >
       {/* AI warning */}
       {aiState === 'ON' && (

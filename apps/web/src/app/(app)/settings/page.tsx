@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { notify } from '@/lib/notify';
 import {
   RefreshCw,
   RotateCw,
@@ -121,22 +121,22 @@ export default function SettingsPage() {
   const handleRefresh = async () => {
     try {
       const res = await refreshConn.mutateAsync();
-      toast.success(`Conexão: ${res.connectionState ?? 'desconhecida'}`);
+      notify.success(`Conexão: ${res.connectionState ?? 'desconhecida'}`);
     } catch {
-      toast.error('Falha ao revalidar a conexão');
+      notify.error('Falha ao revalidar a conexão');
     }
   };
   const handleRetrySync = async () => {
     try {
       const res = await retrySync.mutateAsync();
-      toast.success(`Sync: ${res.chatsImported} chats, ${res.messagesImported} mensagens`);
+      notify.success(`Sync: ${res.chatsImported} chats, ${res.messagesImported} mensagens`);
     } catch {
-      toast.error('Falha ao resincronizar');
+      notify.error('Falha ao resincronizar');
     }
   };
   const handleReconnect = () => {
     reconnectSocket();
-    toast.success('Reconectando o tempo real…');
+    notify.success('Reconectando o tempo real…');
   };
   const handleLogout = async () => {
     try { await api('/api/v1/auth/logout', { method: 'POST', body: '{}' }); } catch { /* ignore */ }
@@ -207,7 +207,7 @@ export default function SettingsPage() {
                 style={{ background: 'var(--bg-base)', border: '1px solid var(--border-default)' }}
               />
               <button
-                onClick={() => { setDisplayName(nameDraft.trim()); toast.success('Nome atualizado'); }}
+                onClick={() => { setDisplayName(nameDraft.trim()); notify.success('Nome atualizado'); }}
                 className="px-3 py-1.5 rounded-input text-sm font-medium text-white"
                 style={{ background: 'var(--accent-500)' }}
               >
