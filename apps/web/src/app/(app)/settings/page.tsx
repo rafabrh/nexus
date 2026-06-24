@@ -14,8 +14,10 @@ import {
   LogOut,
   Wifi,
   WifiOff,
+  Palette,
 } from 'lucide-react';
 import { useSettingsStore, REFRESH_OPTIONS } from '@/stores/settings.store';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { useAuthStore } from '@/stores/auth.store';
 import { useRealtimeStore } from '@/stores/realtime.store';
 import {
@@ -43,16 +45,14 @@ function decodeJwt(token: string | null): Claims {
   }
 }
 
-const glass: React.CSSProperties = {
-  background: 'rgba(20,24,32,0.72)',
-  backdropFilter: 'blur(12px) saturate(1.2)',
-  border: '1px solid rgba(255,255,255,0.06)',
+const glassStyle: React.CSSProperties = {
+  border: '1px solid var(--glass-border)',
   borderRadius: '12px',
 };
 
 function Section({ icon: Icon, title, desc, children }: { icon: React.ElementType; title: string; desc: string; children: React.ReactNode }) {
   return (
-    <motion.section variants={staggerItem} style={glass} className="p-5">
+    <motion.section variants={staggerItem} style={glassStyle} className="glass-card p-5">
       <div className="flex items-center gap-2.5 mb-1">
         <Icon size={16} className="text-primary-400" />
         <h2 className="text-sm font-semibold text-text-primary">{title}</h2>
@@ -70,7 +70,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
       role="switch"
       aria-checked={checked}
       className="relative w-10 h-6 rounded-full transition-colors duration-200 flex-shrink-0"
-      style={{ background: checked ? 'var(--gradient-primary)' : '#252834' }}
+      style={{ background: checked ? 'var(--accent-500)' : 'var(--bg-active)' }}
     >
       <motion.span
         className="absolute top-1 w-4 h-4 rounded-full bg-white"
@@ -208,7 +208,8 @@ export default function SettingsPage() {
               />
               <button
                 onClick={() => { setDisplayName(nameDraft.trim()); toast.success('Nome atualizado'); }}
-                className="px-3 py-1.5 rounded-input text-sm btn-gradient-primary"
+                className="px-3 py-1.5 rounded-input text-sm font-medium text-white"
+                style={{ background: 'var(--accent-500)' }}
               >
                 Salvar
               </button>
@@ -245,8 +246,8 @@ export default function SettingsPage() {
                     onClick={() => setRefreshIntervalMs(opt.value)}
                     className="px-2.5 py-1 rounded-input text-xs font-medium transition-colors duration-150"
                     style={{
-                      background: active ? 'var(--gradient-primary)' : 'var(--bg-elevated)',
-                      color: active ? 'var(--text-inverse)' : 'var(--text-secondary)',
+                      background: active ? 'var(--accent-500)' : 'var(--bg-elevated)',
+                      color: active ? '#fff' : 'var(--text-secondary)',
                       border: '1px solid var(--border-default)',
                     }}
                   >
@@ -255,6 +256,17 @@ export default function SettingsPage() {
                 );
               })}
             </div>
+          </div>
+        </Section>
+
+        {/* APARÊNCIA */}
+        <Section icon={Palette} title="Aparência" desc="Escolha o esquema de cores da interface.">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-sm text-text-primary">Tema</div>
+              <div className="text-xs text-text-muted">Sistema segue a preferência do SO; Claro ou Escuro fixam a escolha.</div>
+            </div>
+            <ThemeToggle />
           </div>
         </Section>
 

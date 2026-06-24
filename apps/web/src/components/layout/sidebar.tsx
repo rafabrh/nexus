@@ -5,9 +5,12 @@ import { Search, Flame } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn, timeAgo } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { useConversations } from '@/hooks/use-conversations';
 import { useConversationStore } from '@/stores/conversation.store';
 import { staggerContainer, staggerItem } from '@/lib/motion-variants';
+import { stageColorToken } from '@/lib/stage-colors';
 import type { ConversationListItem, AiState } from '@nexus/shared';
 
 const FILTERS = [
@@ -16,6 +19,8 @@ const FILTERS = [
   { key: 'human' as const, label: 'Humano' },
   { key: 'hot' as const, label: 'Hot' },
 ];
+
+type FilterKey = 'all' | 'ai_on' | 'human' | 'hot';
 
 function getAiBadge(state: AiState) {
   switch (state) {
@@ -47,10 +52,12 @@ function ConversationItem({
   conversation,
   selected,
   onClick,
+  isLast,
 }: {
   conversation: ConversationListItem;
   selected: boolean;
   onClick: () => void;
+  isLast: boolean;
 }) {
   const ai = getAiBadge(conversation.aiState);
   const initials = conversation.contactName
@@ -65,52 +72,88 @@ function ConversationItem({
       variants={staggerItem}
       onClick={onClick}
       className={cn(
-        'w-full text-left mx-1.5 py-3 flex gap-3 transition-colors duration-150 rounded-lg',
-        'hover:bg-bg-hover',
-        selected
-          ? 'border-l-2 border-l-primary-500'
-          : conversation.isHot
-          ? 'border-l-2 border-l-warning'
-          : '',
+        'conv-glass relative w-full text-left mx-1.5 px-3 py-3 flex gap-3 transition-colors duration-150 focus-ring',
+        !selected && !conversation.isHot && 'hover:bg-bg-hover',
+        !selected && conversation.isHot && 'hover:bg-bg-hover border-l-2 border-l-warning',
       )}
-      style={
-        selected
-          ? { background: 'rgba(37,48,64,0.6)', paddingLeft: '14px', paddingRight: '12px' }
-          : { paddingLeft: '16px', paddingRight: '12px' }
-      }
+      style={{
+        borderRadius: 'var(--radius-list-item)',
+        ...(selected
+          ? {
+              // Selected row = glossy accent glass, matching the active header tab.
+              backgroundColor: 'var(--accent-500)',
+              backgroundImage:
+                'linear-gradient(180deg, var(--mirror-sheen-top), transparent 55%)',
+              boxShadow: 'inset 0 1px 0 var(--mirror-edge), var(--shadow-control)',
+            }
+          : {}),
+      }}
     >
+      {/* Subtle hairline separating conversations — inset past the avatar, like
+          the WhatsApp list. Theme-aware via --separator; skipped on the last
+          row and the selected (filled) row. */}
+      {!isLast && !selected && (
+        <span
+          aria-hidden
+          className="absolute bottom-0 right-3 h-px"
+          style={{ left: 56, background: 'var(--separator)' }}
+        />
+      )}
+
       {/* Avatar */}
       <div
-        className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-medium text-text-secondary"
-        style={{ background: 'linear-gradient(135deg, #1A2029, #1F2733)' }}
+        className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-medium flex-shrink-0"
+        style={{
+          background: selected ? 'rgba(255,255,255,0.2)' : 'var(--bg-active)',
+          color: selected ? 'rgba(255,255,255,0.9)' : 'var(--text-secondary)',
+        }}
       >
         {initials}
       </div>
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="text-sm font-medium text-text-primary truncate">
+            <span
+              className="text-sm font-medium truncate"
+              style={{ color: selected ? '#ffffff' : 'var(--text-primary)' }}
+            >
               {conversation.contactName}
             </span>
             {conversation.isHot && (
-              <Flame size={12} className="text-warning flex-shrink-0" />
+              <Flame
+                size={12}
+                className="flex-shrink-0"
+                style={{ color: selected ? 'rgba(255,255,255,0.8)' : 'var(--warning)' }}
+              />
             )}
           </div>
-          <span className="text-xs text-text-muted flex-shrink-0">
+          {/* Timestamp at the top-right corner — tabular for alignment */}
+          <span
+            className="text-xs flex-shrink-0 tabular-nums leading-5"
+            style={{ color: selected ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)' }}
+          >
             {timeAgo(conversation.lastActivity)}
           </span>
         </div>
 
-        <p className="text-xs text-text-muted truncate mt-0.5">
+        <p
+          className="text-xs truncate mt-0.5"
+          style={{ color: selected ? 'rgba(255,255,255,0.75)' : 'var(--text-muted)' }}
+        >
           {conversation.lastMessagePreview}
         </p>
 
         <div className="flex items-center gap-1.5 mt-1">
           <Badge variant={ai.variant}>{ai.label}</Badge>
           <Badge
-            style={{ backgroundColor: `${conversation.stageColor}20`, color: conversation.stageColor }}
+            style={{
+              backgroundColor: selected
+                ? 'rgba(255,255,255,0.15)'
+                : `color-mix(in srgb, ${stageColorToken(conversation.stage)} 13%, transparent)`,
+              color: selected ? '#ffffff' : stageColorToken(conversation.stage),
+            }}
           >
             {conversation.stageLabel}
           </Badge>
@@ -158,12 +201,12 @@ export function Sidebar() {
 
   return (
     <aside
-      className="fixed top-12 left-0 bottom-0 w-80 flex flex-col z-40"
+      className="glass fixed top-12 left-0 bottom-0 w-80 flex flex-col z-40"
       style={{
-        backdropFilter: 'blur(12px) saturate(1.2)',
-        WebkitBackdropFilter: 'blur(12px) saturate(1.2)',
-        borderRight: '1px solid rgba(255,255,255,0.06)',
-        background: 'rgba(20,24,32,0.6)',
+        borderRight: '1px solid var(--separator)',
+        borderLeft: 'none',
+        borderTop: 'none',
+        borderBottom: 'none',
       }}
     >
       {/* Search */}
@@ -171,46 +214,27 @@ export function Sidebar() {
         <div className="relative">
           <Search
             size={14}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
+            className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+            style={{ color: 'var(--text-muted)' }}
           />
-          <input
+          <Input
             type="text"
             placeholder="Buscar conversa..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-8 pl-8 pr-3 rounded-input border border-border text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary-600 focus:shadow-[0_0_0_2px_rgba(99,102,241,0.15)] transition-all duration-150"
-            style={{ background: '#0C0F12' }}
+            className="h-8 pl-8 text-sm"
           />
         </div>
       </div>
 
-      {/* Filter chips */}
-      <div className="px-3 pb-2 flex gap-1">
-        {FILTERS.map((f) => {
-          const active = filter === f.key;
-          return (
-            <button
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              className={cn(
-                'relative text-xs px-2.5 py-1 rounded-full transition-colors duration-150',
-                active
-                  ? 'text-primary-400'
-                  : 'text-text-muted hover:text-text-secondary hover:bg-bg-hover',
-              )}
-              style={
-                active
-                  ? {
-                      background: 'rgba(129,140,248,0.08)',
-                      border: '1px solid rgba(129,140,248,0.12)',
-                    }
-                  : {}
-              }
-            >
-              {f.label}
-            </button>
-          );
-        })}
+      {/* Filter — SegmentedControl */}
+      <div className="px-3 pb-2">
+        <SegmentedControl<FilterKey>
+          options={FILTERS.map((f) => ({ label: f.label, value: f.key }))}
+          value={filter}
+          onChange={setFilter}
+          aria-label="Filtrar conversas"
+        />
       </div>
 
       {/* Conversation list */}
@@ -223,7 +247,9 @@ export function Sidebar() {
           </>
         ) : filtered.length === 0 ? (
           <div className="px-4 py-8 text-center">
-            <p className="text-sm text-text-muted">Nenhuma conversa encontrada</p>
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+              Nenhuma conversa encontrada
+            </p>
           </div>
         ) : (
           <motion.div
@@ -233,12 +259,13 @@ export function Sidebar() {
             className="py-1"
           >
             <AnimatePresence>
-              {filtered.map((c) => (
+              {filtered.map((c, i) => (
                 <ConversationItem
                   key={c.jid}
                   conversation={c}
                   selected={selectedJid === c.jid}
                   onClick={() => setSelectedJid(c.jid)}
+                  isLast={i === filtered.length - 1}
                 />
               ))}
             </AnimatePresence>
@@ -249,12 +276,12 @@ export function Sidebar() {
       {/* Footer count */}
       <div
         className="px-4 py-2"
-        style={{
-          background: 'rgba(20,24,32,0.5)',
-          borderTop: '1px solid rgba(255,255,255,0.04)',
-        }}
+        style={{ borderTop: '1px solid var(--separator)' }}
       >
-        <span className="text-xs text-text-muted">
+        <span
+          className="font-semibold"
+          style={{ fontSize: '11px', color: 'var(--text-secondary)' }}
+        >
           {filtered.length} conversa{filtered.length !== 1 ? 's' : ''}
         </span>
       </div>

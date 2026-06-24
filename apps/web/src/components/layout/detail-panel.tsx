@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { useUiStore } from '@/stores/ui.store';
 import { useConversationStore } from '@/stores/conversation.store';
 import {
@@ -45,6 +46,7 @@ import { useReminders, useCreateReminder } from '@/hooks/use-reminders';
 import { FunnelStage, type AiState, type FunnelStageKey } from '@nexus/shared';
 import { timeAgo } from '@/lib/utils';
 import { slideInRight, staggerItem } from '@/lib/motion-variants';
+import { stageColorToken } from '@/lib/stage-colors';
 
 interface DetailPanelProps {
   jid: string;
@@ -63,12 +65,12 @@ function Section({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }} className="last:border-b-0">
+    <div style={{ borderBottom: '1px solid var(--separator)' }} className="last:border-b-0">
       <button
         onClick={() => setOpen(!open)}
         className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-text-secondary transition-colors duration-150"
         style={{ borderRadius: 0 }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(31,39,51,0.3)')}
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
         onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
       >
         <Icon size={14} className="text-text-muted" />
@@ -216,6 +218,8 @@ export function DetailPanel({ jid }: DetailPanelProps) {
     );
   };
 
+  const isAiOn = aiControl?.state === 'ON';
+
   return (
     <AnimatePresence>
       {detailPanelOpen && (
@@ -224,30 +228,27 @@ export function DetailPanel({ jid }: DetailPanelProps) {
           initial="initial"
           animate="animate"
           exit="exit"
-          className="fixed top-12 right-0 bottom-0 w-[380px] z-40 flex flex-col overflow-y-auto"
+          className="vibrancy-panel fixed top-12 right-0 bottom-0 w-[380px] z-40 flex flex-col overflow-y-auto"
           style={{
-            background: 'rgba(20,24,32,0.72)',
-            backdropFilter: 'blur(16px) saturate(1.2)',
-            WebkitBackdropFilter: 'blur(16px) saturate(1.2)',
-            borderLeft: '1px solid rgba(255,255,255,0.06)',
+            borderLeft: '1px solid var(--separator)',
           }}
         >
           {/* Header */}
           <div
             className="flex items-center justify-between px-4 py-3 flex-shrink-0"
-            style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+            style={{ borderBottom: '1px solid var(--separator)' }}
           >
             <h3 className="text-sm font-semibold text-text-primary">Detalhes</h3>
             <button
               onClick={() => setDetailPanelOpen(false)}
               aria-label="Fechar painel de detalhes"
-              className="flex items-center justify-center text-text-muted hover:text-text-secondary transition-colors duration-150"
+              className="flex items-center justify-center text-text-muted hover:text-text-secondary transition-colors duration-150 focus-ring"
               style={{
                 width: 28,
                 height: 28,
-                borderRadius: 6,
+                borderRadius: 'var(--radius-input)',
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(31,39,51,0.4)')}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
             >
               <X size={16} />
@@ -264,41 +265,49 @@ export function DetailPanel({ jid }: DetailPanelProps) {
             <>
               {/* Lead Info */}
               <Section title="Lead" icon={User}>
-                <div className="space-y-2 text-sm">
+                <div
+                  className="space-y-2 text-sm p-3 rounded-lg"
+                  style={{
+                    background: 'var(--glass-bg)',
+                    border: '1px solid var(--separator)',
+                    borderRadius: 'var(--radius-panel)',
+                  }}
+                >
                   <div className="flex justify-between">
                     <span className="text-text-muted">Nome</span>
                     <span className="text-text-primary">{detail.contactName}</span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between" style={{ borderTop: '1px solid var(--separator)', paddingTop: 8 }}>
                     <span className="text-text-muted">Telefone</span>
                     <span className="text-text-primary font-mono text-xs">{detail.phoneDisplay}</span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between" style={{ borderTop: '1px solid var(--separator)', paddingTop: 8 }}>
                     <span className="text-text-muted">Mensagens</span>
                     <span className="text-text-primary">{detail.messageCount}</span>
                   </div>
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between" style={{ borderTop: '1px solid var(--separator)', paddingTop: 8 }}>
                     <span className="text-text-muted">Hot Lead</span>
                     <motion.button
                       whileTap={{ scale: 0.97 }}
                       onClick={() => toggleHot.mutate(!detail.isHot)}
                       className={cn(
-                        'flex items-center gap-1 px-2 py-0.5 rounded-badge text-xs transition-colors duration-150',
+                        'flex items-center gap-1 px-2 py-0.5 text-xs transition-colors duration-150',
                         detail.isHot
-                          ? 'bg-warning/15 text-warning'
-                          : 'bg-bg-hover text-text-muted hover:text-text-secondary',
+                          ? 'text-warning'
+                          : 'text-text-muted hover:text-text-secondary',
                       )}
-                      style={
-                        detail.isHot
-                          ? { boxShadow: '0 0 8px 1px rgba(251,191,36,0.25)' }
-                          : undefined
-                      }
+                      style={{
+                        borderRadius: 'var(--radius-input)',
+                        background: detail.isHot ? 'color-mix(in srgb, var(--warning) 15%, transparent)' : 'var(--bg-elevated)',
+                        border: '1px solid var(--separator)',
+                        boxShadow: detail.isHot ? '0 0 8px 1px color-mix(in srgb, var(--warning) 25%, transparent)' : undefined,
+                      }}
                     >
                       <Flame
                         size={12}
                         style={
                           detail.isHot
-                            ? { filter: 'drop-shadow(0 0 4px rgba(251,191,36,0.6))' }
+                            ? { filter: 'drop-shadow(0 0 4px color-mix(in srgb, var(--warning) 60%, transparent))' }
                             : undefined
                         }
                       />
@@ -310,87 +319,98 @@ export function DetailPanel({ jid }: DetailPanelProps) {
 
               {/* AI Control */}
               <Section title="Controle IA" icon={Bot}>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-text-muted">Status:</span>
-                    <Badge
-                      variant={
-                        aiControl?.state === 'ON'
-                          ? 'success'
-                          : aiControl?.state === 'OFF_UNTIL'
-                          ? 'warning'
-                          : 'default'
-                      }
-                    >
-                      {aiControl?.state === 'ON'
-                        ? 'Ativa'
-                        : aiControl?.state === 'OFF_UNTIL'
-                        ? 'Pausada'
-                        : 'Desligada'}
-                    </Badge>
-                    {aiControl?.until && (
-                      <span className="text-xs text-text-muted">
-                        ate {timeAgo(aiControl.until)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex gap-1.5">
-                    <motion.div whileTap={{ scale: 0.97 }}>
-                      <Button
-                        size="xs"
-                        variant={aiControl?.state === 'ON' ? 'success' : 'secondary'}
-                        onClick={() => handleAiToggle('ON')}
-                        disabled={toggleAi.isPending}
-                      >
-                        Ligar
-                      </Button>
-                    </motion.div>
-                    <motion.div whileTap={{ scale: 0.97 }}>
-                      <Button
-                        size="xs"
-                        variant={aiControl?.state === 'OFF' ? 'danger' : 'secondary'}
-                        onClick={() => handleAiToggle('OFF')}
-                        disabled={toggleAi.isPending}
-                      >
-                        Desligar 24h
-                      </Button>
-                    </motion.div>
+                <div className="space-y-3">
+                  {/* Main ON/OFF toggle with Switch */}
+                  <div
+                    className="flex items-center justify-between p-3"
+                    style={{
+                      background: 'var(--glass-bg)',
+                      border: '1px solid var(--separator)',
+                      borderRadius: 'var(--radius-panel)',
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Bot
+                        size={14}
+                        style={{ color: isAiOn ? 'var(--ai-on)' : 'var(--text-muted)' }}
+                      />
+                      <div>
+                        <div className="text-sm font-medium text-text-primary">IA</div>
+                        <div className="text-xs" style={{ color: isAiOn ? 'var(--ai-on)' : aiControl?.state === 'OFF_UNTIL' ? 'var(--ai-paused)' : 'var(--ai-off)' }}>
+                          {aiControl?.state === 'ON'
+                            ? 'Ativa'
+                            : aiControl?.state === 'OFF_UNTIL'
+                            ? `Pausada${aiControl?.until ? ` — ate ${timeAgo(aiControl.until)}` : ''}`
+                            : 'Desligada'}
+                        </div>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={isAiOn}
+                      onCheckedChange={(checked) => handleAiToggle(checked ? 'ON' : 'OFF')}
+                      disabled={toggleAi.isPending}
+                      aria-label="Ligar ou desligar IA"
+                    />
                   </div>
 
                   {/* Pausar por tempo flexível (comando off + tempo) */}
-                  <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                    <span className="text-xs text-text-muted">Pausar por:</span>
-                    {PAUSE_OPTIONS.map((opt) => (
-                      <motion.button
-                        key={opt.label}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => handleAiPause(opt.m, opt.label)}
-                        disabled={toggleAi.isPending}
-                        className="px-2 py-0.5 rounded-badge text-xs font-medium text-text-secondary transition-colors duration-150 disabled:opacity-50"
-                        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)' }}
-                      >
-                        {opt.label}
-                      </motion.button>
-                    ))}
-                  </div>
-
-                  {/* Reset (comando reset) */}
-                  <button
-                    onClick={handleReset}
-                    disabled={resetConversation.isPending}
-                    className="flex items-center gap-1.5 mt-1 px-2 py-1 rounded-badge text-xs text-text-muted hover:text-error transition-colors duration-150 disabled:opacity-50"
+                  <div
+                    className="p-3 space-y-2"
+                    style={{
+                      background: 'var(--glass-bg)',
+                      border: '1px solid var(--separator)',
+                      borderRadius: 'var(--radius-panel)',
+                    }}
                   >
-                    <RotateCcw size={12} className={resetConversation.isPending ? 'animate-spin' : ''} />
-                    Resetar estado do lead
-                  </button>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs text-text-muted">Pausar por:</span>
+                      {PAUSE_OPTIONS.map((opt) => (
+                        <motion.button
+                          key={opt.label}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => handleAiPause(opt.m, opt.label)}
+                          disabled={toggleAi.isPending}
+                          className="px-2 py-0.5 text-xs font-medium text-text-secondary transition-colors duration-150 disabled:opacity-50"
+                          style={{
+                            background: 'var(--bg-elevated)',
+                            border: '1px solid var(--separator)',
+                            borderRadius: 'var(--radius-input)',
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--bg-elevated)')}
+                        >
+                          {opt.label}
+                        </motion.button>
+                      ))}
+                    </div>
+
+                    {/* Reset (comando reset) */}
+                    <button
+                      onClick={handleReset}
+                      disabled={resetConversation.isPending}
+                      className="flex items-center gap-1.5 px-2 py-1 text-xs text-text-muted hover:text-error transition-colors duration-150 disabled:opacity-50"
+                      style={{ borderRadius: 'var(--radius-input)' }}
+                    >
+                      <RotateCcw size={12} className={resetConversation.isPending ? 'animate-spin' : ''} />
+                      Resetar estado do lead
+                    </button>
+                  </div>
                 </div>
               </Section>
 
               {/* Funnel Stage */}
               <Section title="Etapa do Funil" icon={Layers}>
-                <div className="space-y-1">
+                <div
+                  className="space-y-1 p-2"
+                  style={{
+                    background: 'var(--glass-bg)',
+                    border: '1px solid var(--separator)',
+                    borderRadius: 'var(--radius-panel)',
+                  }}
+                >
                   {stages.map((s) => {
                     const isCurrent = s.key === detail.stage;
+                    const stageToken = stageColorToken(s.key);
                     return (
                       <button
                         key={s.key}
@@ -403,14 +423,14 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                         }}
                         className="w-full flex items-center gap-2 px-2 py-1.5 text-xs transition-colors duration-150"
                         style={{
-                          borderRadius: 6,
-                          background: isCurrent ? `${s.color}14` : 'transparent',
-                          borderLeft: isCurrent ? `2px solid ${s.color}` : '2px solid transparent',
+                          borderRadius: 'var(--radius-input)',
+                          background: isCurrent ? `color-mix(in srgb, ${stageToken} 12%, transparent)` : 'transparent',
+                          borderLeft: isCurrent ? `2px solid ${stageToken}` : '2px solid transparent',
                           color: isCurrent ? 'var(--text-primary)' : 'var(--text-muted)',
                           paddingLeft: isCurrent ? 6 : 8,
                         }}
                         onMouseEnter={(e) => {
-                          if (!isCurrent) e.currentTarget.style.background = 'rgba(31,39,51,0.3)';
+                          if (!isCurrent) e.currentTarget.style.background = 'var(--bg-hover)';
                         }}
                         onMouseLeave={(e) => {
                           if (!isCurrent) e.currentTarget.style.background = 'transparent';
@@ -418,11 +438,11 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                       >
                         <span
                           className="w-2 h-2 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: s.color }}
+                          style={{ backgroundColor: stageToken }}
                         />
                         <span>{s.label}</span>
                         {isCurrent && (
-                          <span className="ml-auto text-primary-400">atual</span>
+                          <span className="ml-auto" style={{ color: 'var(--accent-500)' }}>atual</span>
                         )}
                       </button>
                     );
@@ -488,7 +508,12 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                         initial="initial"
                         animate="animate"
                         exit={{ opacity: 0, y: -4, transition: { duration: 0.15 } }}
-                        className="flex items-start gap-2 p-2 rounded-badge bg-bg-elevated text-xs text-text-secondary group"
+                        className="flex items-start gap-2 p-2 text-xs text-text-secondary group"
+                        style={{
+                          background: 'var(--glass-bg)',
+                          border: '1px solid var(--separator)',
+                          borderRadius: 'var(--radius-input)',
+                        }}
                       >
                         <span className="flex-1">{note}</span>
                         <button
@@ -531,7 +556,14 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                         initial="initial"
                         animate="animate"
                         exit={{ opacity: 0, y: -4, transition: { duration: 0.15 } }}
-                        className="p-2 rounded-badge bg-bg-elevated text-xs group transition-colors duration-150 hover:bg-bg-hover"
+                        className="p-2 text-xs group transition-colors duration-150"
+                        style={{
+                          background: 'var(--glass-bg)',
+                          border: '1px solid var(--separator)',
+                          borderRadius: 'var(--radius-input)',
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--glass-bg)')}
                       >
                         <div className="flex items-start gap-2">
                           <button
@@ -598,7 +630,12 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                   {jidReminders.map((r) => (
                     <div
                       key={r.id}
-                      className="p-2 rounded-badge bg-bg-elevated text-xs text-text-secondary"
+                      className="p-2 text-xs text-text-secondary"
+                      style={{
+                        background: 'var(--glass-bg)',
+                        border: '1px solid var(--separator)',
+                        borderRadius: 'var(--radius-input)',
+                      }}
                     >
                       <div>{r.text}</div>
                       <div className="text-text-muted mt-0.5">
@@ -618,7 +655,12 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                     <select
                       value={reminderMinutes}
                       onChange={(e) => setReminderMinutes(e.target.value)}
-                      className="h-7 px-2 text-xs rounded-badge bg-bg-elevated border border-border text-text-primary"
+                      className="h-7 px-2 text-xs text-text-primary"
+                      style={{
+                        background: 'var(--bg-elevated)',
+                        border: '1px solid var(--separator)',
+                        borderRadius: 'var(--radius-input)',
+                      }}
                     >
                       <option value="15">15 min</option>
                       <option value="30">30 min</option>

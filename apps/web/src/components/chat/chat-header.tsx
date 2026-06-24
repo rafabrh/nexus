@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useUiStore } from '@/stores/ui.store';
+import { stageColorToken } from '@/lib/stage-colors';
 import type { ConversationListItem, AiState } from '@nexus/shared';
 
 function getAiLabel(state: AiState) {
@@ -35,24 +36,15 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
 
   return (
     <div
-      className="h-14 flex items-center justify-between px-4 flex-shrink-0"
-      style={{
-        background: 'rgba(20,24,32,0.72)',
-        backdropFilter: 'blur(12px) saturate(1.2)',
-        WebkitBackdropFilter: 'blur(12px) saturate(1.2)',
-        borderBottom: '1px solid rgba(255,255,255,0.04)',
-      }}
+      className="h-14 flex items-center justify-between px-4 flex-shrink-0 glass"
+      style={{ borderBottom: '1px solid var(--separator)' }}
     >
       {/* Left — contact info */}
       <div className="flex items-center gap-3">
         {/* Avatar 34px */}
         <div
-          className="rounded-full flex items-center justify-center text-xs font-medium text-text-secondary flex-shrink-0"
-          style={{
-            width: 34,
-            height: 34,
-            background: 'linear-gradient(135deg, #1A2029, #1F2733)',
-          }}
+          className="rounded-full flex items-center justify-center text-xs font-medium text-text-secondary flex-shrink-0 bg-bg-elevated border border-border"
+          style={{ width: 34, height: 34 }}
         >
           {initials}
         </div>
@@ -72,8 +64,8 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
             </span>
             <Badge
               style={{
-                backgroundColor: `${conversation.stageColor}20`,
-                color: conversation.stageColor,
+                backgroundColor: `color-mix(in srgb, ${stageColorToken(conversation.stage)} 13%, transparent)`,
+                color: stageColorToken(conversation.stage),
               }}
             >
               {conversation.stageLabel}
@@ -86,21 +78,14 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
       <div className="flex items-center gap-2">
         {/* AI status pill */}
         <div
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs"
-          style={{
-            background:
-              ai.variant === 'success'
-                ? 'rgba(34,197,94,0.08)'
-                : ai.variant === 'warning'
-                ? 'rgba(234,179,8,0.08)'
-                : 'rgba(255,255,255,0.05)',
-            border:
-              ai.variant === 'success'
-                ? '1px solid rgba(34,197,94,0.12)'
-                : ai.variant === 'warning'
-                ? '1px solid rgba(234,179,8,0.12)'
-                : '1px solid rgba(255,255,255,0.08)',
-          }}
+          className={cn(
+            'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border',
+            ai.variant === 'success'
+              ? 'bg-success/[0.08] border-success/20'
+              : ai.variant === 'warning'
+              ? 'bg-warning/[0.08] border-warning/20'
+              : 'bg-bg-hover border-border',
+          )}
         >
           {/* Dot with optional pulse-ring when ON */}
           <span className="relative flex items-center justify-center" style={{ width: 7, height: 7 }}>

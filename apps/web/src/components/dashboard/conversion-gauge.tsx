@@ -10,12 +10,13 @@ interface ConversionGaugeProps {
   subtitle?: string;
 }
 
-const glassStyle: React.CSSProperties = {
-  background: 'rgba(20,24,32,0.72)',
-  backdropFilter: 'blur(12px) saturate(1.2)',
-  border: '1px solid rgba(255,255,255,0.06)',
-  borderRadius: '12px',
+const cardStyle: React.CSSProperties = {
+  background: 'var(--bg-surface)',
+  backdropFilter: 'blur(12px) saturate(1.4)',
+  border: '1px solid var(--separator)',
+  borderRadius: 'var(--radius-card)',
   padding: '16px',
+  boxShadow: 'var(--shadow-control)',
 };
 
 // Geometry — a 270° arc (gap at the bottom) reads as a gauge, not a full ring.
@@ -63,23 +64,10 @@ export function ConversionGauge({ value, label = 'Conversão', subtitle }: Conve
   const rotation = 135;
 
   return (
-    <div style={glassStyle} className="flex flex-col items-center">
+    <div style={cardStyle} className="flex flex-col items-center">
       <div className="self-start text-sm font-medium text-text-secondary mb-2">{label}</div>
       <div className="relative" style={{ width: SIZE, height: SIZE }}>
         <svg width={SIZE} height={SIZE} className="block">
-          <defs>
-            <linearGradient id="gauge-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#2DD4BF" />
-              <stop offset="100%" stopColor="#0D9488" />
-            </linearGradient>
-            <filter id="gauge-glow" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="3" result="b" />
-              <feMerge>
-                <feMergeNode in="b" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
           <g transform={`rotate(${rotation} ${SIZE / 2} ${SIZE / 2})`}>
             {/* Track */}
             <circle
@@ -87,7 +75,7 @@ export function ConversionGauge({ value, label = 'Conversão', subtitle }: Conve
               cy={SIZE / 2}
               r={R}
               fill="none"
-              stroke="rgba(255,255,255,0.06)"
+              stroke="var(--separator)"
               strokeWidth={STROKE}
               strokeLinecap="round"
               strokeDasharray={`${ARC_LEN} ${CIRC}`}
@@ -99,11 +87,10 @@ export function ConversionGauge({ value, label = 'Conversão', subtitle }: Conve
               cy={SIZE / 2}
               r={R}
               fill="none"
-              stroke="url(#gauge-grad)"
+              stroke="var(--accent-500)"
               strokeWidth={STROKE}
               strokeLinecap="round"
               strokeDasharray={`0 ${CIRC}`}
-              filter="url(#gauge-glow)"
             />
           </g>
         </svg>

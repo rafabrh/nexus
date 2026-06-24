@@ -2,10 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   :root — invariable tokens (no color/material)
+   Color tokens live in html[data-theme='light'] / html[data-theme='dark']
+   ============================================================ */
 :root {
-  /* Fonts — Geist (self-hosted via next/font), Inter as fallback */
-  --font-sans: var(--font-geist-sans), 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: var(--font-geist-mono), 'JetBrains Mono', 'Fira Code', monospace;
+  /* Fonts — macOS-first stack */
+  --font-sans: -apple-system, BlinkMacSystemFont, var(--font-inter), 'Inter', system-ui, sans-serif;
+  --font-mono: 'SF Mono', var(--font-geist-mono), 'JetBrains Mono', monospace;
 
   /* Font sizes */
   --text-xs: 0.6875rem;   /* 11px */
@@ -16,49 +20,7 @@
   --text-xl: 1.25rem;     /* 20px */
   --text-2xl: 1.5rem;     /* 24px */
 
-  /* Backgrounds — deep, slightly cool (premium dark) */
-  --bg-base: #08090D;
-  --bg-surface: #101218;
-  --bg-elevated: #171A22;
-  --bg-hover: #1D212B;
-  --bg-active: #242935;
-
-  /* Primary (teal — brand identity: WhatsApp + system) */
-  --primary-400: #2DD4BF;
-  --primary-500: #14B8A6;
-  --primary-600: #0D9488;
-  --primary-700: #0F766E;
-  --primary-800: #115E59;
-
-  /* AI accent (violet) — the visual signature of the IA across the app */
-  --ai-400: #A78BFA;
-  --ai-500: #8B5CF6;
-  --ai-600: #7C3AED;
-
-  /* Text */
-  --text-primary: #E8ECF1;
-  --text-secondary: #8B95A5;
-  --text-muted: #505B6B;
-  --text-inverse: #0C0F12;
-
-  /* Borders */
-  --border-default: #1E2530;
-  --border-hover: #2A3545;
-  --border-active: #0D9488;
-
-  /* Semantic */
-  --success: #22C55E;
-  --warning: #F59E0B;
-  --error: #EF4444;
-  --info: #3B82F6;
-
-  /* AI Status */
-  --ai-on: #22C55E;
-  --ai-paused: #F59E0B;
-  --ai-off: #8B95A5;
-  --ai-thinking: #8B5CF6;
-
-  /* Radius */
+  /* Radius — legacy (consumed by tailwind.config.ts) */
   --radius-badge: 4px;
   --radius-input: 6px;
   --radius-card: 8px;
@@ -67,57 +29,37 @@
   --radius-xl: 16px;
   --radius-pill: 9999px;
 
-  /* Shadows */
+  /* Radius — macOS new */
+  --radius-control: 6px;
+  --radius-list-item: 5px;
+  --radius-panel: 18px;
+
+  /* Shadows — neutral, no teal tint */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.03);
 
-  /* Easing */
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-
-  /* === NEW: Glassmorphism === */
-  --glass-bg: rgba(20, 24, 32, 0.72);
-  --glass-border: rgba(255, 255, 255, 0.06);
-  --glass-blur: 16px;
+  /* Glass blur (macOS vibrancy) */
+  --glass-blur: 20px;
   --glass-blur-heavy: 24px;
 
-  /* === Glow (intensified ×2) === */
-  --glow-primary: 0 0 40px rgba(45, 212, 191, 0.42);
-  --glow-primary-strong: 0 0 76px rgba(45, 212, 191, 0.62);
-  --glow-success: 0 0 36px rgba(34, 197, 94, 0.42);
-  --glow-warning: 0 0 36px rgba(245, 158, 11, 0.42);
-  --glow-error: 0 0 36px rgba(239, 68, 68, 0.42);
-  --glow-info: 0 0 36px rgba(59, 130, 246, 0.42);
-  --glow-ai: 0 0 44px rgba(139, 92, 246, 0.55);
-  --glow-ai-strong: 0 0 84px rgba(139, 92, 246, 0.72);
-
-  /* === Gradients (richer) === */
-  --gradient-primary: linear-gradient(135deg, #14B8A6, #10B981);
-  --gradient-primary-subtle: linear-gradient(135deg, rgba(20, 184, 166, 0.18), rgba(16, 185, 129, 0.09));
-  --gradient-surface: linear-gradient(180deg, #161B24, #141820);
-  --gradient-radial-hero: radial-gradient(ellipse at 50% 0%, rgba(45, 212, 191, 0.14) 0%, transparent 60%);
-  --gradient-mesh-login: radial-gradient(at 18% 82%, rgba(45, 212, 191, 0.12) 0%, transparent 50%), radial-gradient(at 82% 18%, rgba(139, 92, 246, 0.1) 0%, transparent 50%), radial-gradient(at 50% 50%, rgba(16, 185, 129, 0.05) 0%, transparent 60%);
-
-  /* === NEW: Extended shadows === */
-  --shadow-glow-sm: 0 0 8px rgba(45, 212, 191, 0.1);
-  --shadow-glow-md: 0 0 20px rgba(45, 212, 191, 0.15);
-  --shadow-glow-lg: 0 0 40px rgba(45, 212, 191, 0.2);
-  --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.03);
-  --shadow-card-hover: 0 20px 56px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(45, 212, 191, 0.32), 0 0 48px rgba(45, 212, 191, 0.22);
-
-  /* === NEW: Animation tokens === */
+  /* Animation durations */
   --duration-instant: 100ms;
   --duration-fast: 150ms;
   --duration-normal: 200ms;
   --duration-smooth: 300ms;
   --duration-slow: 500ms;
   --duration-dramatic: 800ms;
+
+  /* Easing */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
   --ease-in-out-smooth: cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* === NEW: Z-index scale === */
+  /* Z-index scale */
   --z-base: 0;
   --z-sidebar: 40;
   --z-topbar: 50;
@@ -129,15 +71,104 @@
   --z-command-palette: 100;
 }
 
+/* ============================================================
+   Light theme
+   ============================================================ */
+html[data-theme='light'] {
+  color-scheme: light;
+  --bg-base: #ECECEC;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #FFFFFF;
+  --bg-hover: rgba(0,0,0,0.04);
+  --bg-active: rgba(0,0,0,0.08);
+  --window: #FFFFFF;
+  --vibrancy-bg: rgba(246,246,246,0.7);
+  --vibrancy-fallback: #F6F6F6;
+  --accent-500: #007AFF;
+  --accent-600: #0066D6;
+  --ai-400: #8B5CF6; --ai-500: #8B5CF6; --ai-600: #7C3AED;
+  --text-primary: #1A1A1A;
+  --text-secondary: rgba(0,0,0,0.5);
+  --text-muted: rgba(0,0,0,0.26);
+  --text-inverse: #FFFFFF;
+  --separator: #D9D9D9;
+  --control-fill: #FFFFFF;
+  --control-shadow: rgba(0,0,0,0.08);
+  --border-default: rgba(0,0,0,0.10);
+  --border-hover: rgba(0,0,0,0.16);
+  --border-active: #007AFF;
+  --success: #34C759; --warning: #FF9500; --error: #FF3B30; --info: #007AFF;
+  --ai-on: #34C759; --ai-paused: #FF9500; --ai-off: #8E8E93; --ai-thinking: #8B5CF6;
+  --bubble-them: #E9E9EB;
+  --stage-s0:#8E8E93; --stage-s1:#32ADE6; --stage-s2:#5856D6; --stage-s3:#FF9500;
+  --stage-s4:#FF3B30; --stage-s5:#34C759; --stage-s6:#00C7BE;
+  --glass-bg: rgba(255,255,255,0.6);
+  --glass-border: rgba(0,0,0,0.08);
+  --shadow-control: 0 1px 2px rgba(0,0,0,0.08);
+  --shadow-panel: 0 8px 40px rgba(0,0,0,0.12);
+  /* Mirror / specular ("efeito espelho") — bright on white surfaces */
+  --mirror-sheen-top: rgba(255,255,255,0.55);
+  --mirror-edge: rgba(255,255,255,0.9);
+  --mirror-sweep: rgba(255,255,255,0.5);
+  /* Chat ambience — on light surfaces the cursor "reflection" is a glossy white
+     bloom (the same light-reflection language as dark, translated up against the
+     light base), grounded by a subtle shadow vignette for depth. */
+  --chat-spot: rgba(255,255,255,0.95);
+  --chat-vignette: rgba(0,0,0,0.09);
+}
+
+/* ============================================================
+   Dark theme
+   ============================================================ */
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --bg-base: #1E1E1E;
+  --bg-surface: #1C1C1E;
+  --bg-elevated: #2C2C2E;
+  --bg-hover: rgba(255,255,255,0.06);
+  --bg-active: rgba(255,255,255,0.10);
+  --window: #1C1C1E;
+  --vibrancy-bg: rgba(40,40,42,0.6);
+  --vibrancy-fallback: #282829;
+  --accent-500: #0A84FF;
+  --accent-600: #0A84FF;
+  --ai-400: #A78BFA; --ai-500: #A78BFA; --ai-600: #8B5CF6;
+  --text-primary: #F5F5F7;
+  --text-secondary: rgba(235,235,245,0.6);
+  --text-muted: rgba(235,235,245,0.3);
+  --text-inverse: #1A1A1A;
+  --separator: rgba(255,255,255,0.12);
+  --control-fill: #2C2C2E;
+  --control-shadow: rgba(0,0,0,0.4);
+  --border-default: rgba(255,255,255,0.12);
+  --border-hover: rgba(255,255,255,0.20);
+  --border-active: #0A84FF;
+  --success: #30D158; --warning: #FF9F0A; --error: #FF453A; --info: #0A84FF;
+  --ai-on: #30D158; --ai-paused: #FF9F0A; --ai-off: #98989D; --ai-thinking: #A78BFA;
+  --bubble-them: #3A3A3C;
+  --stage-s0:#98989D; --stage-s1:#64D2FF; --stage-s2:#5E5CE6; --stage-s3:#FF9F0A;
+  --stage-s4:#FF453A; --stage-s5:#30D158; --stage-s6:#66D4CF;
+  --glass-bg: rgba(40,40,42,0.6);
+  --glass-border: rgba(255,255,255,0.10);
+  --shadow-control: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-panel: 0 8px 40px rgba(0,0,0,0.5);
+  /* Mirror / specular ("efeito espelho") — restrained on dark glass */
+  --mirror-sheen-top: rgba(255,255,255,0.13);
+  --mirror-edge: rgba(255,255,255,0.22);
+  --mirror-sweep: rgba(255,255,255,0.16);
+  /* Chat ambience — the cursor "reflection" is a soft white light over the
+     dark void; the vignette grounds it with depth. */
+  --chat-spot: rgba(255,255,255,0.05);
+  --chat-vignette: rgba(0,0,0,0.30);
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-html {
-  color-scheme: dark;
-}
+/* color-scheme is now set per data-theme — no global html override */
 
 body {
   font-family: var(--font-sans);
@@ -147,26 +178,6 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   position: relative;
-}
-
-/* Living ambient aurora: teal halo + violet (AI) bloom + emerald floor, slowly
-   drifting for cinematic depth across the whole app. */
-body::before {
-  content: '';
-  position: fixed;
-  inset: -25%;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(ellipse 70% 50% at 28% 2%, rgba(45, 212, 191, 0.16), transparent 55%),
-    radial-gradient(ellipse 60% 50% at 102% 8%, rgba(139, 92, 246, 0.14), transparent 55%),
-    radial-gradient(ellipse 55% 45% at 72% 102%, rgba(16, 185, 129, 0.08), transparent 60%);
-  animation: aurora-drift 20s ease-in-out infinite alternate;
-}
-
-@keyframes aurora-drift {
-  0% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.85; }
-  100% { transform: translate3d(-3%, 2.5%, 0) scale(1.1); opacity: 1; }
 }
 
 /* Scrollbar — 4px */
@@ -210,7 +221,7 @@ body::before {
 }
 
 .status-dot.online::after {
-  background: rgba(34, 197, 94, 0.3);
+  background: color-mix(in srgb, var(--success) 30%, transparent);
 }
 
 @keyframes pulse-ring {
@@ -232,12 +243,12 @@ body::before {
   50% { opacity: 0.4; }
 }
 
-/* Typing indicator — enhanced teal dots */
+/* Typing indicator dots */
 .typing-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #2DD4BF;
+  background: var(--accent-500);
   animation: typing-bounce 1.4s ease-in-out infinite;
 }
 
@@ -254,13 +265,13 @@ body::before {
   30% { transform: scale(1.3); }
 }
 
-/* Skeleton shimmer — enhanced with teal tint */
+/* Skeleton shimmer */
 .skeleton {
   background: linear-gradient(
     90deg,
-    #141820 25%,
-    rgba(45, 212, 191, 0.04) 50%,
-    #141820 75%
+    var(--bg-surface) 25%,
+    rgba(128, 128, 128, 0.06) 50%,
+    var(--bg-surface) 75%
   );
   background-size: 200% 100%;
   animation: skeleton-shimmer 1.8s ease-in-out infinite;
@@ -272,47 +283,85 @@ body::before {
   100% { background-position: -200% 0; }
 }
 
-/* === NEW: Glass utility classes === */
+/* Glass utility classes */
 .glass {
   background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(1.2);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.2);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.1);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.1);
   border: 1px solid var(--glass-border);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: var(--vibrancy-fallback); }
 }
 
 .glass-heavy {
-  background: rgba(20, 24, 32, 0.85);
-  backdrop-filter: blur(var(--glass-blur-heavy)) saturate(1.3);
-  -webkit-backdrop-filter: blur(var(--glass-blur-heavy)) saturate(1.3);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur-heavy)) saturate(1.5);
+  -webkit-backdrop-filter: blur(var(--glass-blur-heavy)) saturate(1.5);
   border: 1px solid var(--glass-border);
 }
 
-/* === NEW: Gradient primary button === */
-.btn-gradient-primary {
-  background: var(--gradient-primary);
-  color: var(--text-inverse);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-  transition: all 200ms var(--ease-out-expo);
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-heavy { background: var(--vibrancy-fallback); }
 }
 
-.btn-gradient-primary:hover:not(:disabled) {
-  box-shadow: var(--glow-primary), 0 4px 12px rgba(0, 0, 0, 0.4);
-  transform: translateY(-1px);
-  background: linear-gradient(135deg, #2DD4BF, #14B8A6);
+/* Vibrancy panel — translucent surface using vibrancy-bg token */
+.vibrancy-panel {
+  background: var(--vibrancy-bg);
+  backdrop-filter: blur(20px) saturate(1.6);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
 }
 
-.btn-gradient-primary:active:not(:disabled) {
-  transform: translateY(0);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-  transition: all 100ms;
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .vibrancy-panel { background: var(--vibrancy-fallback); }
 }
 
-.btn-gradient-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+/* Vibrancy bar — top-bar fixed header */
+.vibrancy-bar {
+  background: var(--vibrancy-bg);
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  /* Specular top edge — the polished-glass "mirror" line under the menu bar */
+  box-shadow: inset 0 1px 0 var(--mirror-edge);
 }
 
-/* === NEW: Connection badge pulse === */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .vibrancy-bar { background: var(--vibrancy-fallback); }
+}
+
+/* Glass popup — dropdowns / popovers */
+.glass-popup {
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--mirror-edge), var(--shadow-panel);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-popup { background: var(--vibrancy-fallback); }
+}
+
+/* Glass card — dashboard cards using bg-surface + subtle blur */
+.glass-card {
+  background: var(--bg-surface);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  /* Specular top edge so every card reads as a polished glass pane */
+  box-shadow: inset 0 1px 0 var(--mirror-edge);
+}
+
+/* Vibrancy panel gains the same specular edge for cross-screen consistency */
+.vibrancy-panel {
+  box-shadow: inset 0 1px 0 var(--mirror-edge);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-card { background: var(--bg-surface); }
+}
+
+/* Connection badge pulse */
 .connection-dot {
   width: 6px;
   height: 6px;
@@ -329,7 +378,7 @@ body::before {
   position: absolute;
   inset: -3px;
   border-radius: 50%;
-  background: rgba(34, 197, 94, 0.3);
+  background: color-mix(in srgb, var(--success) 30%, transparent);
   animation: pulse-ring 2s ease-in-out infinite;
 }
 
@@ -337,7 +386,7 @@ body::before {
   background: var(--error);
 }
 
-/* === NEW: AI thinking bar === */
+/* AI thinking bar */
 @keyframes ai-thinking-slide {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(200%); }
@@ -356,17 +405,17 @@ body::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent, #8B5CF6, #A78BFA, transparent);
+  background: linear-gradient(90deg, transparent, var(--ai-500), var(--ai-400), transparent);
   animation: ai-thinking-slide 1.5s linear infinite;
 }
 
-/* === NEW: Focus visible ring (accessibility) === */
+/* Focus visible ring (accessibility) */
 .focus-ring:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--bg-base), 0 0 0 4px #14B8A6;
+  box-shadow: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--accent-500);
 }
 
-/* === NEW: Reduced motion === */
+/* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -381,7 +430,7 @@ body::before {
   }
 }
 
-/* === NEW: Spinner pulse for loading button === */
+/* Spinner pulse for loading button */
 @keyframes btn-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.9; }
@@ -389,4 +438,143 @@ body::before {
 
 .btn-loading-pulse {
   animation: btn-pulse 1.5s ease-in-out infinite;
+}
+
+/* Film grain — montado apenas na abertura (login). Overlay de ruído sutil. */
+.film-grain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 250;
+  opacity: 0.038;
+  mix-blend-mode: overlay;
+  will-change: transform;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 140px 140px;
+  animation: grain-shift 1.2s steps(8) infinite;
+}
+
+@keyframes grain-shift {
+  0%   { transform: translate(0, 0); }
+  12%  { transform: translate(-2%, 1.5%); }
+  25%  { transform: translate(1.5%, -2%); }
+  37%  { transform: translate(-1%, 1%); }
+  50%  { transform: translate(2%, -1%); }
+  62%  { transform: translate(-1.5%, -1.5%); }
+  75%  { transform: translate(1%, 2%); }
+  87%  { transform: translate(-2%, 0.5%); }
+  100% { transform: translate(0, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .film-grain { animation: none; }
+}
+
+/* ============================================================
+   Mirror / specular system ("efeito espelho")
+   .mirror       — static glossy reflection on the upper half of a surface
+   .mirror-sweep — a soft light reflection that travels across on hover
+   Both are pointer-events:none overlays driven by theme tokens, so the same
+   treatment reads correctly in light and dark and never blocks interaction.
+   ============================================================ */
+.mirror {
+  position: relative;
+  isolation: isolate;
+}
+
+.mirror::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 2;
+  background: linear-gradient(
+    180deg,
+    var(--mirror-sheen-top) 0%,
+    transparent 48%
+  );
+}
+
+.mirror-sweep {
+  position: relative;
+  isolation: isolate;
+}
+
+.mirror-sweep::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 3;
+  background: linear-gradient(
+    105deg,
+    transparent 32%,
+    var(--mirror-sweep) 48%,
+    transparent 64%
+  );
+  background-size: 250% 100%;
+  background-position: 160% 0;
+  opacity: 0;
+  transition: opacity 240ms ease, background-position 620ms var(--ease-out);
+}
+
+.mirror-sweep:hover::after {
+  opacity: 1;
+  background-position: -60% 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mirror-sweep::after { transition: none; }
+  .mirror-sweep:hover::after { opacity: 0; background-position: 160% 0; }
+}
+
+/* ============================================================
+   Chat ambience — interactive mirror backdrop for the Conversas tab.
+   Turns the flat chat void into a polished, lit surface: a static top sheen +
+   grounded vignette give depth, and a soft "reflection" tracks the cursor
+   (driven by --mx/--my/--mirror-glow from JS). All colors come from theme
+   tokens, so it reads correctly in light and dark and adds no new hues.
+   ============================================================ */
+.chat-ambience {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.chat-ambience::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, var(--mirror-sheen-top) 0%, transparent 16%),
+    radial-gradient(130% 95% at 50% 125%, var(--chat-vignette), transparent 62%);
+}
+.chat-ambience::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    460px 460px at var(--mx, 50%) var(--my, 38%),
+    var(--chat-spot),
+    transparent 60%
+  );
+  opacity: var(--mirror-glow, 0);
+  transition: opacity 600ms var(--ease-out);
+  will-change: opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-ambience::after { display: none; }
+}
+
+/* Conversation list items wear the same "mirror" sheen as the active header
+   tab — a specular top gradient + bright edge line — revealed on hover so the
+   lateral list feels like interactive polished glass. The selected row carries
+   it permanently (applied inline over the accent fill). */
+.conv-glass:hover {
+  background-image: linear-gradient(180deg, var(--mirror-sheen-top), transparent 60%);
+  box-shadow: inset 0 1px 0 var(--mirror-edge), var(--shadow-control);
 }

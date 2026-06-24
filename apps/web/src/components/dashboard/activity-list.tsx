@@ -11,25 +11,25 @@ import type { NexusEventEnvelope, NexusEventType } from '@nexus/shared';
 function getEventConfig(type: NexusEventType) {
   switch (type) {
     case 'message.received':
-      return { icon: MessageCircle, color: 'text-info', bg: 'bg-info/10', label: 'Mensagem recebida', accentHex: '#3B82F6' };
+      return { icon: MessageCircle, color: 'text-info', bg: 'bg-info/10', label: 'Mensagem recebida' };
     case 'ai.thinking':
-      return { icon: Bot, color: 'text-ai-thinking', bg: 'bg-info/10', label: 'IA pensando', accentHex: '#3B82F6' };
+      return { icon: Bot, color: 'text-ai-thinking', bg: 'bg-ai-thinking/10', label: 'IA pensando' };
     case 'ai.responded':
-      return { icon: Bot, color: 'text-success', bg: 'bg-success/10', label: 'IA respondeu', accentHex: '#22C55E' };
+      return { icon: Bot, color: 'text-success', bg: 'bg-success/10', label: 'IA respondeu' };
     case 'ai.toggled':
-      return { icon: Bot, color: 'text-warning', bg: 'bg-warning/10', label: 'IA alterada', accentHex: '#F59E0B' };
+      return { icon: Bot, color: 'text-warning', bg: 'bg-warning/10', label: 'IA alterada' };
     case 'funnel.changed':
-      return { icon: ArrowRight, color: 'text-primary-400', bg: 'bg-primary-800/20', label: 'Etapa alterada', accentHex: '#6366F1' };
+      return { icon: ArrowRight, color: 'text-accent-500', bg: 'bg-accent-500/10', label: 'Etapa alterada' };
     case 'handoff.triggered':
-      return { icon: AlertTriangle, color: 'text-warning', bg: 'bg-warning/10', label: 'Handoff', accentHex: '#F59E0B' };
+      return { icon: AlertTriangle, color: 'text-warning', bg: 'bg-warning/10', label: 'Handoff' };
     case 'payment.approved':
-      return { icon: CreditCard, color: 'text-success', bg: 'bg-success/10', label: 'Pagamento', accentHex: '#22C55E' };
+      return { icon: CreditCard, color: 'text-success', bg: 'bg-success/10', label: 'Pagamento' };
     case 'note.added':
-      return { icon: MessageCircle, color: 'text-text-secondary', bg: 'bg-bg-hover', label: 'Nota adicionada', accentHex: '#6B7280' };
+      return { icon: MessageCircle, color: 'text-text-secondary', bg: 'bg-bg-hover', label: 'Nota adicionada' };
     case 'lead.hot':
-      return { icon: Flame, color: 'text-warning', bg: 'bg-warning/10', label: 'Lead quente', accentHex: '#F59E0B' };
+      return { icon: Flame, color: 'text-warning', bg: 'bg-warning/10', label: 'Lead quente' };
     default:
-      return { icon: MessageCircle, color: 'text-text-muted', bg: 'bg-bg-hover', label: type, accentHex: '#6B7280' };
+      return { icon: MessageCircle, color: 'text-text-muted', bg: 'bg-bg-hover', label: type };
   }
 }
 
@@ -47,8 +47,8 @@ function ActivityRow({ event, isNew }: ActivityRowProps) {
     if (isNew && iconRef.current) {
       gsap.fromTo(
         iconRef.current,
-        { boxShadow: `0 0 12px 4px ${config.accentHex}88` },
-        { boxShadow: '0 0 0px 0px transparent', duration: 0.6, ease: 'power2.out' },
+        { opacity: 0.4 },
+        { opacity: 1, duration: 0.4, ease: 'power2.out' },
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -77,6 +77,15 @@ function ActivityRow({ event, isNew }: ActivityRowProps) {
   );
 }
 
+const cardStyle: React.CSSProperties = {
+  background: 'var(--bg-surface)',
+  backdropFilter: 'blur(12px) saturate(1.4)',
+  border: '1px solid var(--separator)',
+  borderRadius: 'var(--radius-card)',
+  padding: '16px',
+  boxShadow: 'var(--shadow-control)',
+};
+
 export function ActivityList() {
   const events = useRealtimeStore((s) => s.events);
   const recent = events.slice(0, 20);
@@ -87,17 +96,9 @@ export function ActivityList() {
     prevIdsRef.current = newSet;
   }, [recent.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const glassStyle: React.CSSProperties = {
-    background: 'rgba(20,24,32,0.72)',
-    backdropFilter: 'blur(12px) saturate(1.2)',
-    border: '1px solid rgba(255,255,255,0.06)',
-    borderRadius: '12px',
-    padding: '16px',
-  };
-
   if (recent.length === 0) {
     return (
-      <div style={glassStyle}>
+      <div style={cardStyle}>
         <div className="flex items-center gap-2 mb-4">
           <h3 className="text-sm font-medium text-text-secondary">Atividade Recente</h3>
         </div>
@@ -112,7 +113,7 @@ export function ActivityList() {
   }
 
   return (
-    <div style={glassStyle}>
+    <div style={cardStyle}>
       {/* Header with live indicator */}
       <div className="flex items-center gap-2 mb-4">
         <h3 className="text-sm font-medium text-text-secondary">Atividade Recente</h3>
@@ -122,7 +123,7 @@ export function ActivityList() {
               width: '6px',
               height: '6px',
               borderRadius: '50%',
-              backgroundColor: '#EF4444',
+              backgroundColor: 'var(--error)',
               display: 'inline-block',
               animation: 'live-pulse 1.5s ease-in-out infinite',
             }}

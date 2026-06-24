@@ -1,7 +1,7 @@
 import type { Config } from 'tailwindcss';
 
 const config: Config = {
-  darkMode: 'class',
+  darkMode: ['selector', '[data-theme="dark"]'],
   content: ['./src/**/*.{ts,tsx}'],
   theme: {
     extend: {
@@ -13,12 +13,33 @@ const config: Config = {
           hover: 'var(--bg-hover)',
           active: 'var(--bg-active)',
         },
+        accent: {
+          500: 'var(--accent-500)',
+          600: 'var(--accent-600)',
+        },
+        // Alias: primary-* maps to accent tokens so existing consumers don't break.
+        // Will be removed in Task 26 once all components are migrated.
         primary: {
-          400: 'var(--primary-400)',
-          500: 'var(--primary-500)',
-          600: 'var(--primary-600)',
-          700: 'var(--primary-700)',
-          800: 'var(--primary-800)',
+          400: 'var(--accent-500)',
+          500: 'var(--accent-500)',
+          600: 'var(--accent-600)',
+          700: 'var(--accent-600)',
+          800: 'var(--accent-600)',
+        },
+        window: 'var(--window)',
+        vibrancy: 'var(--vibrancy-bg)',
+        separator: 'var(--separator)',
+        bubble: {
+          them: 'var(--bubble-them)',
+        },
+        stage: {
+          s0: 'var(--stage-s0)',
+          s1: 'var(--stage-s1)',
+          s2: 'var(--stage-s2)',
+          s3: 'var(--stage-s3)',
+          s4: 'var(--stage-s4)',
+          s5: 'var(--stage-s5)',
+          s6: 'var(--stage-s6)',
         },
         text: {
           primary: 'var(--text-primary)',
@@ -67,22 +88,17 @@ const config: Config = {
         lg: 'var(--radius-lg)',
         xl: 'var(--radius-xl)',
         pill: 'var(--radius-pill)',
+        control: 'var(--radius-control)',
+        'list-item': 'var(--radius-list-item)',
+        panel: 'var(--radius-panel)',
       },
       boxShadow: {
         sm: 'var(--shadow-sm)',
         md: 'var(--shadow-md)',
         lg: 'var(--shadow-lg)',
         elevated: 'var(--shadow-elevated)',
-        'card-hover': 'var(--shadow-card-hover)',
-        'glow-sm': 'var(--shadow-glow-sm)',
-        'glow-md': 'var(--shadow-glow-md)',
-        'glow-lg': 'var(--shadow-glow-lg)',
-        'glow-primary': 'var(--glow-primary)',
-        'glow-primary-strong': 'var(--glow-primary-strong)',
-        'glow-success': 'var(--glow-success)',
-        'glow-warning': 'var(--glow-warning)',
-        'glow-error': 'var(--glow-error)',
-        'glow-info': 'var(--glow-info)',
+        control: 'var(--shadow-control)',
+        panel: 'var(--shadow-panel)',
       },
       backdropBlur: {
         glass: 'var(--glass-blur)',

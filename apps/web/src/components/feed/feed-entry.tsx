@@ -1,8 +1,6 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { gsap } from 'gsap';
 import {
   MessageCircle,
   Bot,
@@ -16,99 +14,112 @@ import {
 import { cn, timeAgo } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { feedEntry } from '@/lib/motion-variants';
+import { stageColorToken } from '@/lib/stage-colors';
 import type { NexusEventEnvelope, NexusEventType } from '@nexus/shared';
 
-function getEventConfig(type: NexusEventType) {
+interface EventConfig {
+  icon: React.ElementType;
+  /** Tailwind text color class or inline style token */
+  colorClass: string;
+  /** CSS custom property for the left accent line */
+  accentToken: string;
+  /** Tailwind bg class for icon bubble */
+  bgClass: string;
+  label: string;
+  variant: 'info' | 'success' | 'warning' | 'error' | 'primary' | 'default';
+}
+
+function getEventConfig(type: NexusEventType, stageKey?: string | null): EventConfig {
   switch (type) {
     case 'message.received':
       return {
         icon: MessageCircle,
-        color: 'text-info',
-        bg: 'bg-info/10',
+        colorClass: 'text-[color:var(--info)]',
+        accentToken: 'var(--info)',
+        bgClass: 'bg-[color:color-mix(in_srgb,var(--info)_12%,transparent)]',
         label: 'Mensagem Recebida',
-        variant: 'info' as const,
-        accentHex: '#3B82F6',
+        variant: 'info',
       };
     case 'ai.thinking':
       return {
         icon: Bot,
-        color: 'text-ai-thinking',
-        bg: 'bg-info/10',
+        colorClass: 'text-[color:var(--ai-thinking)]',
+        accentToken: 'var(--ai-thinking)',
+        bgClass: 'bg-[color:color-mix(in_srgb,var(--ai-thinking)_12%,transparent)]',
         label: 'IA Pensando',
-        variant: 'info' as const,
-        accentHex: '#8B5CF6',
+        variant: 'info',
       };
     case 'ai.responded':
       return {
         icon: Bot,
-        color: 'text-success',
-        bg: 'bg-success/10',
+        colorClass: 'text-[color:var(--ai-thinking)]',
+        accentToken: 'var(--ai-thinking)',
+        bgClass: 'bg-[color:color-mix(in_srgb,var(--ai-thinking)_12%,transparent)]',
         label: 'IA Respondeu',
-        variant: 'success' as const,
-        accentHex: '#22C55E',
+        variant: 'success',
       };
     case 'ai.toggled':
       return {
         icon: ToggleLeft,
-        color: 'text-warning',
-        bg: 'bg-warning/10',
+        colorClass: 'text-[color:var(--warning)]',
+        accentToken: 'var(--warning)',
+        bgClass: 'bg-[color:color-mix(in_srgb,var(--warning)_12%,transparent)]',
         label: 'IA Alterada',
-        variant: 'warning' as const,
-        accentHex: '#F59E0B',
+        variant: 'warning',
       };
     case 'funnel.changed':
       return {
         icon: ArrowRight,
-        color: 'text-primary-400',
-        bg: 'bg-primary-800/20',
+        colorClass: 'text-[color:var(--accent-500)]',
+        accentToken: stageKey ? stageColorToken(stageKey) : 'var(--accent-500)',
+        bgClass: 'bg-[color:color-mix(in_srgb,var(--accent-500)_12%,transparent)]',
         label: 'Etapa Alterada',
-        variant: 'primary' as const,
-        accentHex: '#6366F1',
+        variant: 'primary',
       };
     case 'handoff.triggered':
       return {
         icon: AlertTriangle,
-        color: 'text-error',
-        bg: 'bg-error/10',
+        colorClass: 'text-[color:var(--info)]',
+        accentToken: 'var(--info)',
+        bgClass: 'bg-[color:color-mix(in_srgb,var(--info)_12%,transparent)]',
         label: 'Handoff',
-        variant: 'error' as const,
-        accentHex: '#EF4444',
+        variant: 'info',
       };
     case 'payment.approved':
       return {
         icon: CreditCard,
-        color: 'text-success',
-        bg: 'bg-success/10',
+        colorClass: 'text-[color:var(--success)]',
+        accentToken: 'var(--success)',
+        bgClass: 'bg-[color:color-mix(in_srgb,var(--success)_12%,transparent)]',
         label: 'Pagamento Aprovado',
-        variant: 'success' as const,
-        accentHex: '#22C55E',
+        variant: 'success',
       };
     case 'note.added':
       return {
         icon: StickyNote,
-        color: 'text-text-secondary',
-        bg: 'bg-bg-hover',
+        colorClass: 'text-text-secondary',
+        accentToken: 'var(--separator)',
+        bgClass: 'bg-[color:var(--bg-elevated)]',
         label: 'Nota Adicionada',
-        variant: 'default' as const,
-        accentHex: '#6B7280',
+        variant: 'default',
       };
     case 'lead.hot':
       return {
         icon: Flame,
-        color: 'text-warning',
-        bg: 'bg-warning/10',
+        colorClass: 'text-[color:var(--warning)]',
+        accentToken: 'var(--warning)',
+        bgClass: 'bg-[color:color-mix(in_srgb,var(--warning)_12%,transparent)]',
         label: 'Lead Quente',
-        variant: 'warning' as const,
-        accentHex: '#F59E0B',
+        variant: 'warning',
       };
     default:
       return {
         icon: MessageCircle,
-        color: 'text-text-muted',
-        bg: 'bg-bg-hover',
+        colorClass: 'text-text-muted',
+        accentToken: 'var(--separator)',
+        bgClass: 'bg-[color:var(--bg-elevated)]',
         label: type,
-        variant: 'default' as const,
-        accentHex: '#6B7280',
+        variant: 'default',
       };
   }
 }
@@ -118,10 +129,11 @@ interface FeedEntryProps {
 }
 
 export function FeedEntry({ event }: FeedEntryProps) {
-  const config = getEventConfig(event.type);
+  const payload = event.payload || {};
+  const stageKey = typeof payload.stageKey === 'string' ? payload.stageKey : null;
+  const config = getEventConfig(event.type, stageKey);
   const Icon = config.icon;
 
-  const payload = event.payload || {};
   const clientMsg = typeof payload.clientMessage === 'string' ? payload.clientMessage : null;
   const aiMsg = typeof payload.aiMessage === 'string' ? payload.aiMessage : null;
   const content = typeof payload.content === 'string' ? payload.content : null;
@@ -131,62 +143,63 @@ export function FeedEntry({ event }: FeedEntryProps) {
       variants={feedEntry}
       initial="initial"
       animate="animate"
+      className="glass relative overflow-hidden"
       style={{
-        position: 'relative',
-        background: 'rgba(20,24,32,0.72)',
-        backdropFilter: 'blur(12px) saturate(1.2)',
-        border: '1px solid rgba(255,255,255,0.06)',
-        borderRadius: '8px',
-        padding: '16px',
-        overflow: 'hidden',
+        background: 'var(--bg-surface)',
+        borderRadius: 'var(--radius-card)',
+        padding: '14px 16px',
+        border: '1px solid var(--separator)',
       }}
     >
       {/* Left accent line */}
       <div
+        aria-hidden
         style={{
           position: 'absolute',
           left: 0,
           top: 0,
           bottom: 0,
-          width: '2px',
-          background: config.accentHex,
-          boxShadow: `0 0 8px 1px ${config.accentHex}88`,
+          width: '3px',
+          borderRadius: 'var(--radius-card) 0 0 var(--radius-card)',
+          background: config.accentToken,
+          opacity: 0.8,
         }}
       />
 
       {/* Header */}
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex items-center gap-2 mb-2 pl-1">
         <div
           className={cn(
-            'w-7 h-7 rounded-input flex items-center justify-center flex-shrink-0',
-            config.bg,
+            'w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0',
+            config.bgClass,
           )}
         >
-          <Icon size={14} className={config.color} />
+          <Icon size={14} className={config.colorClass} />
         </div>
         <div className="flex-1 min-w-0">
           <Badge variant={config.variant}>{config.label}</Badge>
         </div>
-        <span className="text-[10px] text-text-muted flex-shrink-0">
+        <span className="text-[10px] text-text-muted flex-shrink-0 tabular-nums">
           {timeAgo(new Date(event.ts).toISOString())}
         </span>
       </div>
 
       {/* Message content grid */}
       {(clientMsg || aiMsg) && (
-        <div className="grid grid-cols-2 gap-2 mt-2">
+        <div className="grid grid-cols-2 gap-2 mt-2 pl-1">
           {clientMsg && (
             <div
               style={{
-                background: '#0C0F12',
+                background: 'var(--bg-elevated)',
                 borderRadius: '6px',
                 padding: '10px',
+                border: '1px solid var(--separator)',
               }}
             >
               <div
+                className="text-text-muted"
                 style={{
                   fontSize: '9px',
-                  color: 'var(--color-text-muted)',
                   marginBottom: '4px',
                   textTransform: 'uppercase',
                   letterSpacing: '0.08em',
@@ -201,8 +214,8 @@ export function FeedEntry({ event }: FeedEntryProps) {
           {aiMsg && (
             <div
               style={{
-                background: 'rgba(13,148,136,0.05)',
-                border: '1px solid rgba(13,148,136,0.15)',
+                background: 'color-mix(in srgb, var(--ai-thinking) 8%, var(--bg-elevated))',
+                border: '1px solid color-mix(in srgb, var(--ai-thinking) 20%, transparent)',
                 borderRadius: '6px',
                 padding: '10px',
               }}
@@ -210,7 +223,7 @@ export function FeedEntry({ event }: FeedEntryProps) {
               <div
                 style={{
                   fontSize: '9px',
-                  color: 'rgba(20,184,166,0.7)',
+                  color: 'var(--ai-thinking)',
                   marginBottom: '4px',
                   textTransform: 'uppercase',
                   letterSpacing: '0.08em',
@@ -227,11 +240,11 @@ export function FeedEntry({ event }: FeedEntryProps) {
 
       {/* Generic content */}
       {content && !clientMsg && !aiMsg && (
-        <p className="text-xs text-text-secondary mt-1">{content}</p>
+        <p className="text-xs text-text-secondary mt-1 pl-1">{content}</p>
       )}
 
       {/* JID */}
-      <div className="mt-2 text-[10px] text-text-muted font-mono truncate">{event.jid}</div>
+      <div className="mt-2 text-[10px] text-text-muted font-mono truncate pl-1">{event.jid}</div>
     </motion.div>
   );
 }

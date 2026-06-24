@@ -25,9 +25,9 @@ export function Modal({ open, onOpenChange, title, children, className }: ModalP
                 <motion.div
                   className="fixed inset-0 z-50"
                   style={{
-                    background: 'rgba(0,0,0,0.65)',
-                    backdropFilter: 'blur(4px)',
-                    WebkitBackdropFilter: 'blur(4px)',
+                    background: 'rgba(0,0,0,0.55)',
+                    backdropFilter: 'blur(8px)',
+                    WebkitBackdropFilter: 'blur(8px)',
                   }}
                   variants={modalOverlay}
                   initial="initial"
@@ -45,13 +45,12 @@ export function Modal({ open, onOpenChange, title, children, className }: ModalP
                     className,
                   )}
                   style={{
-                    background: 'rgba(20,24,32,0.85)',
+                    background: 'var(--bg-surface)',
                     backdropFilter: 'blur(24px) saturate(1.3)',
                     WebkitBackdropFilter: 'blur(24px) saturate(1.3)',
-                    border: '1px solid rgba(255,255,255,0.06)',
-                    borderRadius: '14px',
-                    boxShadow:
-                      '0 32px 64px rgba(0,0,0,0.5), 0 8px 24px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.03)',
+                    border: '1px solid var(--glass-border)',
+                    borderRadius: 'var(--radius-panel)',
+                    boxShadow: 'var(--shadow-panel)',
                   }}
                   variants={modalContent}
                   initial="initial"

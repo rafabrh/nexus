@@ -18,20 +18,21 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         className,
       )}
       style={{
-        background: '#0C0F12',
-        border: '1px solid #1E2530',
-        transition: 'all 200ms cubic-bezier(0.16, 1, 0.3, 1)',
+        background: 'var(--control-fill)',
+        border: '1px solid var(--border-default)',
+        boxShadow: 'inset 0 1px 2px var(--control-shadow)',
+        transition: 'border-color 150ms var(--ease-out-expo), box-shadow 150ms var(--ease-out-expo)',
         ...style,
       }}
       onFocus={(e) => {
-        e.currentTarget.style.borderColor = '#0D9488';
+        e.currentTarget.style.borderColor = 'var(--accent-500)';
         e.currentTarget.style.boxShadow =
-          '0 0 0 3px rgba(13,148,136,0.12), 0 0 12px rgba(13,148,136,0.05)';
+          'inset 0 1px 2px var(--control-shadow), 0 0 0 3px color-mix(in srgb, var(--accent-500) 20%, transparent)';
         props.onFocus?.(e);
       }}
       onBlur={(e) => {
-        e.currentTarget.style.borderColor = '#1E2530';
-        e.currentTarget.style.boxShadow = 'none';
+        e.currentTarget.style.borderColor = 'var(--border-default)';
+        e.currentTarget.style.boxShadow = 'inset 0 1px 2px var(--control-shadow)';
         props.onBlur?.(e);
       }}
       {...props}
