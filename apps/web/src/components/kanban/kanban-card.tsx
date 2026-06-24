@@ -11,12 +11,6 @@ interface KanbanCardProps {
   onDragStart: (e: React.DragEvent) => void;
 }
 
-function aiBadgeTokens(aiState: string): { label: string; color: string } {
-  if (aiState === 'ON') return { label: 'IA', color: 'var(--ai-on)' };
-  if (aiState === 'OFF' || aiState === 'OFF_UNTIL') return { label: 'Humano', color: 'var(--ai-paused)' };
-  return { label: 'IA off', color: 'var(--ai-off)' };
-}
-
 export function KanbanCard({ conv, onDragStart }: KanbanCardProps) {
   const display = conv.contactName || conv.phoneDisplay || '?';
   const initials = display
@@ -25,7 +19,6 @@ export function KanbanCard({ conv, onDragStart }: KanbanCardProps) {
     .slice(0, 2)
     .join('')
     .toUpperCase();
-  const ai = aiBadgeTokens(conv.aiState);
   const stageColor = stageColorToken(conv.stage);
 
   return (
@@ -94,45 +87,36 @@ export function KanbanCard({ conv, onDragStart }: KanbanCardProps) {
         </p>
       )}
 
-      {/* AI state + tags */}
-      <div className="flex items-center gap-1 flex-wrap">
-        <span
-          className="rounded-full px-1.5 py-0.5 font-medium"
-          style={{
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border-default)',
-            fontSize: 10,
-            color: ai.color,
-          }}
-        >
-          {ai.label}
-        </span>
-        {conv.tags.slice(0, 2).map((t) => (
-          <span
-            key={t}
-            className="rounded-full px-1.5 py-0.5 font-medium text-text-muted truncate max-w-[80px]"
-            style={{
-              background: 'var(--bg-elevated)',
-              border: '1px solid var(--border-default)',
-              fontSize: 10,
-            }}
-          >
-            {t}
-          </span>
-        ))}
-        {conv.tags.length > 2 && (
-          <span
-            className="rounded-full px-1.5 py-0.5 font-medium text-text-muted"
-            style={{
-              background: 'var(--bg-elevated)',
-              border: '1px solid var(--border-default)',
-              fontSize: 10,
-            }}
-          >
-            +{conv.tags.length - 2}
-          </span>
-        )}
-      </div>
+      {/* Tags */}
+      {conv.tags.length > 0 && (
+        <div className="flex items-center gap-1 flex-wrap">
+          {conv.tags.slice(0, 2).map((t) => (
+            <span
+              key={t}
+              className="rounded-full px-1.5 py-0.5 font-medium text-text-muted truncate max-w-[80px]"
+              style={{
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border-default)',
+                fontSize: 10,
+              }}
+            >
+              {t}
+            </span>
+          ))}
+          {conv.tags.length > 2 && (
+            <span
+              className="rounded-full px-1.5 py-0.5 font-medium text-text-muted"
+              style={{
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border-default)',
+                fontSize: 10,
+              }}
+            >
+              +{conv.tags.length - 2}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Footer: last activity */}
       <div className="flex items-center justify-end mt-2 text-xs text-text-muted">

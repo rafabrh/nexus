@@ -106,6 +106,15 @@ html[data-theme='light'] {
   --glass-border: rgba(0,0,0,0.08);
   --shadow-control: 0 1px 2px rgba(0,0,0,0.08);
   --shadow-panel: 0 8px 40px rgba(0,0,0,0.12);
+  /* Mirror / specular ("efeito espelho") — bright on white surfaces */
+  --mirror-sheen-top: rgba(255,255,255,0.55);
+  --mirror-edge: rgba(255,255,255,0.9);
+  --mirror-sweep: rgba(255,255,255,0.5);
+  /* Chat ambience — on light surfaces the cursor "reflection" is a glossy white
+     bloom (the same light-reflection language as dark, translated up against the
+     light base), grounded by a subtle shadow vignette for depth. */
+  --chat-spot: rgba(255,255,255,0.95);
+  --chat-vignette: rgba(0,0,0,0.09);
 }
 
 /* ============================================================
@@ -143,6 +152,14 @@ html[data-theme='dark'] {
   --glass-border: rgba(255,255,255,0.10);
   --shadow-control: 0 1px 2px rgba(0,0,0,0.4);
   --shadow-panel: 0 8px 40px rgba(0,0,0,0.5);
+  /* Mirror / specular ("efeito espelho") — restrained on dark glass */
+  --mirror-sheen-top: rgba(255,255,255,0.13);
+  --mirror-edge: rgba(255,255,255,0.22);
+  --mirror-sweep: rgba(255,255,255,0.16);
+  /* Chat ambience — the cursor "reflection" is a soft white light over the
+     dark void; the vignette grounds it with depth. */
+  --chat-spot: rgba(255,255,255,0.05);
+  --chat-vignette: rgba(0,0,0,0.30);
 }
 
 * {
@@ -305,6 +322,8 @@ body {
   background: var(--vibrancy-bg);
   backdrop-filter: blur(16px) saturate(1.3);
   -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  /* Specular top edge — the polished-glass "mirror" line under the menu bar */
+  box-shadow: inset 0 1px 0 var(--mirror-edge);
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
@@ -317,6 +336,7 @@ body {
   backdrop-filter: blur(20px) saturate(1.4);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
   border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--mirror-edge), var(--shadow-panel);
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
@@ -328,6 +348,13 @@ body {
   background: var(--bg-surface);
   backdrop-filter: blur(12px) saturate(1.4);
   -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  /* Specular top edge so every card reads as a polished glass pane */
+  box-shadow: inset 0 1px 0 var(--mirror-edge);
+}
+
+/* Vibrancy panel gains the same specular edge for cross-screen consistency */
+.vibrancy-panel {
+  box-shadow: inset 0 1px 0 var(--mirror-edge);
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
@@ -441,4 +468,113 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .film-grain { animation: none; }
+}
+
+/* ============================================================
+   Mirror / specular system ("efeito espelho")
+   .mirror       — static glossy reflection on the upper half of a surface
+   .mirror-sweep — a soft light reflection that travels across on hover
+   Both are pointer-events:none overlays driven by theme tokens, so the same
+   treatment reads correctly in light and dark and never blocks interaction.
+   ============================================================ */
+.mirror {
+  position: relative;
+  isolation: isolate;
+}
+
+.mirror::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 2;
+  background: linear-gradient(
+    180deg,
+    var(--mirror-sheen-top) 0%,
+    transparent 48%
+  );
+}
+
+.mirror-sweep {
+  position: relative;
+  isolation: isolate;
+}
+
+.mirror-sweep::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 3;
+  background: linear-gradient(
+    105deg,
+    transparent 32%,
+    var(--mirror-sweep) 48%,
+    transparent 64%
+  );
+  background-size: 250% 100%;
+  background-position: 160% 0;
+  opacity: 0;
+  transition: opacity 240ms ease, background-position 620ms var(--ease-out);
+}
+
+.mirror-sweep:hover::after {
+  opacity: 1;
+  background-position: -60% 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mirror-sweep::after { transition: none; }
+  .mirror-sweep:hover::after { opacity: 0; background-position: 160% 0; }
+}
+
+/* ============================================================
+   Chat ambience — interactive mirror backdrop for the Conversas tab.
+   Turns the flat chat void into a polished, lit surface: a static top sheen +
+   grounded vignette give depth, and a soft "reflection" tracks the cursor
+   (driven by --mx/--my/--mirror-glow from JS). All colors come from theme
+   tokens, so it reads correctly in light and dark and adds no new hues.
+   ============================================================ */
+.chat-ambience {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.chat-ambience::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, var(--mirror-sheen-top) 0%, transparent 16%),
+    radial-gradient(130% 95% at 50% 125%, var(--chat-vignette), transparent 62%);
+}
+.chat-ambience::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    460px 460px at var(--mx, 50%) var(--my, 38%),
+    var(--chat-spot),
+    transparent 60%
+  );
+  opacity: var(--mirror-glow, 0);
+  transition: opacity 600ms var(--ease-out);
+  will-change: opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-ambience::after { display: none; }
+}
+
+/* Conversation list items wear the same "mirror" sheen as the active header
+   tab — a specular top gradient + bright edge line — revealed on hover so the
+   lateral list feels like interactive polished glass. The selected row carries
+   it permanently (applied inline over the accent fill). */
+.conv-glass:hover {
+  background-image: linear-gradient(180deg, var(--mirror-sheen-top), transparent 60%);
+  box-shadow: inset 0 1px 0 var(--mirror-edge), var(--shadow-control);
 }

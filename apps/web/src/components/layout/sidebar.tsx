@@ -52,10 +52,12 @@ function ConversationItem({
   conversation,
   selected,
   onClick,
+  isLast,
 }: {
   conversation: ConversationListItem;
   selected: boolean;
   onClick: () => void;
+  isLast: boolean;
 }) {
   const ai = getAiBadge(conversation.aiState);
   const initials = conversation.contactName
@@ -70,7 +72,7 @@ function ConversationItem({
       variants={staggerItem}
       onClick={onClick}
       className={cn(
-        'w-full text-left mx-1.5 px-3 py-3 flex gap-3 transition-colors duration-150 focus-ring',
+        'conv-glass relative w-full text-left mx-1.5 px-3 py-3 flex gap-3 transition-colors duration-150 focus-ring',
         !selected && !conversation.isHot && 'hover:bg-bg-hover',
         !selected && conversation.isHot && 'hover:bg-bg-hover border-l-2 border-l-warning',
       )}
@@ -78,11 +80,26 @@ function ConversationItem({
         borderRadius: 'var(--radius-list-item)',
         ...(selected
           ? {
-              background: 'var(--accent-500)',
+              // Selected row = glossy accent glass, matching the active header tab.
+              backgroundColor: 'var(--accent-500)',
+              backgroundImage:
+                'linear-gradient(180deg, var(--mirror-sheen-top), transparent 55%)',
+              boxShadow: 'inset 0 1px 0 var(--mirror-edge), var(--shadow-control)',
             }
           : {}),
       }}
     >
+      {/* Subtle hairline separating conversations — inset past the avatar, like
+          the WhatsApp list. Theme-aware via --separator; skipped on the last
+          row and the selected (filled) row. */}
+      {!isLast && !selected && (
+        <span
+          aria-hidden
+          className="absolute bottom-0 right-3 h-px"
+          style={{ left: 56, background: 'var(--separator)' }}
+        />
+      )}
+
       {/* Avatar */}
       <div
         className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-medium flex-shrink-0"
@@ -96,7 +113,7 @@ function ConversationItem({
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
             <span
               className="text-sm font-medium truncate"
@@ -112,8 +129,9 @@ function ConversationItem({
               />
             )}
           </div>
+          {/* Timestamp at the top-right corner — tabular for alignment */}
           <span
-            className="text-xs flex-shrink-0"
+            className="text-xs flex-shrink-0 tabular-nums leading-5"
             style={{ color: selected ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)' }}
           >
             {timeAgo(conversation.lastActivity)}
@@ -241,12 +259,13 @@ export function Sidebar() {
             className="py-1"
           >
             <AnimatePresence>
-              {filtered.map((c) => (
+              {filtered.map((c, i) => (
                 <ConversationItem
                   key={c.jid}
                   conversation={c}
                   selected={selectedJid === c.jid}
                   onClick={() => setSelectedJid(c.jid)}
+                  isLast={i === filtered.length - 1}
                 />
               ))}
             </AnimatePresence>

@@ -5,6 +5,7 @@ import { MessageCircle } from 'lucide-react';
 import { Sidebar } from '@/components/layout/sidebar';
 import { DetailPanel } from '@/components/layout/detail-panel';
 import { ChatHeader } from '@/components/chat/chat-header';
+import { ChatAmbience } from '@/components/chat/chat-ambience';
 import { MessageList } from '@/components/chat/message-list';
 import { MessageInput } from '@/components/chat/message-input';
 import { useConversationStore } from '@/stores/conversation.store';
@@ -54,25 +55,28 @@ export default function ConversationsPage() {
       {/* Sidebar — 320px */}
       <Sidebar />
 
-      {/* Chat area */}
+      {/* Chat area — interactive mirror backdrop behind the content */}
       <div
         className={cn(
-          'flex-1 ml-80 flex flex-col transition-all duration-200',
+          'relative flex-1 ml-80 flex flex-col transition-all duration-200',
           detailPanelOpen && 'mr-[380px]',
         )}
       >
-        {selectedConversation ? (
-          <>
-            <ChatHeader conversation={selectedConversation} />
-            <MessageList jid={selectedJid!} />
-            <MessageInput
-              jid={selectedJid!}
-              aiState={selectedConversation.aiState}
-            />
-          </>
-        ) : (
-          <EmptyChat />
-        )}
+        <ChatAmbience />
+        <div className="relative z-[1] flex flex-col flex-1 min-h-0">
+          {selectedConversation ? (
+            <>
+              <ChatHeader conversation={selectedConversation} />
+              <MessageList jid={selectedJid!} />
+              <MessageInput
+                jid={selectedJid!}
+                aiState={selectedConversation.aiState}
+              />
+            </>
+          ) : (
+            <EmptyChat />
+          )}
+        </div>
       </div>
 
       {/* Detail Panel — 380px */}
