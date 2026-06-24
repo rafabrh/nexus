@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { toast } from 'sonner';
+import { notify } from '@/lib/notify';
 import { Inbox } from 'lucide-react';
 import { KanbanCard } from './kanban-card';
 import { useConversations } from '@/hooks/use-conversations';
@@ -70,11 +70,11 @@ export function KanbanBoard() {
         method: 'POST',
         body: JSON.stringify({ stage }),
       });
-      toast.success(`${label} movido para ${FunnelStage.fromString(stage).label}`);
+      notify.success(`${label} movido para ${FunnelStage.fromString(stage).label}`);
       qc.invalidateQueries({ queryKey: ['conversations'] });
       qc.invalidateQueries({ queryKey: ['leads'] });
     } catch {
-      toast.error('Erro ao mover');
+      notify.error('Erro ao mover');
       qc.invalidateQueries({ queryKey: ['conversations'] }); // revert optimistic
     }
   };
@@ -92,7 +92,7 @@ export function KanbanBoard() {
           <div className="h-5 w-36 skeleton mb-1" />
           <div className="h-3 w-52 skeleton" />
         </div>
-        <div className="flex gap-3 overflow-x-auto p-5 flex-1 min-h-0">
+        <div className="kanban-scroll flex gap-3 overflow-x-auto p-5 flex-1 min-h-0">
           {Array.from({ length: 7 }).map((_, i) => (
             <ColumnSkeleton key={i} />
           ))}
@@ -129,7 +129,7 @@ export function KanbanBoard() {
 
       {/* Board scroll container — columns fill the available height */}
       <div
-        className="flex gap-3 overflow-x-auto p-5 flex-1 min-h-0 items-stretch"
+        className="kanban-scroll flex gap-3 overflow-x-auto p-5 flex-1 min-h-0 items-stretch"
         style={{ scrollSnapType: 'x proximity', scrollPadding: '20px' }}
       >
         {stages.map((stage) => {

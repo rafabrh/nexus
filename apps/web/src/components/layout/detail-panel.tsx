@@ -17,7 +17,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { toast } from 'sonner';
+import { notify } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -132,8 +132,8 @@ export function DetailPanel({ jid }: DetailPanelProps) {
   const handleAiToggle = (state: AiState) => {
     const label = state === 'ON' ? 'ativada' : 'desligada por 24h';
     toggleAi.mutate({ state }, {
-      onSuccess: () => toast.success(`IA ${label}`),
-      onError: () => toast.error('Erro ao alterar IA'),
+      onSuccess: () => notify.success(`IA ${label}`),
+      onError: () => notify.error('Erro ao alterar IA'),
     });
   };
 
@@ -141,8 +141,8 @@ export function DetailPanel({ jid }: DetailPanelProps) {
   const handleAiPause = (minutes: number, label: string) => {
     const expireAt = new Date(Date.now() + minutes * 60000).toISOString();
     toggleAi.mutate({ state: 'OFF_UNTIL', expireAt }, {
-      onSuccess: () => toast.success(`IA pausada por ${label}`),
-      onError: () => toast.error('Erro ao alterar IA'),
+      onSuccess: () => notify.success(`IA pausada por ${label}`),
+      onError: () => notify.error('Erro ao alterar IA'),
     });
   };
 
@@ -150,8 +150,8 @@ export function DetailPanel({ jid }: DetailPanelProps) {
   const handleReset = () => {
     if (!window.confirm('Resetar o estado deste lead? Reativa a IA e limpa flags transitórias. Histórico, etapa, tags e notas são mantidos.')) return;
     resetConversation.mutate(undefined, {
-      onSuccess: () => toast.success('Estado resetado — IA reativada'),
-      onError: () => toast.error('Erro ao resetar estado'),
+      onSuccess: () => notify.success('Estado resetado — IA reativada'),
+      onError: () => notify.error('Erro ao resetar estado'),
     });
   };
 
@@ -163,9 +163,9 @@ export function DetailPanel({ jid }: DetailPanelProps) {
         onSuccess: () => {
           setQrName('');
           setQrContent('');
-          toast.success('Resposta rápida salva');
+          notify.success('Resposta rápida salva');
         },
-        onError: () => toast.error('Erro ao salvar resposta'),
+        onError: () => notify.error('Erro ao salvar resposta'),
       },
     );
   };
@@ -182,9 +182,9 @@ export function DetailPanel({ jid }: DetailPanelProps) {
     addNote.mutate(noteText.trim(), {
       onSuccess: () => {
         setNoteText('');
-        toast.success('Nota adicionada');
+        notify.success('Nota adicionada');
       },
-      onError: () => toast.error('Erro ao adicionar nota'),
+      onError: () => notify.error('Erro ao adicionar nota'),
     });
   };
 
@@ -193,9 +193,9 @@ export function DetailPanel({ jid }: DetailPanelProps) {
     addTag.mutate(tagText.trim(), {
       onSuccess: () => {
         setTagText('');
-        toast.success('Tag adicionada');
+        notify.success('Tag adicionada');
       },
-      onError: () => toast.error('Erro ao adicionar tag'),
+      onError: () => notify.error('Erro ao adicionar tag'),
     });
   };
 
@@ -211,9 +211,9 @@ export function DetailPanel({ jid }: DetailPanelProps) {
       {
         onSuccess: () => {
           setReminderText('');
-          toast.success('Lembrete criado');
+          notify.success('Lembrete criado');
         },
-        onError: () => toast.error('Erro ao criar lembrete'),
+        onError: () => notify.error('Erro ao criar lembrete'),
       },
     );
   };
@@ -417,7 +417,7 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                         onClick={() => {
                           if (!isCurrent) {
                             updateStage.mutate(s.key as FunnelStageKey, {
-                              onSuccess: () => toast.success(`Etapa: ${s.label}`),
+                              onSuccess: () => notify.success(`Etapa: ${s.label}`),
                             });
                           }
                         }}
@@ -570,7 +570,7 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                             type="button"
                             onClick={() => {
                               insertIntoComposer(qr.content);
-                              toast.success('Resposta inserida no chat');
+                              notify.success('Resposta inserida no chat');
                             }}
                             title="Clique para preencher o chat (voce edita e envia)"
                             className="flex-1 min-w-0 text-left cursor-pointer"
@@ -579,7 +579,7 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                             <div className="text-text-muted mt-0.5">{qr.content}</div>
                           </button>
                           <button
-                            onClick={() => deleteQuickReply.mutate(qr.id, { onSuccess: () => toast.success('Resposta removida') })}
+                            onClick={() => deleteQuickReply.mutate(qr.id, { onSuccess: () => notify.success('Resposta removida') })}
                             className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-error transition-all flex-shrink-0"
                             aria-label="Remover resposta rapida"
                           >
