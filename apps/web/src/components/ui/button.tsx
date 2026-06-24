@@ -10,10 +10,11 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        primary: 'text-white',
-        secondary: 'text-text-primary border border-border-default hover:text-text-primary',
+        primary: 'text-white mirror mirror-sweep',
+        secondary:
+          'text-text-primary border border-border-default hover:text-text-primary mirror mirror-sweep',
         ghost: 'text-text-secondary hover:text-text-primary',
-        glass: 'glass-popup text-text-primary rounded-pill',
+        glass: 'glass-popup text-text-primary rounded-pill mirror mirror-sweep',
         danger: 'bg-error/10 text-error hover:bg-error/20 active:bg-error/30',
         success: 'bg-success/10 text-success hover:bg-success/20 active:bg-success/30',
       },
@@ -81,7 +82,7 @@ const variantHover: Record<string, object> = {
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = 'primary', size, style, ...props }, ref) => {
+  ({ className, variant = 'primary', size, style, children, ...props }, ref) => {
     const resolvedVariant = variant ?? 'primary';
     const baseStyle = variantStyles[resolvedVariant] ?? {};
     const hoverStyle = variantHover[resolvedVariant] ?? {};
@@ -98,7 +99,13 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         whileTap={{ scale: 0.97 }}
         whileHover={hoverStyle as Record<string, string | number>}
         {...props}
-      />
+      >
+        {/* Lift the label above the specular gloss/sweep overlays so the
+            mirror effect never sits on top of text. */}
+        <span className="relative z-10 inline-flex items-center justify-center gap-2">
+          {children}
+        </span>
+      </motion.button>
     );
   },
 );

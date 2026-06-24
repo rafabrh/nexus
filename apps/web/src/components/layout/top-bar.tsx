@@ -174,7 +174,9 @@ export function TopBar() {
         <span className="text-xs text-text-muted font-normal">Panel</span>
       </div>
 
-      {/* Tabs — center */}
+      {/* Tabs — center. Active tab sits on a polished glass "mirror" pill that
+          slides between tabs (shared layoutId), giving the bar a segmented-
+          control feel without losing the accent identity. */}
       <nav className="flex-1 flex items-center justify-center gap-1">
         {NAV_TABS.map((tab) => {
           const active = pathname === tab.href;
@@ -183,26 +185,26 @@ export function TopBar() {
               key={tab.href}
               href={tab.href}
               className={cn(
-                'relative px-4 h-12 flex items-center text-sm font-medium transition-colors duration-150',
+                'relative px-4 h-8 flex items-center rounded-pill text-sm font-medium transition-colors duration-150',
                 active
                   ? 'text-primary-400'
                   : 'text-text-secondary hover:text-text-primary',
               )}
             >
-              {tab.label}
-              <AnimatePresence>
-                {active && (
-                  <motion.span
-                    layoutId="tab-indicator"
-                    className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full"
-                    style={{ background: 'var(--accent-500)' }}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ type: 'spring', stiffness: 380, damping: 34 }}
-                  />
-                )}
-              </AnimatePresence>
+              {active && (
+                <motion.span
+                  layoutId="tab-pill"
+                  className="glass absolute inset-0 rounded-pill"
+                  style={{
+                    backgroundImage:
+                      'linear-gradient(180deg, var(--mirror-sheen-top), transparent 60%)',
+                    boxShadow:
+                      'inset 0 1px 0 var(--mirror-edge), var(--shadow-control)',
+                  }}
+                  transition={{ type: 'spring', stiffness: 380, damping: 34 }}
+                />
+              )}
+              <span className="relative z-10">{tab.label}</span>
             </Link>
           );
         })}
@@ -222,6 +224,7 @@ export function TopBar() {
           style={{
             border: `1px solid ${connected ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)'}`,
             background: connected ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+            boxShadow: 'inset 0 1px 0 var(--mirror-edge)',
           }}
         >
           {connected ? <Wifi size={14} /> : <WifiOff size={14} />}
@@ -233,6 +236,7 @@ export function TopBar() {
           ref={bellRef}
           aria-label="Notificacoes"
           className="relative w-8 h-8 rounded-input bg-bg-elevated border border-border flex items-center justify-center hover:bg-bg-hover transition-colors duration-150 focus-ring"
+          style={{ boxShadow: 'inset 0 1px 0 var(--mirror-edge)' }}
         >
           <Bell size={14} className="text-text-secondary" />
           {pendingCount > 0 && (
