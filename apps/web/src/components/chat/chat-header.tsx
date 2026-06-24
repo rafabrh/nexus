@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useUiStore } from '@/stores/ui.store';
+import { stageColorToken } from '@/lib/stage-colors';
 import type { ConversationListItem, AiState } from '@nexus/shared';
 
 function getAiLabel(state: AiState) {
@@ -63,8 +64,8 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
             </span>
             <Badge
               style={{
-                backgroundColor: `${conversation.stageColor}20`,
-                color: conversation.stageColor,
+                backgroundColor: `color-mix(in srgb, ${stageColorToken(conversation.stage)} 13%, transparent)`,
+                color: stageColorToken(conversation.stage),
               }}
             >
               {conversation.stageLabel}

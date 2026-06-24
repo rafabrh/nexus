@@ -76,7 +76,7 @@ const variantHover: Record<string, object> = {
     background: 'var(--bg-hover)',
   },
   glass: {
-    background: 'var(--glass-bg-hover, color-mix(in srgb, var(--glass-bg) 90%, white 10%))',
+    background: 'color-mix(in srgb, var(--glass-bg) 90%, white 10%)',
   },
 };
 

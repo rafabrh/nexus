@@ -70,7 +70,7 @@ function Section({
         onClick={() => setOpen(!open)}
         className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-text-secondary transition-colors duration-150"
         style={{ borderRadius: 0 }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
         onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
       >
         <Icon size={14} className="text-text-muted" />
@@ -248,7 +248,7 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                 height: 28,
                 borderRadius: 'var(--radius-input)',
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
             >
               <X size={16} />
@@ -376,7 +376,7 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                             border: '1px solid var(--separator)',
                             borderRadius: 'var(--radius-input)',
                           }}
-                          onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
                           onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--bg-elevated)')}
                         >
                           {opt.label}
@@ -430,7 +430,7 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                           paddingLeft: isCurrent ? 6 : 8,
                         }}
                         onMouseEnter={(e) => {
-                          if (!isCurrent) e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+                          if (!isCurrent) e.currentTarget.style.background = 'var(--bg-hover)';
                         }}
                         onMouseLeave={(e) => {
                           if (!isCurrent) e.currentTarget.style.background = 'transparent';
@@ -562,7 +562,7 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                           border: '1px solid var(--separator)',
                           borderRadius: 'var(--radius-input)',
                         }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
                         onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--glass-bg)')}
                       >
                         <div className="flex items-start gap-2">
