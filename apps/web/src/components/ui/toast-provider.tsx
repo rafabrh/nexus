@@ -8,10 +8,11 @@ export function ToastProvider() {
       position="bottom-right"
       toastOptions={{
         style: {
-          background: '#1A2029',
-          border: '1px solid #1E2530',
-          color: '#E8ECF1',
+          background: 'var(--bg-surface)',
+          border: '1px solid var(--separator)',
+          color: 'var(--text-primary)',
           fontSize: '13px',
+          boxShadow: 'var(--shadow-panel)',
         },
         className: 'nexus-toast',
       }}

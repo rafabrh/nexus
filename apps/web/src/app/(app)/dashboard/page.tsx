@@ -62,7 +62,7 @@ export default function DashboardPage() {
                   label="Leads ativos"
                   value={data.leadsActive}
                   subtitle={`${data.leadsNew} novos hoje`}
-                  accentColor="#3B82F6"
+                  accentColor="var(--info)"
                 />
               </motion.div>
               <motion.div variants={cardEntrance}>
@@ -71,7 +71,7 @@ export default function DashboardPage() {
                   label="Receita hoje"
                   value={formatCurrency(data.revenueToday)}
                   subtitle={`${data.leadsPaid} vendas`}
-                  accentColor="#22C55E"
+                  accentColor="var(--success)"
                 />
               </motion.div>
               <motion.div variants={cardEntrance}>
@@ -89,7 +89,7 @@ export default function DashboardPage() {
                   label="Resp. media"
                   value={`${(data.avgResponseMs / 1000).toFixed(1)}s`}
                   subtitle={`${data.handoffCount} handoffs`}
-                  accentColor="#F59E0B"
+                  accentColor="var(--warning)"
                 />
               </motion.div>
             </>

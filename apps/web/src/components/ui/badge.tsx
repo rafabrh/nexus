@@ -24,24 +24,24 @@ const badgeVariants = cva(
 
 const variantInlineStyles: Record<string, React.CSSProperties> = {
   default: {
-    background: 'rgba(80,91,107,0.1)',
-    border: '1px solid rgba(80,91,107,0.15)',
-    color: '#505B6B',
+    background: 'var(--bg-active)',
+    border: '1px solid var(--border-default)',
+    color: 'var(--text-secondary)',
   },
   primary: {
-    background: 'rgba(45,212,191,0.08)',
-    border: '1px solid rgba(45,212,191,0.16)',
-    color: '#2DD4BF',
+    background: 'color-mix(in srgb, var(--accent-500) 10%, transparent)',
+    border: '1px solid color-mix(in srgb, var(--accent-500) 20%, transparent)',
+    color: 'var(--accent-500)',
   },
   success: {
-    background: 'rgba(34,197,94,0.1)',
-    border: '1px solid rgba(34,197,94,0.15)',
-    color: '#22C55E',
+    background: 'color-mix(in srgb, var(--success) 12%, transparent)',
+    border: '1px solid color-mix(in srgb, var(--success) 20%, transparent)',
+    color: 'var(--success)',
   },
   warning: {
-    background: 'rgba(245,158,11,0.1)',
-    border: '1px solid rgba(245,158,11,0.15)',
-    color: '#F59E0B',
+    background: 'color-mix(in srgb, var(--warning) 12%, transparent)',
+    border: '1px solid color-mix(in srgb, var(--warning) 20%, transparent)',
+    color: 'var(--warning)',
   },
 };
 

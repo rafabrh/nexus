@@ -10,6 +10,7 @@ import { SegmentedControl } from '@/components/ui/segmented-control';
 import { useConversations } from '@/hooks/use-conversations';
 import { useConversationStore } from '@/stores/conversation.store';
 import { staggerContainer, staggerItem } from '@/lib/motion-variants';
+import { stageColorToken } from '@/lib/stage-colors';
 import type { ConversationListItem, AiState } from '@nexus/shared';
 
 const FILTERS = [
@@ -132,8 +133,8 @@ function ConversationItem({
             style={{
               backgroundColor: selected
                 ? 'rgba(255,255,255,0.15)'
-                : `${conversation.stageColor}20`,
-              color: selected ? '#ffffff' : conversation.stageColor,
+                : `color-mix(in srgb, ${stageColorToken(conversation.stage)} 13%, transparent)`,
+              color: selected ? '#ffffff' : stageColorToken(conversation.stage),
             }}
           >
             {conversation.stageLabel}

@@ -72,7 +72,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
       role="switch"
       aria-checked={checked}
       className="relative w-10 h-6 rounded-full transition-colors duration-200 flex-shrink-0"
-      style={{ background: checked ? 'var(--gradient-primary)' : '#252834' }}
+      style={{ background: checked ? 'var(--accent-500)' : 'var(--bg-active)' }}
     >
       <motion.span
         className="absolute top-1 w-4 h-4 rounded-full bg-white"
