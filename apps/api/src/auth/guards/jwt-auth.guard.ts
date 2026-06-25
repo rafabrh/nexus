@@ -5,9 +5,11 @@ import {
   UnauthorizedException,
   Inject,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../../core/redis/redis.module';
 import { NexusJwtService } from '../jwt.service';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { RedisKeys } from '@nexus/shared';
 
 @Injectable()
@@ -15,9 +17,17 @@ export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly jwt: NexusJwtService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    private readonly reflector: Reflector,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    // Routes/controllers marked @Public() bypass authentication entirely.
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) return true;
+
     const request = context.switchToHttp().getRequest();
     const token = this.extractToken(request);
 

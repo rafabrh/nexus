@@ -36,6 +36,15 @@ export class WebhookService {
       return;
     }
 
+    // The Evolution apikey is shared across instances, so a valid signature is
+    // not enough: confirm the instance belongs to a known tenant before writing
+    // anything to Redis. Otherwise a stray/foreign instance could seed data.
+    const tenant = await this.tenants.get(instanceName);
+    if (!tenant) {
+      this.logger.warn(`webhook.unknown-instance: ${instanceName} (ignorado)`);
+      return;
+    }
+
     switch (event) {
       case 'messages.upsert':
         await this.handleMessageUpsert(instanceName, payload);

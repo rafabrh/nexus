@@ -8,6 +8,7 @@ import { TenantThrottlerGuard } from './core/throttler/tenant-throttler.guard';
 import { REDIS_CLIENT } from './core/redis/redis.module';
 import type Redis from 'ioredis';
 import { AuthModule } from './auth/auth.module';
+import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { ConversationModule } from './conversation/conversation.module';
 import { ConversationDataModule } from './conversation/conversation-data.module';
 import { AiControlModule } from './ai-control/ai-control.module';
@@ -61,6 +62,11 @@ import { validate } from './core/config/app.config';
     // magic-link 5/h) are silently ignored. Default: 60 req / 60s per IP.
     // Redis-backed + tenant/user-aware tracker (see TenantThrottlerGuard).
     { provide: APP_GUARD, useClass: TenantThrottlerGuard },
+    // Deny-by-default authentication. Every route requires a valid access token
+    // unless explicitly marked @Public(). A new controller is protected the
+    // moment it ships — no per-controller @UseGuards needed. Runs after the
+    // throttler guard (registration order = execution order).
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
 })
 export class AppModule {}

@@ -15,6 +15,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { MagicLinkRequestDto } from './dto/magic-link-request.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
@@ -26,6 +27,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('magic-link')
+  @Public()
   @HttpCode(200)
   @Throttle({ default: { ttl: 3600000, limit: 5 } })
   @ApiOperation({ summary: 'Request a magic link login email' })
@@ -40,6 +42,7 @@ export class AuthController {
   }
 
   @Get('callback')
+  @Public()
   @ApiOperation({ summary: 'Validate magic link token and set auth cookies' })
   @ApiResponse({ status: 200, description: 'JSON with tokens (SPA fetch)' })
   @ApiResponse({ status: 302, description: 'Redirect to dashboard (browser navigation)' })
@@ -89,6 +92,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @Public()
   @HttpCode(200)
   @ApiOperation({ summary: 'Refresh access token using refresh token cookie' })
   @ApiResponse({ status: 200, description: 'New access token set in cookie' })
