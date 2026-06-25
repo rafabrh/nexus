@@ -1,0 +1,62 @@
+# NEXUS Web (Next.js 14) — production image for EasyPanel.
+# Build context = repo root (monorepo). Dockerfile path = Dockerfile.web.
+#
+# IMPORTANT: NEXT_PUBLIC_* are inlined into the client bundle at BUILD time.
+# NEXT_PUBLIC_API_URL must be passed as a build arg (EasyPanel forwards the
+# service env vars to the build), e.g. https://api.shkgroup.com.br
+
+# ===== Stage 1: Dependencies =====
+FROM node:20-alpine AS deps
+WORKDIR /app
+
+RUN corepack enable && corepack prepare pnpm@9 --activate
+
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY packages/shared/package.json ./packages/shared/
+COPY apps/web/package.json ./apps/web/
+
+RUN pnpm install --frozen-lockfile --prod=false
+
+# ===== Stage 2: Build =====
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+RUN corepack enable && corepack prepare pnpm@9 --activate
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
+COPY . .
+
+# Baked into the client bundle at build time — must be present here.
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV NEXT_TELEMETRY_DISABLED=1
+
+RUN pnpm --filter @nexus/shared build && \
+    pnpm --filter @nexus/web build
+
+# ===== Stage 3: Runtime =====
+FROM node:20-alpine AS runtime
+WORKDIR /app
+
+RUN addgroup -S nexus && adduser -S nexus -G nexus
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+# Next.js standalone output keeps the monorepo layout: the server lives at
+# apps/web/server.js and static assets are copied next to it.
+COPY --from=builder --chown=nexus:nexus /app/apps/web/.next/standalone ./
+COPY --from=builder --chown=nexus:nexus /app/apps/web/.next/static ./apps/web/.next/static
+
+USER nexus
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=15s --retries=3 \
+  CMD wget -q -O- http://localhost:3000/ || exit 1
+
+CMD ["node", "apps/web/server.js"]

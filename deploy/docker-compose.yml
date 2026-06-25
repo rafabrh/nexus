@@ -22,12 +22,14 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRATION_MS=900000
       - JWT_REFRESH_EXPIRATION_MS=604800000
-      - CORS_ALLOWED_ORIGINS=https://app.shkgroups.com
+      - CORS_ALLOWED_ORIGINS=https://painel.shkgroup.com.br
       - RESEND_API_KEY=${RESEND_API_KEY}
-      - RESEND_FROM=noreply@shkgroups.com
-      - MAGIC_LINK_BASE_URL=https://app.shkgroups.com/auth/callback
+      - RESEND_FROM=noreply@shkgroup.com.br
+      - MAGIC_LINK_BASE_URL=https://painel.shkgroup.com.br/auth/callback
       - ADMIN_EMAIL=${ADMIN_EMAIL}
-      - APP_BASE_URL=https://api.shkgroups.com
+      - APP_BASE_URL=https://api.shkgroup.com.br
+      - TRUST_PROXY=1
+      - METRICS_TOKEN=${METRICS_TOKEN}
       - LOG_LEVEL=info
     volumes:
       - ./secrets:/secrets:ro
@@ -38,6 +40,32 @@ services:
         condition: service_healthy
       nexus-postgres:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+
+  # Web (Next.js standalone). NEXT_PUBLIC_API_URL é inlined no BUILD — por isso
+  # vai como build arg, não só runtime.
+  nexus-web:
+    build:
+      context: ..
+      dockerfile: Dockerfile.web
+      args:
+        NEXT_PUBLIC_API_URL: https://api.shkgroup.com.br
+    container_name: nexus-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - NEXT_PUBLIC_API_URL=https://api.shkgroup.com.br
+    networks:
+      - nexus-network
+    depends_on:
+      - nexus-api
     deploy:
       resources:
         limits:
