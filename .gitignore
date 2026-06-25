@@ -20,8 +20,9 @@ Thumbs.db
 
 .qa-runner/
 
-# Infra/deploy local — fora do controle de versão
+# Infra/deploy + docs locais — fora do controle de versão
 deploy/
+docs/
 
 nexus-build/
 nexus-build2/
