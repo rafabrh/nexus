@@ -17,11 +17,12 @@ import { AllExceptionsFilter } from './core/filters/all-exceptions.filter';
 import { RedisIoAdapter } from './realtime/redis-io.adapter';
 import { REDIS_CLIENT } from './core/redis/redis.module';
 import { DB, type Database } from './core/db/db.module';
+import { resolveTrustProxy } from './core/config/trust-proxy';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({ logger: false }),
+    new FastifyAdapter({ logger: false, trustProxy: resolveTrustProxy() }),
     { bufferLogs: true },
   );
 

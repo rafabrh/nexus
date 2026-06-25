@@ -4,10 +4,12 @@ import { SkipThrottle } from '@nestjs/throttler';
 import type { FastifyReply } from 'fastify';
 import { MetricsService } from './metrics.service';
 import { MetricsAuthGuard } from './metrics-auth.guard';
+import { Public } from '../../auth/decorators/public.decorator';
 
 @Controller('metrics')
 @ApiTags('Metrics')
 @SkipThrottle()
+@Public()
 @UseGuards(MetricsAuthGuard)
 export class MetricsController {
   constructor(private readonly metrics: MetricsService) {}
