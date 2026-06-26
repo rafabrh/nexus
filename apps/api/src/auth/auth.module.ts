@@ -3,7 +3,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { NexusJwtService } from './jwt.service';
 import { MagicLinkService } from './magic-link.service';
-import { ResendClient } from './resend.client';
+import { MailerService } from './mailer.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 
@@ -13,7 +13,7 @@ import { RolesGuard } from './guards/roles.guard';
     AuthService,
     NexusJwtService,
     MagicLinkService,
-    ResendClient,
+    MailerService,
     JwtAuthGuard,
     RolesGuard,
   ],

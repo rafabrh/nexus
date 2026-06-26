@@ -74,6 +74,34 @@ export class AppConfig {
   @IsString()
   RESEND_FROM: string = 'noreply@shkgroups.com';
 
+  // ---- SMTP (email oficial; tem precedencia sobre Resend quando configurado) ----
+  @IsOptional()
+  @IsString()
+  SMTP_HOST?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  SMTP_PORT?: number;
+
+  @IsOptional()
+  @IsString()
+  SMTP_USER?: string;
+
+  @IsOptional()
+  @IsString()
+  SMTP_PASS?: string;
+
+  @IsOptional()
+  @IsString()
+  SMTP_SECURE?: string;
+
+  // Remetente unificado (cai para RESEND_FROM / SMTP_USER quando ausente).
+  @IsOptional()
+  @IsString()
+  MAIL_FROM?: string;
+
   @IsOptional()
   @IsString()
   MAGIC_LINK_BASE_URL: string = 'http://localhost:3000/auth/callback';
