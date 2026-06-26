@@ -27,23 +27,8 @@ import {
 } from '@/hooks/use-onboarding';
 import { reconnectSocket } from '@/hooks/use-socket';
 import { api } from '@/lib/api';
+import { decodeJwt } from '@/lib/jwt';
 import { pageTransition, pageTransitionConfig, staggerContainer, staggerItem } from '@/lib/motion-variants';
-
-interface Claims {
-  sub?: string;
-  instancia?: string;
-  role?: string;
-}
-
-function decodeJwt(token: string | null): Claims {
-  if (!token) return {};
-  try {
-    const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    return JSON.parse(atob(part));
-  } catch {
-    return {};
-  }
-}
 
 const glassStyle: React.CSSProperties = {
   border: '1px solid var(--glass-border)',

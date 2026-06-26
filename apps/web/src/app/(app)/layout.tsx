@@ -58,7 +58,10 @@ function ConnectionGuard({ children, pathname }: { children: React.ReactNode; pa
   // dropped or was deleted while the operator is on a protected screen, bounce to
   // /connect immediately instead of leaving stale conversations on screen.
   // Screens reachable even when the instance is down (so the operator can fix it).
-  const alwaysAllowed = pathname === '/connect' || pathname === '/settings';
+  // /admin is platform administration — the superadmin has no WhatsApp instance,
+  // so it must never be gated behind the connection check.
+  const alwaysAllowed =
+    pathname === '/connect' || pathname === '/settings' || pathname === '/admin';
 
   useEffect(() => {
     if (instanceState && instanceState !== 'open' && !alwaysAllowed) {
