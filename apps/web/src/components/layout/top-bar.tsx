@@ -10,6 +10,7 @@ import {
   WifiOff,
   User,
   Settings,
+  ShieldCheck,
   LogOut,
   Sun,
   AlertCircle,
@@ -33,17 +34,7 @@ import {
 } from '@/stores/notifications.store';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { api } from '@/lib/api';
-
-/** Decodes the `sub` (email) claim from the JWT for display. */
-function emailFromToken(token: string | null): string | null {
-  if (!token) return null;
-  try {
-    const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    return JSON.parse(atob(part)).sub ?? null;
-  } catch {
-    return null;
-  }
-}
+import { decodeJwt } from '@/lib/jwt';
 
 const KIND_META: Record<
   NotificationKind,
@@ -220,7 +211,9 @@ function UserMenu() {
   const ref = useRef<HTMLDivElement>(null);
 
   const displayName = useSettingsStore((s) => s.displayName);
-  const email = emailFromToken(token);
+  const claims = decodeJwt(token);
+  const email = claims.sub ?? null;
+  const isSuperadmin = claims.role === 'superadmin';
   const shownName = displayName || email;
   const initial = (shownName?.[0] ?? 'U').toUpperCase();
 
@@ -285,6 +278,17 @@ function UserMenu() {
               </div>
               <ThemeToggle />
             </div>
+
+            {isSuperadmin && (
+              <Link
+                href="/admin"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors duration-150"
+              >
+                <ShieldCheck size={15} />
+                Admin
+              </Link>
+            )}
 
             <Link
               href="/settings"

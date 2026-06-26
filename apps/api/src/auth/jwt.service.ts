@@ -8,7 +8,7 @@ export type TokenType = 'access' | 'refresh';
 export interface NexusJwtPayload extends JWTPayload {
   sub: string;
   instancia: string;
-  role: 'admin' | 'operator';
+  role: 'admin' | 'operator' | 'superadmin';
   jti: string;
   /** Distinguishes an access token from a refresh token so a long-lived
    *  refresh token can't be used as an access token (and vice-versa). */

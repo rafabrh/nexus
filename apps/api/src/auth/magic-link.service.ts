@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { RedisKeys } from '@nexus/shared';
-import { ResendClient } from './resend.client';
+import { MailerService } from './mailer.service';
 
 interface MagicLinkData {
   email: string;
@@ -21,7 +21,7 @@ export class MagicLinkService {
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly config: ConfigService,
-    private readonly resend: ResendClient,
+    private readonly mailer: MailerService,
   ) {
     this.baseUrl = this.config.get<string>(
       'MAGIC_LINK_BASE_URL',
@@ -52,7 +52,7 @@ export class MagicLinkService {
     const magicLinkUrl = `${this.baseUrl}?token=${token}`;
 
     // Send email
-    await this.resend.sendMagicLinkEmail(email, magicLinkUrl);
+    await this.mailer.sendMagicLinkEmail(email, magicLinkUrl);
 
     this.logger.log(`Magic link generated for ${email} (expires in ${MagicLinkService.TTL_SECONDS}s)`);
   }

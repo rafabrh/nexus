@@ -29,6 +29,13 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('Acesso negado — role nao encontrada');
     }
 
+    // superadmin (dono da plataforma) acessa qualquer rota protegida por role.
+    // Hierarquia superadmin > admin > operator — evita listar 'superadmin' em
+    // todo @Roles() e mantém o gate cross-tenant restrito a ele.
+    if (user.role === 'superadmin') {
+      return true;
+    }
+
     if (!requiredRoles.includes(user.role)) {
       throw new ForbiddenException(
         `Acesso negado — requer role: ${requiredRoles.join(', ')}`,
