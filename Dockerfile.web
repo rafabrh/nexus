@@ -28,10 +28,11 @@ COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_module
 COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 COPY . .
 
-# Baked into the client bundle at build time — must be present here. Default
-# aponta para a API de produção; um --build-arg (EasyPanel) ainda sobrescreve.
-ARG NEXT_PUBLIC_API_URL=https://api.shkgroup.com.br
-ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+# Baked into the client bundle at build time — must be present here. O `:-` usa
+# o default quando o build-arg vem vazio (o EasyPanel passa a env do serviço como
+# build-arg; se vazia, sem o `:-` o bundle cairia no fallback localhost:4000).
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://api.shkgroup.com.br}
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN pnpm --filter @nexus/shared build && \
