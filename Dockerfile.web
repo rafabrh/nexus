@@ -28,8 +28,9 @@ COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_module
 COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 COPY . .
 
-# Baked into the client bundle at build time — must be present here.
-ARG NEXT_PUBLIC_API_URL
+# Baked into the client bundle at build time — must be present here. Default
+# aponta para a API de produção; um --build-arg (EasyPanel) ainda sobrescreve.
+ARG NEXT_PUBLIC_API_URL=https://api.shkgroup.com.br
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ENV NEXT_TELEMETRY_DISABLED=1
 
