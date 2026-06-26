@@ -63,7 +63,10 @@ export class AuthService {
       throw new UnauthorizedException('Token invalido ou expirado');
     }
 
-    const normalizedRole = data.role.toLowerCase() as 'admin' | 'operator';
+    const normalizedRole = data.role.toLowerCase() as
+      | 'admin'
+      | 'operator'
+      | 'superadmin';
     const payload = {
       sub: data.email,
       instancia: data.instancia,

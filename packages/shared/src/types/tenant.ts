@@ -1,6 +1,8 @@
 export interface TenantUser {
   email: string;
-  role: 'admin' | 'operator';
+  // 'superadmin' = dono da plataforma (rotas cross-tenant /admin/*); criado só
+  // via bootstrap SQL, nunca pela API (AddUserDto restringe a admin|operator).
+  role: 'admin' | 'operator' | 'superadmin';
 }
 
 export interface TenantEntry {

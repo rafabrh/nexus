@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Param,
   Body,
   UseGuards,
@@ -22,7 +23,9 @@ import { AddUserDto } from './dto/add-user.dto';
 @ApiTags('Admin')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('admin')
+// Rotas cross-tenant (listam/editam QUALQUER tenant via :instancia). Restritas
+// ao superadmin da plataforma — um admin de tenant NÃO pode tocar outros tenants.
+@Roles('superadmin')
 @Controller('admin')
 export class AdminController {
   constructor(private readonly tenants: TenantService) {}
@@ -65,5 +68,14 @@ export class AdminController {
     @Body() dto: AddUserDto,
   ): Promise<TenantEntry | null> {
     return this.tenants.addUser(instancia, dto);
+  }
+
+  @Delete('tenants/:instancia/users/:email')
+  @ApiOperation({ summary: 'Remover usuario do tenant' })
+  async removeUser(
+    @Param('instancia') instancia: string,
+    @Param('email') email: string,
+  ): Promise<TenantEntry | null> {
+    return this.tenants.removeUser(instancia, email);
   }
 }
