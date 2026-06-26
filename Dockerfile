@@ -33,6 +33,10 @@ WORKDIR /app
 RUN addgroup -S nexus && adduser -S nexus -G nexus
 
 COPY --from=builder --chown=nexus:nexus /app/node_modules ./node_modules
+# pnpm não hoista: as deps do apps/api vivem em apps/api/node_modules (symlinks
+# para o store em /app/node_modules/.pnpm). Sem isto, dist/main.js não resolve
+# @nestjs/core em runtime (MODULE_NOT_FOUND → crash loop).
+COPY --from=builder --chown=nexus:nexus /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=builder --chown=nexus:nexus /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder --chown=nexus:nexus /app/packages/shared/package.json ./packages/shared/
 COPY --from=builder --chown=nexus:nexus /app/apps/api/dist ./apps/api/dist
