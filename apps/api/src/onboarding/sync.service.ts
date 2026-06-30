@@ -244,7 +244,7 @@ export class SyncService {
 
     const contactName = chat.pushName || chat.name;
     if (contactName) {
-      pipeline.set(RedisKeys.contact(phone), JSON.stringify({ pushName: contactName }));
+      pipeline.set(RedisKeys.contact(instancia, phone), JSON.stringify({ pushName: contactName }));
     }
 
     await pipeline.exec();
@@ -275,7 +275,7 @@ export class SyncService {
 
         if (resolved && pushName) {
           pipeline.set(
-            RedisKeys.contact(resolved.phone),
+            RedisKeys.contact(instancia, resolved.phone),
             JSON.stringify({ pushName }),
           );
           saved++;

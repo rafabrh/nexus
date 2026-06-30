@@ -35,10 +35,12 @@ export const RedisKeys = {
   chatHistory: (inst: string, phone: string) =>
     `chathistory:${inst}-${phone}`,
 
-  // ---- Contato (N8N escreve, BFF le) ----
+  // ---- Contato (namespaced por instancia — BFF popula e le a sua chave) ----
+  // O N8N escreve a chave global `contact:{phone}`, mas o BFF NAO depende dela:
+  // mantem a sua propria chave `contact:{inst}:{phone}` para isolar PII por tenant.
 
-  contact: (phone: string) =>
-    `contact:${phone}`,
+  contact: (inst: string, phone: string) =>
+    `contact:${inst}:${phone}`,
 
   // ---- BFF exclusivo ----
 

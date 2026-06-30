@@ -129,7 +129,7 @@ export class WebhookService {
     // Update contact name if available
     const pushName = typeof data.pushName === 'string' ? data.pushName : null;
     if (pushName) {
-      const contactKey = RedisKeys.contact(phone);
+      const contactKey = RedisKeys.contact(instanceName, phone);
       await this.redis.set(contactKey, JSON.stringify({ pushName }));
     }
 
@@ -323,7 +323,7 @@ export class WebhookService {
 
       if (resolved && pushName) {
         await this.redis.set(
-          RedisKeys.contact(resolved.phone),
+          RedisKeys.contact(instanceName, resolved.phone),
           JSON.stringify({ pushName }),
         );
       }
