@@ -151,4 +151,13 @@ export class ConversationController {
   ) {
     return this.service.resetState(instancia, jid);
   }
+
+  @Post(':jid/read')
+  @ApiOperation({ summary: 'Marca a conversa como lida (zera o contador de nao-lidas)' })
+  async markRead(
+    @Tenant() instancia: string,
+    @Param('jid') jid: string,
+  ) {
+    return this.service.markRead(instancia, jid);
+  }
 }

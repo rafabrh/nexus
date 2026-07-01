@@ -10,6 +10,7 @@ function makeDeps(tenantGet: () => Promise<unknown>) {
     get: vi.fn(async () => null),
     del: vi.fn(async () => 1),
     lrange: vi.fn(async () => []),
+    incr: vi.fn(async () => 1),
   } as any;
   const publisher = { publish: vi.fn(async () => undefined) } as any;
   const index = { addJid: vi.fn(async () => undefined) } as any;
@@ -111,5 +112,32 @@ describe('WebhookService handles send.message (AI reply via API)', () => {
     );
     // ...mas NAO volta pro N8N (evita a IA reprocessar a propria resposta).
     expect(d.forwarder.forward).not.toHaveBeenCalled();
+  });
+});
+
+describe('WebhookService unread counter', () => {
+  it('increments unread on an inbound client message (fromMe=false)', async () => {
+    const d = makeDeps(knownTenant());
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(msgUpsert());
+
+    expect(d.redis.incr).toHaveBeenCalledWith('chat:shk:5511999@s.whatsapp.net:unread');
+  });
+
+  it('does NOT increment unread for the AI reply (send.message, fromMe=true)', async () => {
+    const d = makeDeps(knownTenant());
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent({
+      event: 'send.message',
+      instance: 'shk',
+      data: {
+        key: { remoteJid: '5511999@s.whatsapp.net', id: 'AI1', fromMe: true },
+        message: { conversation: 'resposta da IA' },
+      },
+    });
+
+    expect(d.redis.incr).not.toHaveBeenCalled();
   });
 });

@@ -33,7 +33,31 @@ export class ConversationService {
     // Lê da projeção Postgres: uma query indexada por (instancia, last_activity),
     // sem fan-out de N chaves Redis e sem o cache-aside de 30s que servia para
     // amortizar aquele fan-out. aiState é recomputado na leitura (sensível ao tempo).
-    return this.projection.list(instancia, filters);
+    const items = await this.projection.list(instancia, filters);
+    return this.withUnreadCounts(instancia, items);
+  }
+
+  /**
+   * Enriquece a lista com o contador de não-lidas de cada conversa, lido do Redis
+   * num único pipeline (um round-trip, sem fan-out sequencial). O contador não vive
+   * na projeção Postgres porque muda a cada mensagem — mantê-lo no Redis evita
+   * reprojetar a linha a cada incremento.
+   */
+  private async withUnreadCounts(
+    instancia: string,
+    items: ConversationListItem[],
+  ): Promise<ConversationListItem[]> {
+    if (items.length === 0) return items;
+    const pipeline = this.redis.pipeline();
+    for (const item of items) {
+      pipeline.get(RedisKeys.unread(instancia, item.jid));
+    }
+    const results = await pipeline.exec();
+    return items.map((item, i) => {
+      const raw = results?.[i]?.[1] as string | null | undefined;
+      const count = raw ? parseInt(raw, 10) : 0;
+      return { ...item, unreadCount: Number.isFinite(count) && count > 0 ? count : 0 };
+    });
   }
 
   async getConversationDetail(instancia: string, jid: string): Promise<ConversationDetail> {
@@ -163,5 +187,25 @@ export class ConversationService {
 
     this.logger.log(`isHot toggled to ${isHot} for ${instancia}/${jid}`);
     return { message: isHot ? 'Lead marcado como hot' : 'Lead removido de hot', isHot };
+  }
+
+  /**
+   * Marca a conversa como lida: zera o contador de não-lidas e publica
+   * `conversation.read` para sincronizar outros dispositivos/abas do mesmo tenant
+   * (o painel deles refaz a lista e o badge some). Idempotente (DEL).
+   */
+  async markRead(instancia: string, jid: string): Promise<{ message: string }> {
+    await this.redis.del(RedisKeys.unread(instancia, jid));
+
+    await this.publisher.publish({
+      type: 'conversation.read',
+      instancia,
+      jid,
+      ts: Date.now(),
+      payload: {},
+    });
+
+    this.logger.log(`Conversation marked read for ${instancia}/${jid}`);
+    return { message: 'Marcado como lido' };
   }
 }

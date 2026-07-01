@@ -8,6 +8,7 @@ export type NexusEventType =
   | 'payment.approved'
   | 'note.added'
   | 'lead.hot'
+  | 'conversation.read'
   | 'connection.update';
 
 export interface NexusEvent {

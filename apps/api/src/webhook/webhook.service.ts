@@ -131,6 +131,13 @@ export class WebhookService {
     const entry = JSON.stringify({ type, data: { content } });
     await this.redis.rpush(histKey, entry);
 
+    // Contador de nao-lidas: so conta mensagem RECEBIDA do cliente (fromMe=false).
+    // A resposta da IA e o envio do operador (fromMe=true) nao geram badge. Zerado
+    // quando o operador abre a conversa (ConversationService.markRead).
+    if (!fromMe) {
+      await this.redis.incr(RedisKeys.unread(instanceName, jid));
+    }
+
     // Register the conversation in the per-tenant discovery index.
     await this.index.addJid(instanceName, jid);
 

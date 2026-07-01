@@ -17,6 +17,12 @@ export interface ConversationListItem {
   lastMessagePreview: string;
   lastActivity: string;
   isHot: boolean;
+  /**
+   * Mensagens recebidas do cliente ainda não lidas. Enriquecido na listagem a
+   * partir do Redis (`chat:{inst}:{jid}:unread`); ausente = 0. Zerado quando o
+   * operador abre a conversa.
+   */
+  unreadCount?: number;
 }
 
 export interface ConversationDetail extends ConversationListItem {

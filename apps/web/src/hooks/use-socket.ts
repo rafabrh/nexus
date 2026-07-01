@@ -69,6 +69,9 @@ const EVENT_TO_QUERY_KEYS: Record<NexusEventType, string[][]> = {
   'payment.approved': [['dashboard'], ['leads'], ['conversations']],
   'note.added': [['conversation-detail']],
   'lead.hot': [['conversations']],
+  // Outro dispositivo/aba do mesmo tenant marcou a conversa como lida — refaz a
+  // lista para o badge de não-lidas sumir aqui também (leitura sincronizada).
+  'conversation.read': [['conversations']],
   // Infrastructure event — handled apart from the feed (see the early return
   // in the nexus-event handler); no query invalidation by this map.
   'connection.update': [],

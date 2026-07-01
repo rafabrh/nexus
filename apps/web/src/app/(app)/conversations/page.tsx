@@ -10,7 +10,7 @@ import { MessageList } from '@/components/chat/message-list';
 import { MessageInput } from '@/components/chat/message-input';
 import { useConversationStore } from '@/stores/conversation.store';
 import { useUiStore } from '@/stores/ui.store';
-import { useConversations } from '@/hooks/use-conversations';
+import { useConversations, useMarkRead } from '@/hooks/use-conversations';
 import { useSocket } from '@/hooks/use-socket';
 import { cn } from '@/lib/utils';
 
@@ -35,6 +35,7 @@ export default function ConversationsPage() {
   const detailPanelOpen = useUiStore((s) => s.detailPanelOpen);
   const { data: conversations } = useConversations();
   const { joinConversation, leaveConversation } = useSocket();
+  const { mutate: markRead } = useMarkRead();
 
   // Join/leave socket rooms when conversation changes
   useEffect(() => {
@@ -45,6 +46,17 @@ export default function ConversationsPage() {
       };
     }
   }, [selectedJid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Marca a conversa aberta como lida: ao abrir e sempre que uma nova mensagem
+  // chega com ela em foco (o webhook incrementa o unread → o refetch traz o
+  // count > 0 → aqui zeramos de volta). O update otimista do markRead evita loop.
+  const openUnread =
+    conversations?.find((c) => c.jid === selectedJid)?.unreadCount ?? 0;
+  useEffect(() => {
+    if (selectedJid && openUnread > 0) {
+      markRead(selectedJid);
+    }
+  }, [selectedJid, openUnread, markRead]);
 
   const selectedConversation = conversations?.find(
     (c) => c.jid === selectedJid,

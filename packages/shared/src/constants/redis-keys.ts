@@ -77,6 +77,12 @@ export const RedisKeys = {
   isHot: (inst: string, jid: string) =>
     `chat:${inst}:${jid}:isHot`,
 
+  // ---- Contador de nao-lidas (BFF exclusivo) ----
+  // Incrementado a cada mensagem RECEBIDA do cliente (fromMe=false); zerado
+  // quando o operador abre a conversa (markRead). O N8N nao conhece esta chave.
+  unread: (inst: string, jid: string) =>
+    `chat:${inst}:${jid}:unread`,
+
   // ---- Reminders ----
 
   reminder: (inst: string, id: string) =>

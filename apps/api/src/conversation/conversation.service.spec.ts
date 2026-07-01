@@ -8,11 +8,45 @@ describe('ConversationService', () => {
       { jid: 'b@lid', stage: 'S0', aiState: 'ON' },
     ];
     const projection = { list: vi.fn(async () => items), project: vi.fn() } as any;
-    const svc = new ConversationService({} as any, {} as any, {} as any, {} as any, {} as any, projection);
+    // A lista é enriquecida com o unread via pipeline Redis (um round-trip).
+    const pipeline = { get: vi.fn(), exec: vi.fn(async () => items.map(() => [null, null])) };
+    const redis = { pipeline: () => pipeline } as any;
+    const svc = new ConversationService({} as any, {} as any, {} as any, redis, {} as any, projection);
 
     const result = await svc.listConversations('shk', { stage: 'S0' });
     expect(projection.list).toHaveBeenCalledWith('shk', { stage: 'S0' });
     expect(result).toHaveLength(2);
+  });
+
+  it('enriches each conversation with unreadCount read from Redis', async () => {
+    const items = [{ jid: 'a@s.whatsapp.net', stage: 'S0', aiState: 'ON' }];
+    const projection = { list: vi.fn(async () => items), project: vi.fn() } as any;
+    const pipeline = { get: vi.fn(), exec: vi.fn(async () => [[null, '3']]) };
+    const redis = { pipeline: () => pipeline } as any;
+    const svc = new ConversationService({} as any, {} as any, {} as any, redis, {} as any, projection);
+
+    const result = await svc.listConversations('shk', {});
+
+    expect(pipeline.get).toHaveBeenCalledWith('chat:shk:a@s.whatsapp.net:unread');
+    expect(result[0].unreadCount).toBe(3);
+  });
+
+  it('marks a conversation as read: clears unread and publishes conversation.read', async () => {
+    const redis = { del: vi.fn(async () => 1) } as any;
+    const publisher = { publish: vi.fn(async () => undefined) } as any;
+    const projection = { list: vi.fn(), project: vi.fn() } as any;
+    const svc = new ConversationService({} as any, {} as any, publisher, redis, {} as any, projection);
+
+    await svc.markRead('shk', '5511@s.whatsapp.net');
+
+    expect(redis.del).toHaveBeenCalledWith('chat:shk:5511@s.whatsapp.net:unread');
+    expect(publisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'conversation.read',
+        instancia: 'shk',
+        jid: '5511@s.whatsapp.net',
+      }),
+    );
   });
 
   it('persists the outbound message, pauses AI, indexes the jid, and reprojects', async () => {
