@@ -120,6 +120,21 @@ export class TenantRepository {
     return this.get(instancia);
   }
 
+  /**
+   * Grava (ou limpa, com null) a URL do webhook do fluxo N8N do tenant. É esta
+   * URL que o WebhookService usa para reencaminhar o payload cru — sem ela, a
+   * instância sobe sem IA. UPDATE por linha, mesmo padrão do setActive.
+   */
+  async setN8nWebhookUrl(instancia: string, url: string | null): Promise<TenantEntry | null> {
+    const res = await this.db
+      .update(tenants)
+      .set({ n8nWebhookUrl: url })
+      .where(eq(tenants.instancia, instancia))
+      .returning({ instancia: tenants.instancia });
+    if (res.length === 0) return null;
+    return this.get(instancia);
+  }
+
   async addUser(instancia: string, user: TenantUser): Promise<TenantEntry | null> {
     const exists = await this.get(instancia);
     if (!exists) return null;

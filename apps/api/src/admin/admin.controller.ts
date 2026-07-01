@@ -19,6 +19,7 @@ import { TenantService } from './tenant.service';
 import { RegisterTenantDto } from './dto/register-tenant.dto';
 import { ToggleTenantDto } from './dto/toggle-tenant.dto';
 import { AddUserDto } from './dto/add-user.dto';
+import { InstanceConfigDto } from './dto/instance-config.dto';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
@@ -58,6 +59,15 @@ export class AdminController {
     @Body() dto: ToggleTenantDto,
   ): Promise<TenantEntry | null> {
     return this.tenants.toggleTenant(instancia, dto.active);
+  }
+
+  @Patch('tenants/:instancia/config')
+  @ApiOperation({ summary: 'Configurar a instancia (URL do webhook N8N do cliente)' })
+  async setInstanceConfig(
+    @Param('instancia') instancia: string,
+    @Body() dto: InstanceConfigDto,
+  ): Promise<TenantEntry | null> {
+    return this.tenants.setN8nWebhookUrl(instancia, dto.n8nWebhookUrl);
   }
 
   @Post('tenants/:instancia/users')

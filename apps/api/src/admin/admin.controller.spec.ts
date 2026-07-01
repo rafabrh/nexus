@@ -10,6 +10,7 @@ function makeController() {
     getTenant: vi.fn(),
     registerTenant: vi.fn(),
     toggleTenant: vi.fn(),
+    setN8nWebhookUrl: vi.fn(),
     addUser: vi.fn(),
     removeUser: vi.fn(),
   };
@@ -39,6 +40,19 @@ describe('AdminController', () => {
     await controller.toggleTenant('shk', { active: false });
 
     expect(tenants.toggleTenant).toHaveBeenCalledWith('shk', false);
+  });
+
+  it('setInstanceConfig forwards instancia + n8nWebhookUrl to the service', async () => {
+    const { controller, tenants } = makeController();
+    const entry = { instancia: 'shk', n8nWebhookUrl: 'https://n8n/w/shk' };
+    tenants.setN8nWebhookUrl.mockResolvedValue(entry);
+
+    const result = await controller.setInstanceConfig('shk', {
+      n8nWebhookUrl: 'https://n8n/w/shk',
+    });
+
+    expect(tenants.setN8nWebhookUrl).toHaveBeenCalledWith('shk', 'https://n8n/w/shk');
+    expect(result).toBe(entry);
   });
 
   it('addUser forwards instancia + user dto to the service', async () => {

@@ -37,6 +37,14 @@ export class TenantService {
     return entry;
   }
 
+  async setN8nWebhookUrl(instancia: string, url: string | null): Promise<TenantEntry | null> {
+    const entry = await this.repo.setN8nWebhookUrl(instancia, url);
+    if (entry) {
+      this.logger.log(`Tenant ${instancia} n8nWebhookUrl ${url ? 'set' : 'cleared'}`);
+    }
+    return entry;
+  }
+
   async addUser(instancia: string, user: TenantUser): Promise<TenantEntry | null> {
     return this.repo.addUser(instancia, user);
   }
