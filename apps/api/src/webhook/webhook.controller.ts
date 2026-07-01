@@ -3,6 +3,7 @@ import {
   Post,
   Body,
   Headers,
+  Query,
   HttpCode,
   UnauthorizedException,
   Logger,
@@ -28,7 +29,8 @@ export class WebhookController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Recebe eventos da Evolution API (webhook)' })
   async handleEvolution(
-    @Headers('apikey') apiKey: string | undefined,
+    @Headers('apikey') apiKeyHeader: string | undefined,
+    @Query('apikey') apiKeyQuery: string | undefined,
     @Body() payload: Record<string, unknown>,
   ): Promise<void> {
     const expectedKey = this.config.get<string>('EVOLUTION_API_KEY');
@@ -38,7 +40,12 @@ export class WebhookController {
       throw new UnauthorizedException('Webhook not configured');
     }
 
-    if (!this.constantTimeEqual(apiKey, expectedKey)) {
+    // A Evolution NAO envia o header `apikey` nos webhooks de saida — por isso
+    // todo webhook estava sendo rejeitado com 401. Aceitamos a chave tambem via
+    // query (`?apikey=...`), assim a URL do webhook se auto-autentica. O header
+    // continua valendo (retrocompat, caso alguma versao da Evolution o envie).
+    const provided = apiKeyHeader ?? apiKeyQuery;
+    if (!this.constantTimeEqual(provided, expectedKey)) {
       this.logger.warn('webhook.invalid-apikey from Evolution API');
       throw new UnauthorizedException('Invalid API key');
     }
