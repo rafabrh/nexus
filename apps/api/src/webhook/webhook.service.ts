@@ -6,6 +6,7 @@ import { EventPublisher } from '../realtime/event.publisher';
 import { resolvePersonalJid } from '../core/whatsapp/jid.util';
 import { ConversationIndexService } from '../conversation/conversation-index.service';
 import { TenantRepository } from '../admin/tenant.repository';
+import { N8nForwarderService } from './n8n-forwarder.service';
 
 /** Keywords that indicate a hot lead */
 const HOT_KEYWORDS = [
@@ -25,6 +26,7 @@ export class WebhookService {
     private readonly publisher: EventPublisher,
     private readonly index: ConversationIndexService,
     private readonly tenants: TenantRepository,
+    private readonly forwarder: N8nForwarderService,
   ) {}
 
   async processEvolutionEvent(payload: Record<string, unknown>): Promise<void> {
@@ -44,6 +46,16 @@ export class WebhookService {
       this.logger.warn(`webhook.unknown-instance: ${instanceName} (ignorado)`);
       return;
     }
+
+    // Hub: reencaminha o payload cru pro N8N do tenant (transparente, idempotente,
+    // fire-and-forget para nao segurar o ACK do webhook). Toda a logica IA-vs-humano
+    // permanece no fluxo N8N do cliente.
+    void this.forwarder.forward(
+      instanceName,
+      tenant.n8nWebhookUrl ?? null,
+      this.extractMsgId(payload),
+      payload,
+    );
 
     switch (event) {
       case 'messages.upsert':
@@ -112,6 +124,17 @@ export class WebhookService {
 
     // Register the conversation in the per-tenant discovery index.
     await this.index.addJid(instanceName, jid);
+
+    // Realtime direto: publica a mensagem no socket sem depender do keyspace
+    // (que pode estar off no Redis gerenciado). O keyspace segue como reforco;
+    // a UI e idempotente a um message.received duplicado (refaz o fetch).
+    await this.publisher.publish({
+      type: 'message.received',
+      instancia: instanceName,
+      jid,
+      ts: Date.now(),
+      payload: { fromMe },
+    });
 
     // Ensure conversation state exists
     const stateKey = RedisKeys.state(instanceName, jid);
@@ -342,5 +365,22 @@ export class WebhookService {
     } catch {
       this.logger.warn('Failed to update tenant connection state from webhook');
     }
+  }
+
+  /**
+   * Extrai o id da mensagem (`data.key.id`) do payload da Evolution para o dedup
+   * do reencaminhamento ao N8N. `data` pode ser um objeto ou um array de eventos.
+   * Retorna null quando o evento nao carrega uma mensagem (ex.: connection.update).
+   */
+  private extractMsgId(payload: Record<string, unknown>): string | null {
+    const data = payload.data as
+      | Record<string, unknown>
+      | Record<string, unknown>[]
+      | undefined;
+    const first = Array.isArray(data) ? data[0] : data;
+    const key = (first as Record<string, unknown> | undefined)?.key as
+      | Record<string, unknown>
+      | undefined;
+    return typeof key?.id === 'string' ? key.id : null;
   }
 }
