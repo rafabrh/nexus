@@ -29,6 +29,9 @@ import { MetricsAuthGuard } from './metrics/metrics-auth.guard';
             'req.headers.authorization',
             'res.headers["set-cookie"]',
             'req.headers.apikey',
+            // O webhook da Evolution autentica via `?apikey=` na URL (a Evolution
+            // nao envia o header). Mascara a chave no log da query.
+            'req.query.apikey',
           ],
           censor: '[REDACTED]',
         },
