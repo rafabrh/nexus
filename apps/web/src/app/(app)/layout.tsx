@@ -63,8 +63,14 @@ function ConnectionGuard({ children, pathname }: { children: React.ReactNode; pa
   const alwaysAllowed =
     pathname === '/connect' || pathname === '/settings' || pathname === '/admin';
 
+  // Só desvia em desconexão REAL. 'connecting' é transitório (aparece durante o
+  // pareamento e em flaps momentâneos): tratá-lo como "desconectado" fazia o
+  // guard rebater para /connect enquanto a tela de connect reencaminhava de volta
+  // a cada 'open' — um ping-pong infinito /connect <-> /conversations.
+  const isDisconnected = (s: string | null | undefined) => s === 'close' || s === 'absent';
+
   useEffect(() => {
-    if (instanceState && instanceState !== 'open' && !alwaysAllowed) {
+    if (isDisconnected(instanceState) && !alwaysAllowed) {
       router.replace('/connect');
     }
   }, [instanceState, alwaysAllowed, router]);
@@ -79,11 +85,13 @@ function ConnectionGuard({ children, pathname }: { children: React.ReactNode; pa
       '/api/v1/onboarding/state',
     )
       .then((state) => {
-        if (
-          !state.instanceExists ||
-          state.connectionState !== 'open' ||
-          state.syncStatus !== 'done'
-        ) {
+        // Só manda para /connect quando NÃO há instância ou a conexão caiu de
+        // verdade. 'connecting' (transitório) e o sync em andamento NÃO bloqueiam:
+        // as conversas chegam via realtime, e exigir connectionState==='open' +
+        // syncStatus==='done' aqui criava o ping-pong com /connect (que só
+        // reencaminha quando já está open+done). O onboarding inicial continua
+        // guiado pela própria /connect (o usuário permanece lá até ficar pronto).
+        if (!state.instanceExists || isDisconnected(state.connectionState)) {
           router.replace('/connect');
         } else {
           setChecked(true);
@@ -95,7 +103,7 @@ function ConnectionGuard({ children, pathname }: { children: React.ReactNode; pa
         // instead of silently exposing an unconfigured panel.
         router.replace('/connect');
       });
-  }, [pathname, router]);
+  }, [pathname, router]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!checked) {
     return (
