@@ -11,6 +11,7 @@ function makeController() {
     registerTenant: vi.fn(),
     toggleTenant: vi.fn(),
     setN8nWebhookUrl: vi.fn(),
+    adoptInstance: vi.fn(),
     addUser: vi.fn(),
     removeUser: vi.fn(),
   };
@@ -52,6 +53,25 @@ describe('AdminController', () => {
     });
 
     expect(tenants.setN8nWebhookUrl).toHaveBeenCalledWith('shk', 'https://n8n/w/shk');
+    expect(result).toBe(entry);
+  });
+
+  it('adoptInstance forwards instancia + email + n8n url to the service', async () => {
+    const { controller, tenants } = makeController();
+    const entry = { instancia: 'Shkgroup' };
+    tenants.adoptInstance.mockResolvedValue(entry);
+
+    const result = await controller.adoptInstance({
+      instancia: 'Shkgroup',
+      adminEmail: 'dono@cliente.com',
+      n8nWebhookUrl: 'https://n8n/w/shk',
+    });
+
+    expect(tenants.adoptInstance).toHaveBeenCalledWith(
+      'Shkgroup',
+      'dono@cliente.com',
+      'https://n8n/w/shk',
+    );
     expect(result).toBe(entry);
   });
 

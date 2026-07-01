@@ -20,6 +20,7 @@ import { RegisterTenantDto } from './dto/register-tenant.dto';
 import { ToggleTenantDto } from './dto/toggle-tenant.dto';
 import { AddUserDto } from './dto/add-user.dto';
 import { InstanceConfigDto } from './dto/instance-config.dto';
+import { AdoptInstanceDto } from './dto/adopt-instance.dto';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
@@ -68,6 +69,13 @@ export class AdminController {
     @Body() dto: InstanceConfigDto,
   ): Promise<TenantEntry | null> {
     return this.tenants.setN8nWebhookUrl(instancia, dto.n8nWebhookUrl);
+  }
+
+  @Post('tenants/adopt')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Adotar instancia existente na Evolution (registra + n8nWebhookUrl)' })
+  async adoptInstance(@Body() dto: AdoptInstanceDto): Promise<TenantEntry> {
+    return this.tenants.adoptInstance(dto.instancia, dto.adminEmail, dto.n8nWebhookUrl);
   }
 
   @Post('tenants/:instancia/users')
