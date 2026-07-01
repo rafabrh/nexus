@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
+import { stdSerializers } from 'pino';
 import { TerminusModule } from '@nestjs/terminus';
 import { RedisModule } from './redis/redis.module';
 import { RedisService } from './redis/redis.service';
@@ -34,6 +35,18 @@ import { MetricsAuthGuard } from './metrics/metrics-auth.guard';
             'req.query.apikey',
           ],
           censor: '[REDACTED]',
+        },
+        serializers: {
+          // `redact` mascara o campo `query.apikey`, mas a chave tambem aparece
+          // na query string DENTRO de `req.url` (ex.: /webhook/evolution?apikey=X).
+          // redact nao mascara parte de string — entao limpamos a url aqui.
+          req(req: Parameters<typeof stdSerializers.req>[0]) {
+            const s = stdSerializers.req(req);
+            if (typeof s.url === 'string' && s.url.includes('apikey=')) {
+              s.url = s.url.replace(/(apikey=)[^&]*/i, '$1[REDACTED]');
+            }
+            return s;
+          },
         },
         autoLogging: {
           ignore: (req: { url?: string }) =>

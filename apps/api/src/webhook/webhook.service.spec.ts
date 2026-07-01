@@ -89,3 +89,27 @@ describe('WebhookService is the hub (forward + realtime)', () => {
     expect(d.forwarder.forward).toHaveBeenCalledWith('shk', null, 'M9', expect.any(Object));
   });
 });
+
+describe('WebhookService handles send.message (AI reply via API)', () => {
+  it('persists + publishes the AI reply but does NOT forward it back to N8N', async () => {
+    const d = makeDeps(knownTenant({ n8nWebhookUrl: 'https://n8n/w/shk' }));
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent({
+      event: 'send.message',
+      instance: 'shk',
+      data: {
+        key: { remoteJid: '5511999@s.whatsapp.net', id: 'AI1', fromMe: true },
+        message: { conversation: 'resposta da IA' },
+      },
+    });
+
+    // Aparece no painel (gravou no historico + publicou realtime)...
+    expect(d.redis.rpush).toHaveBeenCalled();
+    expect(d.publisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'message.received', instancia: 'shk' }),
+    );
+    // ...mas NAO volta pro N8N (evita a IA reprocessar a propria resposta).
+    expect(d.forwarder.forward).not.toHaveBeenCalled();
+  });
+});

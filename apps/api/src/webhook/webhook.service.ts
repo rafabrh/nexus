@@ -49,16 +49,25 @@ export class WebhookService {
 
     // Hub: reencaminha o payload cru pro N8N do tenant (transparente, idempotente,
     // fire-and-forget para nao segurar o ACK do webhook). Toda a logica IA-vs-humano
-    // permanece no fluxo N8N do cliente.
-    void this.forwarder.forward(
-      instanceName,
-      tenant.n8nWebhookUrl ?? null,
-      this.extractMsgId(payload),
-      payload,
-    );
+    // permanece no fluxo N8N do cliente. EXCECAO: `send.message` e a mensagem que a
+    // PROPRIA IA enviou (via Evolution API) — o N8N nao precisa dela e reencaminhar
+    // arriscaria loop; o BFF so a grava/publica para a resposta aparecer no painel.
+    if (event !== 'send.message') {
+      void this.forwarder.forward(
+        instanceName,
+        tenant.n8nWebhookUrl ?? null,
+        this.extractMsgId(payload),
+        payload,
+      );
+    }
 
     switch (event) {
       case 'messages.upsert':
+      case 'send.message':
+        // `messages.upsert` = mensagens recebidas do WhatsApp (cliente/operador
+        // no celular). `send.message` = mensagens enviadas via API (a resposta da
+        // IA pelo N8N). Mesma estrutura de payload; ambas gravam + publicam pro
+        // painel, com o rotulo (human/ai) derivado de `fromMe`.
         await this.handleMessageUpsert(instanceName, payload);
         break;
       case 'connection.update':
