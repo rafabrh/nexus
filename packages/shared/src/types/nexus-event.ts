@@ -9,6 +9,7 @@ export type NexusEventType =
   | 'note.added'
   | 'lead.hot'
   | 'conversation.read'
+  | 'presence.update'
   | 'connection.update';
 
 export interface NexusEvent {

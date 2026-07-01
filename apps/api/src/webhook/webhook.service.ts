@@ -52,7 +52,9 @@ export class WebhookService {
     // permanece no fluxo N8N do cliente. EXCECAO: `send.message` e a mensagem que a
     // PROPRIA IA enviou (via Evolution API) — o N8N nao precisa dela e reencaminhar
     // arriscaria loop; o BFF so a grava/publica para a resposta aparecer no painel.
-    if (event !== 'send.message') {
+    // `presence.update` (digitando/online) é efêmero e de alto volume — sinal de
+    // UI, não de fluxo; nunca reencaminha pro N8N (evita flood).
+    if (event !== 'send.message' && event !== 'presence.update') {
       void this.forwarder.forward(
         instanceName,
         tenant.n8nWebhookUrl ?? null,
@@ -76,6 +78,9 @@ export class WebhookService {
       case 'contacts.update':
       case 'contacts.upsert':
         await this.handleContactUpdate(instanceName, payload);
+        break;
+      case 'presence.update':
+        await this.handlePresenceUpdate(instanceName, payload);
         break;
       default:
         this.logger.debug(`webhook.unhandled event=${event} instance=${instanceName}`);
@@ -369,6 +374,41 @@ export class WebhookService {
     // Invalidate caches
     await this.redis.del(RedisKeys.cacheContacts(instanceName));
     await this.redis.del(RedisKeys.cacheConversations(instanceName));
+  }
+
+  /**
+   * Presença efêmera do contato (digitando/gravando/online). Extrai o estado do
+   * payload `presence.update` da Evolution e publica direto no socket — sinal de
+   * UI, sem persistir (o painel decide quando expira).
+   */
+  private async handlePresenceUpdate(
+    instanceName: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const data = payload.data as Record<string, unknown> | undefined;
+    if (!data) return;
+
+    const id = typeof data.id === 'string' ? data.id : undefined;
+    const presences = data.presences as Record<string, unknown> | undefined;
+    if (!id || !presences) return;
+
+    const entry = presences[id] as Record<string, unknown> | undefined;
+    const presence =
+      entry && typeof entry.lastKnownPresence === 'string'
+        ? entry.lastKnownPresence
+        : undefined;
+    if (!presence) return;
+
+    const resolved = resolvePersonalJid(id, undefined);
+    const jid = resolved?.jid ?? id;
+
+    await this.publisher.publish({
+      type: 'presence.update',
+      instancia: instanceName,
+      jid,
+      ts: Date.now(),
+      payload: { presence },
+    });
   }
 
   /** Melhor nome de um contato da Evolution: agenda > verificado > público. */

@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { useConversations } from '@/hooks/use-conversations';
 import { useConversationStore } from '@/stores/conversation.store';
+import { usePresenceStore } from '@/stores/presence.store';
 import { staggerContainer, staggerItem } from '@/lib/motion-variants';
 import { stageColorToken } from '@/lib/stage-colors';
 import type { ConversationListItem, AiState } from '@nexus/shared';
@@ -99,6 +100,10 @@ function ConversationItem({
   const unread = conversation.unreadCount ?? 0;
   const hasUnread = unread > 0 && !selected;
 
+  // Presença efêmera: "digitando…/gravando" substitui o preview (estilo WhatsApp).
+  const presence = usePresenceStore((s) => s.byJid[conversation.jid]?.presence);
+  const isTyping = presence === 'composing' || presence === 'recording';
+
   return (
     <motion.button
       variants={staggerItem}
@@ -184,15 +189,21 @@ function ConversationItem({
         <p
           className="text-xs truncate mt-0.5"
           style={{
-            color: selected
-              ? 'rgba(255,255,255,0.75)'
-              : hasUnread
-                ? 'var(--text-secondary)'
-                : 'var(--text-muted)',
-            fontWeight: hasUnread ? 500 : 400,
+            color: isTyping && !selected
+              ? 'var(--success)'
+              : selected
+                ? 'rgba(255,255,255,0.75)'
+                : hasUnread
+                  ? 'var(--text-secondary)'
+                  : 'var(--text-muted)',
+            fontWeight: isTyping || hasUnread ? 500 : 400,
           }}
         >
-          {conversation.lastMessagePreview}
+          {isTyping
+            ? presence === 'recording'
+              ? 'gravando áudio…'
+              : 'digitando…'
+            : conversation.lastMessagePreview}
         </p>
 
         <div className="flex items-center gap-1.5 mt-1">

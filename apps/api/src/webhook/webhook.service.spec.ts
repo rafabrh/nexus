@@ -141,3 +141,30 @@ describe('WebhookService unread counter', () => {
     expect(d.redis.incr).not.toHaveBeenCalled();
   });
 });
+
+describe('WebhookService presence.update (typing/online)', () => {
+  it('publishes presence.update and does NOT forward it to N8N', async () => {
+    const d = makeDeps(knownTenant({ n8nWebhookUrl: 'https://n8n/w/shk' }));
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent({
+      event: 'presence.update',
+      instance: 'shk',
+      data: {
+        id: '5511999@s.whatsapp.net',
+        presences: { '5511999@s.whatsapp.net': { lastKnownPresence: 'composing' } },
+      },
+    });
+
+    expect(d.publisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'presence.update',
+        instancia: 'shk',
+        jid: '5511999@s.whatsapp.net',
+        payload: { presence: 'composing' },
+      }),
+    );
+    // Presença é sinal de UI — nunca vai pro N8N (evita flood).
+    expect(d.forwarder.forward).not.toHaveBeenCalled();
+  });
+});
