@@ -35,10 +35,12 @@ export const RedisKeys = {
   chatHistory: (inst: string, phone: string) =>
     `chathistory:${inst}-${phone}`,
 
-  // ---- Contato (N8N escreve, BFF le) ----
+  // ---- Contato (namespaced por instancia — BFF popula e le a sua chave) ----
+  // O N8N escreve a chave global `contact:{phone}`, mas o BFF NAO depende dela:
+  // mantem a sua propria chave `contact:{inst}:{phone}` para isolar PII por tenant.
 
-  contact: (phone: string) =>
-    `contact:${phone}`,
+  contact: (inst: string, phone: string) =>
+    `contact:${inst}:${phone}`,
 
   // ---- BFF exclusivo ----
 
@@ -54,8 +56,21 @@ export const RedisKeys = {
   magicLink: (token: string) =>
     `magiclink:${token}`,
 
+  // Anti-spam de reenvio (minimizacao LGPD): enquanto esta chave curta existir,
+  // sendMagicLink NAO dispara outro email para o mesmo endereco. Evita lotar a
+  // caixa do cliente quando ele reclica "enviar link". Token = UUID, nunca
+  // colide com o segmento literal `cooldown:`.
+  magicLinkCooldown: (email: string) =>
+    `magiclink:cooldown:${email}`,
+
   idempotency: (reqId: string) =>
     `idempotency:${reqId}`,
+
+  // Dedup do reencaminhamento pro N8N: a Evolution reenvia o webhook em retries;
+  // esta chave (SET NX, TTL curto) garante que a MESMA mensagem so e reencaminhada
+  // uma vez — a IA nunca responde 2x por causa de retry de webhook.
+  n8nForwardDedup: (inst: string, msgId: string) =>
+    `n8n:fwd:${inst}:${msgId}`,
 
   // ---- isHot flag ----
 

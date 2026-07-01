@@ -37,6 +37,32 @@ export function useToggleTenant() {
   });
 }
 
+/** Grava a URL do webhook do fluxo N8N do cliente (conecta a instância à IA). */
+export function useSetInstanceConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ instancia, n8nWebhookUrl }: { instancia: string; n8nWebhookUrl: string }) =>
+      api<TenantEntry>(
+        `/api/v1/admin/tenants/${encodeURIComponent(instancia)}/config`,
+        { method: 'PATCH', body: JSON.stringify({ n8nWebhookUrl }) },
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+  });
+}
+
+/** Adota uma instância que já existe na Evolution (registra + n8nWebhookUrl). */
+export function useAdoptInstance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { instancia: string; adminEmail: string; n8nWebhookUrl: string }) =>
+      api<TenantEntry>('/api/v1/admin/tenants/adopt', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+  });
+}
+
 export function useAddUser() {
   const qc = useQueryClient();
   return useMutation({

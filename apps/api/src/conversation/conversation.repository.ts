@@ -57,7 +57,7 @@ export class ConversationRepository {
     pipeline.get(RedisKeys.paymentStatus(instancia, jid));       // 2
     pipeline.get(RedisKeys.optout(instancia, jid));              // 3
     pipeline.get(RedisKeys.tags(instancia, jid));                // 4
-    pipeline.get(RedisKeys.contact(phone));                      // 5
+    pipeline.get(RedisKeys.contact(instancia, phone));           // 5
     pipeline.lrange(histKey, -1, -1);                            // 6 - last message
     pipeline.get(RedisKeys.isHot(instancia, jid));               // 7 - manual isHot flag
     pipeline.lrange(histKey, -10, -1);                           // 8 - last 10 messages for hot detection
@@ -123,7 +123,7 @@ export class ConversationRepository {
     pipeline.get(RedisKeys.paymentStatus(instancia, jid));       // 2
     pipeline.get(RedisKeys.optout(instancia, jid));              // 3
     pipeline.get(RedisKeys.tags(instancia, jid));                // 4
-    pipeline.get(RedisKeys.contact(phone));                      // 5
+    pipeline.get(RedisKeys.contact(instancia, phone));           // 5
     pipeline.get(RedisKeys.notas(instancia, jid));               // 6
     pipeline.llen(histKey);                                      // 7
     pipeline.lrange(histKey, -1, -1);                            // 8 - last message

@@ -10,6 +10,8 @@ function makeController() {
     getTenant: vi.fn(),
     registerTenant: vi.fn(),
     toggleTenant: vi.fn(),
+    setN8nWebhookUrl: vi.fn(),
+    adoptInstance: vi.fn(),
     addUser: vi.fn(),
     removeUser: vi.fn(),
   };
@@ -39,6 +41,38 @@ describe('AdminController', () => {
     await controller.toggleTenant('shk', { active: false });
 
     expect(tenants.toggleTenant).toHaveBeenCalledWith('shk', false);
+  });
+
+  it('setInstanceConfig forwards instancia + n8nWebhookUrl to the service', async () => {
+    const { controller, tenants } = makeController();
+    const entry = { instancia: 'shk', n8nWebhookUrl: 'https://n8n/w/shk' };
+    tenants.setN8nWebhookUrl.mockResolvedValue(entry);
+
+    const result = await controller.setInstanceConfig('shk', {
+      n8nWebhookUrl: 'https://n8n/w/shk',
+    });
+
+    expect(tenants.setN8nWebhookUrl).toHaveBeenCalledWith('shk', 'https://n8n/w/shk');
+    expect(result).toBe(entry);
+  });
+
+  it('adoptInstance forwards instancia + email + n8n url to the service', async () => {
+    const { controller, tenants } = makeController();
+    const entry = { instancia: 'Shkgroup' };
+    tenants.adoptInstance.mockResolvedValue(entry);
+
+    const result = await controller.adoptInstance({
+      instancia: 'Shkgroup',
+      adminEmail: 'dono@cliente.com',
+      n8nWebhookUrl: 'https://n8n/w/shk',
+    });
+
+    expect(tenants.adoptInstance).toHaveBeenCalledWith(
+      'Shkgroup',
+      'dono@cliente.com',
+      'https://n8n/w/shk',
+    );
+    expect(result).toBe(entry);
   });
 
   it('addUser forwards instancia + user dto to the service', async () => {

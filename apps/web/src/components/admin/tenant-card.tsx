@@ -2,14 +2,19 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Trash2, UserPlus, Wifi, WifiOff } from 'lucide-react';
+import { Trash2, UserPlus, Wifi, WifiOff, Bot } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cardEntrance } from '@/lib/motion-variants';
 import { notify } from '@/lib/notify';
-import { useToggleTenant, useAddUser, useRemoveUser } from '@/hooks/use-admin';
+import {
+  useToggleTenant,
+  useAddUser,
+  useRemoveUser,
+  useSetInstanceConfig,
+} from '@/hooks/use-admin';
 import type { TenantEntry } from '@nexus/shared';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -49,9 +54,27 @@ export function TenantCard({ tenant }: { tenant: TenantEntry }) {
   const toggle = useToggleTenant();
   const addUser = useAddUser();
   const removeUser = useRemoveUser();
+  const setConfig = useSetInstanceConfig();
 
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState<'admin' | 'operator'>('operator');
+  const [n8nUrl, setN8nUrl] = useState(tenant.n8nWebhookUrl ?? '');
+
+  const urlDirty = n8nUrl.trim() !== (tenant.n8nWebhookUrl ?? '');
+
+  const onSaveN8n = async () => {
+    const url = n8nUrl.trim();
+    if (!url) {
+      notify.error('Informe a URL do webhook do fluxo N8N');
+      return;
+    }
+    try {
+      await setConfig.mutateAsync({ instancia: tenant.instancia, n8nWebhookUrl: url });
+      notify.success(`Fluxo N8N conectado a ${tenant.instancia}`);
+    } catch {
+      notify.error('Falha ao salvar a URL do N8N');
+    }
+  };
 
   const onToggle = async (active: boolean) => {
     try {
@@ -205,6 +228,38 @@ export function TenantCard({ tenant }: { tenant: TenantEntry }) {
         >
           <UserPlus size={14} />
         </Button>
+      </div>
+
+      {/* Fluxo N8N (IA) — a URL que o BFF usa para reencaminhar as mensagens */}
+      <div className="mt-4 space-y-1.5">
+        <div className="flex items-center justify-between">
+          <span
+            className="text-[11px] font-semibold uppercase tracking-wide"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            Fluxo N8N (IA)
+          </span>
+          <Badge variant={tenant.n8nWebhookUrl ? 'success' : 'default'}>
+            <Bot size={11} /> {tenant.n8nWebhookUrl ? 'IA conectada' : 'sem IA'}
+          </Badge>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Input
+            value={n8nUrl}
+            onChange={(e) => setN8nUrl(e.target.value)}
+            placeholder="https://n8n…/webhook/clientewpp"
+            className="h-8 text-xs font-mono"
+            onKeyDown={(e) => e.key === 'Enter' && onSaveN8n()}
+          />
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onSaveN8n}
+            disabled={setConfig.isPending || !urlDirty}
+          >
+            {setConfig.isPending ? '…' : 'Salvar'}
+          </Button>
+        </div>
       </div>
     </motion.div>
   );

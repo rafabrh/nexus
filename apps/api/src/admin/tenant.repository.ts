@@ -1,4 +1,4 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, ConflictException, BadRequestException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { and, eq, inArray } from 'drizzle-orm';
 import { DB, type Database } from '../core/db/db.module';
@@ -72,6 +72,30 @@ export class TenantRepository {
 
   async register(instancia: string, adminEmail: string): Promise<TenantEntry> {
     const normalized = adminEmail.toLowerCase().trim();
+
+    // ISOLAMENTO: o nome da instância é usado como segmento de chave Redis
+    // (chathistory:{inst}-{phone} e chat:{inst}:{jid}). Um '-' ou ':' no nome
+    // quebra o parsing do EventTranslator e roteia eventos realtime para o tenant
+    // errado. Defense-in-depth além do RegisterTenantDto (cobre o dev-seed).
+    if (!/^[a-zA-Z0-9_]+$/.test(instancia)) {
+      throw new BadRequestException(
+        `Instancia '${instancia}' invalida: use apenas letras, numeros e underscore (sem '-' nem ':').`,
+      );
+    }
+
+    // ISOLAMENTO CROSS-TENANT: nunca anexar um responsável a um tenant que já
+    // pertence a outro. register() continua idempotente para o MESMO dono
+    // (re-registro), mas se a instância já existe e este email NÃO é um de seus
+    // usuários, recusamos. Sem esta guarda, registrar um "novo assinante" com um
+    // nome de instância que colide com um cliente existente daria ao novo email
+    // acesso de admin às conversas/contatos do cliente antigo.
+    const existing = await this.get(instancia);
+    if (existing && !existing.users.some((u) => u.email.toLowerCase() === normalized)) {
+      throw new ConflictException(
+        `Instancia '${instancia}' ja esta registrada para outro responsavel`,
+      );
+    }
+
     await this.db.transaction(async (tx) => {
       await tx
         .insert(tenants)
@@ -90,6 +114,21 @@ export class TenantRepository {
     const res = await this.db
       .update(tenants)
       .set({ active })
+      .where(eq(tenants.instancia, instancia))
+      .returning({ instancia: tenants.instancia });
+    if (res.length === 0) return null;
+    return this.get(instancia);
+  }
+
+  /**
+   * Grava (ou limpa, com null) a URL do webhook do fluxo N8N do tenant. É esta
+   * URL que o WebhookService usa para reencaminhar o payload cru — sem ela, a
+   * instância sobe sem IA. UPDATE por linha, mesmo padrão do setActive.
+   */
+  async setN8nWebhookUrl(instancia: string, url: string | null): Promise<TenantEntry | null> {
+    const res = await this.db
+      .update(tenants)
+      .set({ n8nWebhookUrl: url })
       .where(eq(tenants.instancia, instancia))
       .returning({ instancia: tenants.instancia });
     if (res.length === 0) return null;

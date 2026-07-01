@@ -1,72 +1,91 @@
 import { describe, it, expect, vi } from 'vitest';
 import { WebhookService } from './webhook.service';
 
+/** Deps mockadas do WebhookService, no padrão dos outros specs da api. */
+function makeDeps(tenantGet: () => Promise<unknown>) {
+  const redis = {
+    rpush: vi.fn(async () => 1),
+    exists: vi.fn(async () => 1),
+    set: vi.fn(async () => 'OK'),
+    get: vi.fn(async () => null),
+    del: vi.fn(async () => 1),
+    lrange: vi.fn(async () => []),
+  } as any;
+  const publisher = { publish: vi.fn(async () => undefined) } as any;
+  const index = { addJid: vi.fn(async () => undefined) } as any;
+  const tenants = { updateState: vi.fn(async () => undefined), get: vi.fn(tenantGet) } as any;
+  const forwarder = { forward: vi.fn(async () => undefined) } as any;
+  return { redis, publisher, index, tenants, forwarder };
+}
+
+const knownTenant =
+  (extra: Record<string, unknown> = {}) =>
+  async () => ({ instancia: 'shk', name: 'shk', active: true, users: [], ...extra });
+
+const msgUpsert = (extraKey: Record<string, unknown> = {}, instance = 'shk') => ({
+  event: 'messages.upsert',
+  instance,
+  data: {
+    key: { remoteJid: '5511999@s.whatsapp.net', fromMe: false, ...extraKey },
+    message: { conversation: 'oi' },
+  },
+});
+
 describe('WebhookService indexes processed conversations', () => {
   it('adds the resolved jid to the conversation index after persisting a message', async () => {
-    const redis = {
-      rpush: vi.fn(async () => 1),
-      exists: vi.fn(async () => 1),
-      set: vi.fn(async () => 'OK'),
-      get: vi.fn(async () => null),
-      del: vi.fn(async () => 1),
-      lrange: vi.fn(async () => []),
-    } as any;
-    const publisher = { publish: vi.fn(async () => undefined) } as any;
-    const index = { addJid: vi.fn(async () => undefined) } as any;
-    const tenants = {
-      updateState: vi.fn(async () => undefined),
-      get: vi.fn(async () => ({ instancia: 'shk', name: 'shk', active: true, users: [] })),
-    } as any;
+    const d = makeDeps(knownTenant());
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
 
-    const svc = new WebhookService(redis, publisher, index, tenants);
+    await svc.processEvolutionEvent(msgUpsert());
 
-    await svc.processEvolutionEvent({
-      event: 'messages.upsert',
-      instance: 'shk',
-      data: {
-        key: { remoteJid: '5511999@s.whatsapp.net', fromMe: false },
-        message: { conversation: 'oi' },
-      },
-    });
-
-    expect(tenants.get).toHaveBeenCalledWith('shk');
-    expect(redis.rpush).toHaveBeenCalled();
-    expect(index.addJid).toHaveBeenCalledWith('shk', '5511999@s.whatsapp.net');
+    expect(d.tenants.get).toHaveBeenCalledWith('shk');
+    expect(d.redis.rpush).toHaveBeenCalled();
+    expect(d.index.addJid).toHaveBeenCalledWith('shk', '5511999@s.whatsapp.net');
   });
 });
 
 describe('WebhookService rejects unknown instances', () => {
-  it('does not write to Redis and returns early when the instance has no tenant', async () => {
-    const redis = {
-      rpush: vi.fn(async () => 1),
-      exists: vi.fn(async () => 1),
-      set: vi.fn(async () => 'OK'),
-      get: vi.fn(async () => null),
-      del: vi.fn(async () => 1),
-      lrange: vi.fn(async () => []),
-    } as any;
-    const publisher = { publish: vi.fn(async () => undefined) } as any;
-    const index = { addJid: vi.fn(async () => undefined) } as any;
-    const tenants = {
-      updateState: vi.fn(async () => undefined),
-      get: vi.fn(async () => null),
-    } as any;
+  it('does not write to Redis, forward or publish when the instance has no tenant', async () => {
+    const d = makeDeps(async () => null);
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
 
-    const svc = new WebhookService(redis, publisher, index, tenants);
+    await svc.processEvolutionEvent(msgUpsert({}, 'ghost'));
 
-    await svc.processEvolutionEvent({
-      event: 'messages.upsert',
-      instance: 'ghost',
-      data: {
-        key: { remoteJid: '5511999@s.whatsapp.net', fromMe: false },
-        message: { conversation: 'oi' },
-      },
-    });
+    expect(d.tenants.get).toHaveBeenCalledWith('ghost');
+    expect(d.redis.rpush).not.toHaveBeenCalled();
+    expect(d.redis.set).not.toHaveBeenCalled();
+    expect(d.index.addJid).not.toHaveBeenCalled();
+    expect(d.publisher.publish).not.toHaveBeenCalled();
+    expect(d.forwarder.forward).not.toHaveBeenCalled();
+  });
+});
 
-    expect(tenants.get).toHaveBeenCalledWith('ghost');
-    expect(redis.rpush).not.toHaveBeenCalled();
-    expect(redis.set).not.toHaveBeenCalled();
-    expect(index.addJid).not.toHaveBeenCalled();
-    expect(publisher.publish).not.toHaveBeenCalled();
+describe('WebhookService is the hub (forward + realtime)', () => {
+  it('forwards the raw payload to the tenant N8N and publishes message.received', async () => {
+    const d = makeDeps(knownTenant({ n8nWebhookUrl: 'https://n8n/w/shk' }));
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+    const payload = msgUpsert({ id: 'M9' });
+
+    await svc.processEvolutionEvent(payload);
+
+    // Transparente: repassa o payload cru, com a URL do tenant e o key.id p/ dedup.
+    expect(d.forwarder.forward).toHaveBeenCalledWith('shk', 'https://n8n/w/shk', 'M9', payload);
+    // Realtime direto, sem depender do keyspace.
+    expect(d.publisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'message.received',
+        instancia: 'shk',
+        jid: '5511999@s.whatsapp.net',
+      }),
+    );
+  });
+
+  it('forwards with a null n8n url when the tenant has none configured', async () => {
+    const d = makeDeps(knownTenant());
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(msgUpsert({ id: 'M9' }));
+
+    expect(d.forwarder.forward).toHaveBeenCalledWith('shk', null, 'M9', expect.any(Object));
   });
 });
