@@ -130,10 +130,20 @@ export class WebhookService {
     const mediaType = typeof data.messageType === 'string' ? data.messageType : 'text';
     if (!content) return;
 
-    // Persist message to chathistory:{instance}-{phone} (aligned with N8N)
+    // Persist message to chathistory:{instance}-{phone} (aligned with N8N).
+    // Guarda a REFERÊNCIA da mídia (id da mensagem) — nunca o binário no Redis;
+    // o proxy baixa a imagem descriptografada da Evolution sob demanda.
     const histKey = RedisKeys.chatHistory(instanceName, phone);
     const type = fromMe ? 'ai' : 'human';
-    const entry = JSON.stringify({ type, data: { content } });
+    const media = this.extractMedia(data);
+    const keyId = typeof key.id === 'string' ? key.id : null;
+    const entry = JSON.stringify({
+      type,
+      data: { content },
+      ...(media && keyId
+        ? { media: { kind: media.kind, id: keyId, fromMe, mimetype: media.mimetype } }
+        : {}),
+    });
     await this.redis.rpush(histKey, entry);
 
     // Contador de nao-lidas: so conta mensagem RECEBIDA do cliente (fromMe=false).
@@ -192,6 +202,32 @@ export class WebhookService {
     this.logger.log(
       `webhook.message-processed instance=${instanceName} jid=${jid} fromMe=${fromMe} type=${mediaType}`,
     );
+  }
+
+  /**
+   * Detecta se a mensagem carrega mídia (imagem/vídeo/áudio/documento) e devolve
+   * o tipo + mimetype. Só a referência é guardada; o binário é baixado sob demanda
+   * pelo proxy (getBase64FromMediaMessage).
+   */
+  private extractMedia(
+    data: Record<string, unknown>,
+  ): { kind: 'image' | 'video' | 'audio' | 'document'; mimetype: string | null } | null {
+    const messageObj = data.message as Record<string, unknown> | undefined;
+    if (!messageObj) return null;
+    const fields: Array<[string, 'image' | 'video' | 'audio' | 'document']> = [
+      ['imageMessage', 'image'],
+      ['stickerMessage', 'image'],
+      ['videoMessage', 'video'],
+      ['audioMessage', 'audio'],
+      ['documentMessage', 'document'],
+    ];
+    for (const [field, kind] of fields) {
+      const m = messageObj[field] as Record<string, unknown> | undefined;
+      if (m) {
+        return { kind, mimetype: typeof m.mimetype === 'string' ? m.mimetype : null };
+      }
+    }
+    return null;
   }
 
   private extractContent(data: Record<string, unknown>): string | null {

@@ -40,5 +40,11 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   mediaType: 'text' | 'audio' | 'image' | 'document';
+  /**
+   * Id da mensagem de mídia — o frontend monta a URL do proxy do BFF
+   * (`/conversations/:jid/media/:mediaId`) que baixa a imagem descriptografada
+   * da Evolution sob demanda. Ausente em mensagens de texto.
+   */
+  mediaId?: string;
   ts: string | null;
 }

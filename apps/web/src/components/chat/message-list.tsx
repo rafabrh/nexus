@@ -110,7 +110,7 @@ export function MessageList({ jid }: MessageListProps) {
   return (
     <div className="flex-1 overflow-y-auto p-4">
       {messages.map((msg) => (
-        <MessageBubble key={msg.id} message={msg} />
+        <MessageBubble key={msg.id} message={msg} jid={jid} />
       ))}
       {/* Typing indicator slot — rendered via AnimatePresence if needed */}
       <div ref={bottomRef} />

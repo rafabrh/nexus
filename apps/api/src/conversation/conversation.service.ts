@@ -114,6 +114,34 @@ export class ConversationService {
     return this.repo.getMessages(instancia, jid, limit);
   }
 
+  /**
+   * Proxy de mídia: reconstrói a key a partir da referência guardada e baixa o
+   * binário descriptografado da Evolution. O painel nunca lida com a URL
+   * criptografada do WhatsApp.
+   */
+  async getMedia(
+    instancia: string,
+    jid: string,
+    mediaId: string,
+  ): Promise<{ buffer: Buffer; mimetype: string }> {
+    const ref = await this.repo.findMediaRef(instancia, jid, mediaId);
+    if (!ref) {
+      throw new NotFoundException('Mídia não encontrada');
+    }
+    const { base64, mimetype } = await this.evolution.getBase64FromMediaMessage(instancia, {
+      id: mediaId,
+      remoteJid: jid,
+      fromMe: ref.fromMe,
+    });
+    if (!base64) {
+      throw new NotFoundException('Mídia indisponível');
+    }
+    return {
+      buffer: Buffer.from(base64, 'base64'),
+      mimetype: mimetype || ref.mimetype || 'application/octet-stream',
+    };
+  }
+
   async addNote(instancia: string, jid: string, text: string, userEmail: string): Promise<{ message: string }> {
     await this.repo.appendNote(instancia, jid, text);
 
