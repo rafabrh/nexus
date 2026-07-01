@@ -2,13 +2,14 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Plus, ShieldCheck, ShieldAlert, Link2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/stores/auth.store';
 import { isSuperadmin } from '@/lib/jwt';
 import { useTenants } from '@/hooks/use-admin';
 import { TenantCard } from '@/components/admin/tenant-card';
 import { NewTenantDialog } from '@/components/admin/new-tenant-dialog';
+import { AdoptInstanceDialog } from '@/components/admin/adopt-instance-dialog';
 import {
   pageTransition,
   pageTransitionConfig,
@@ -44,6 +45,7 @@ function CardSkeleton() {
 export default function AdminPage() {
   const token = useAuthStore((s) => s.token);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [adoptOpen, setAdoptOpen] = useState(false);
   const { data: tenants, isLoading } = useTenants();
 
   if (!isSuperadmin(token)) return <Restricted />;
@@ -70,10 +72,16 @@ export default function AdminPage() {
             </p>
           </div>
         </div>
-        <Button variant="primary" size="sm" onClick={() => setDialogOpen(true)}>
-          <Plus size={15} />
-          Novo assinante
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setAdoptOpen(true)}>
+            <Link2 size={15} />
+            Adotar existente
+          </Button>
+          <Button variant="primary" size="sm" onClick={() => setDialogOpen(true)}>
+            <Plus size={15} />
+            Novo assinante
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -111,6 +119,11 @@ export default function AdminPage() {
       <NewTenantDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
+        existingInstances={instances}
+      />
+      <AdoptInstanceDialog
+        open={adoptOpen}
+        onOpenChange={setAdoptOpen}
         existingInstances={instances}
       />
     </motion.div>
