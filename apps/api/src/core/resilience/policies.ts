@@ -64,3 +64,16 @@ export const resendPolicy = retry(handleAll, {
   maxAttempts: 2,
   backoff: new ExponentialBackoff({ initialDelay: 1000, maxDelay: 5000 }),
 });
+
+// --- N8N forward (webhook do fluxo do cliente) ---
+// Retry curto para falhas transitorias; breaker isola um N8N fora do ar sem
+// derrubar o caminho do webhook. O forwarder ainda engole o erro final.
+const n8nRetry = retry(handleAll, {
+  maxAttempts: 2,
+  backoff: new ExponentialBackoff({ initialDelay: 400, maxDelay: 3000 }),
+});
+const n8nBreaker = circuitBreaker(handleAll, {
+  halfOpenAfter: 15_000,
+  breaker: new SamplingBreaker({ threshold: 0.6, duration: 30_000, minimumRps: 1 }),
+});
+export const n8nForwardPolicy = wrap(n8nRetry, n8nBreaker);

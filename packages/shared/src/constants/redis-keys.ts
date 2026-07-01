@@ -66,6 +66,12 @@ export const RedisKeys = {
   idempotency: (reqId: string) =>
     `idempotency:${reqId}`,
 
+  // Dedup do reencaminhamento pro N8N: a Evolution reenvia o webhook em retries;
+  // esta chave (SET NX, TTL curto) garante que a MESMA mensagem so e reencaminhada
+  // uma vez — a IA nunca responde 2x por causa de retry de webhook.
+  n8nForwardDedup: (inst: string, msgId: string) =>
+    `n8n:fwd:${inst}:${msgId}`,
+
   // ---- isHot flag ----
 
   isHot: (inst: string, jid: string) =>

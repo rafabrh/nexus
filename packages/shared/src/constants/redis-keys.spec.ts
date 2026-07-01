@@ -22,6 +22,12 @@ describe('RedisKeys.magicLinkCooldown', () => {
   });
 });
 
+describe('RedisKeys.n8nForwardDedup', () => {
+  it('namespaces the forward dedup key per instance + message id', () => {
+    expect(RedisKeys.n8nForwardDedup('shk', 'ABC123')).toBe('n8n:fwd:shk:ABC123');
+  });
+});
+
 describe('RedisKeys.contact', () => {
   it('namespaces the contact key per instance', () => {
     expect(RedisKeys.contact('shk', '5511999999999')).toBe(
