@@ -17,7 +17,7 @@ import { EventTranslator } from './event.translator';
 function makeRedis(db = 0) {
   const handlers: Record<string, (...args: any[]) => unknown> = {};
   const subscriber = {
-    psubscribe: vi.fn(async () => undefined),
+    psubscribe: vi.fn(async (_pattern: string) => undefined),
     on: vi.fn((event: string, cb: (...args: any[]) => unknown) => {
       handlers[event] = cb;
     }),
@@ -27,7 +27,7 @@ function makeRedis(db = 0) {
   const redis = {
     options: { db },
     duplicate: vi.fn(() => subscriber),
-    get: vi.fn(async () => null),
+    get: vi.fn(async (): Promise<string | null> => null),
     sadd: vi.fn(async () => 1),
   };
   return { redis, subscriber, handlers };
