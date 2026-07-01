@@ -2,6 +2,7 @@
 
 import { Bot, Flame, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { useUiStore } from '@/stores/ui.store';
 import { stageColorToken } from '@/lib/stage-colors';
@@ -26,13 +27,6 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
   const { detailPanelOpen, toggleDetailPanel } = useUiStore();
   const ai = getAiLabel(conversation.aiState);
 
-  const initials = conversation.contactName
-    .split(' ')
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
-
   return (
     <div
       className="h-14 flex items-center justify-between px-4 flex-shrink-0 glass mirror"
@@ -44,13 +38,8 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
       {/* Left — contact info. Lifted above the header's specular sheen so the
           reflection sits behind the content, not over the text. */}
       <div className="relative z-10 flex items-center gap-3">
-        {/* Avatar 34px */}
-        <div
-          className="rounded-full flex items-center justify-center text-xs font-medium text-text-secondary flex-shrink-0 bg-bg-elevated border border-border"
-          style={{ width: 34, height: 34 }}
-        >
-          {initials}
-        </div>
+        {/* Avatar 34px — foto do WhatsApp com fallback nas iniciais */}
+        <Avatar name={conversation.contactName} url={conversation.avatarUrl} size={34} />
 
         <div>
           <div className="flex items-center gap-1.5">

@@ -165,11 +165,10 @@ export class WebhookService {
       await this.redis.set(stepKey, 'S0');
     }
 
-    // Update contact name if available
+    // Update contact name if available (merge — preserva name/foto já gravados).
     const pushName = typeof data.pushName === 'string' ? data.pushName : null;
     if (pushName) {
-      const contactKey = RedisKeys.contact(instanceName, phone);
-      await this.redis.set(contactKey, JSON.stringify({ pushName }));
+      await this.upsertContact(instanceName, phone, { pushName });
     }
 
     // Detect lead.hot automatically
@@ -358,19 +357,53 @@ export class WebhookService {
         contact.remoteJid as string | undefined,
         contact.remoteJidAlt as string | undefined,
       );
-      const pushName = typeof contact.pushName === 'string' ? contact.pushName : null;
+      const name = this.pickContactName(contact);
+      const profilePicUrl =
+        typeof contact.profilePicUrl === 'string' ? contact.profilePicUrl : null;
 
-      if (resolved && pushName) {
-        await this.redis.set(
-          RedisKeys.contact(instanceName, resolved.phone),
-          JSON.stringify({ pushName }),
-        );
+      if (resolved && (name || profilePicUrl)) {
+        await this.upsertContact(instanceName, resolved.phone, { name, profilePicUrl });
       }
     }
 
     // Invalidate caches
     await this.redis.del(RedisKeys.cacheContacts(instanceName));
     await this.redis.del(RedisKeys.cacheConversations(instanceName));
+  }
+
+  /** Melhor nome de um contato da Evolution: agenda > verificado > público. */
+  private pickContactName(c: Record<string, unknown>): string | null {
+    for (const v of [c.name, c.verifiedName, c.pushName, c.notify]) {
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return null;
+  }
+
+  /**
+   * Grava nome/foto do contato preservando os campos já existentes (merge). Assim
+   * um `messages.upsert` (que só traz pushName) não apaga o profilePicUrl vindo
+   * de um `contacts.upsert` anterior, e vice-versa.
+   */
+  private async upsertContact(
+    inst: string,
+    phone: string,
+    fields: { name?: string | null; pushName?: string | null; profilePicUrl?: string | null },
+  ): Promise<void> {
+    const key = RedisKeys.contact(inst, phone);
+    const existing = await this.redis.get(key);
+    let parsed: Record<string, unknown> = {};
+    if (existing) {
+      try {
+        parsed = JSON.parse(existing) as Record<string, unknown>;
+      } catch {
+        /* corrupted entry — overwrite */
+      }
+    }
+    const merged: Record<string, unknown> = { ...parsed };
+    if (fields.name) merged.name = fields.name;
+    if (fields.pushName) merged.pushName = fields.pushName;
+    if (fields.profilePicUrl) merged.profilePicUrl = fields.profilePicUrl;
+    await this.redis.set(key, JSON.stringify(merged));
   }
 
   private async updateTenantConnectionState(instanceName: string, connectionState: string): Promise<void> {

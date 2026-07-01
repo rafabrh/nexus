@@ -93,7 +93,7 @@ export class ConversationRepository {
 
     return {
       jid,
-      contactName: contact.pushName || contact.name || PhoneMask.mask(jid),
+      contactName: contact.name || contact.pushName || PhoneMask.mask(jid),
       phoneDisplay: PhoneMask.mask(jid),
       aiState: aiState.state,
       aiOffUntil: aiState.until,
@@ -173,7 +173,7 @@ export class ConversationRepository {
 
     return {
       jid,
-      contactName: contact.pushName || contact.name || PhoneMask.mask(jid),
+      contactName: contact.name || contact.pushName || PhoneMask.mask(jid),
       phoneDisplay: PhoneMask.mask(jid),
       aiState: aiState.state,
       aiOffUntil: aiState.until,

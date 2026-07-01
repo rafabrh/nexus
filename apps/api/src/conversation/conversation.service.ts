@@ -34,30 +34,72 @@ export class ConversationService {
     // sem fan-out de N chaves Redis e sem o cache-aside de 30s que servia para
     // amortizar aquele fan-out. aiState é recomputado na leitura (sensível ao tempo).
     const items = await this.projection.list(instancia, filters);
-    return this.withUnreadCounts(instancia, items);
+    return this.enrichFromRedis(instancia, items);
   }
 
   /**
-   * Enriquece a lista com o contador de não-lidas de cada conversa, lido do Redis
-   * num único pipeline (um round-trip, sem fan-out sequencial). O contador não vive
-   * na projeção Postgres porque muda a cada mensagem — mantê-lo no Redis evita
-   * reprojetar a linha a cada incremento.
+   * Enriquece a lista com o que vive no Redis (fora da projeção Postgres): o
+   * contador de não-lidas, o nome e a foto do contato. Tudo num único pipeline
+   * (3 GETs por conversa) — sem fan-out sequencial. Nome/foto vêm da chave por
+   * tenant e, como fallback, da chave GLOBAL legada do N8N — recuperando os nomes
+   * históricos que o namespacing por tenant deixou de ler.
    */
-  private async withUnreadCounts(
+  private async enrichFromRedis(
     instancia: string,
     items: ConversationListItem[],
   ): Promise<ConversationListItem[]> {
     if (items.length === 0) return items;
     const pipeline = this.redis.pipeline();
     for (const item of items) {
-      pipeline.get(RedisKeys.unread(instancia, item.jid));
+      const phone = item.jid.replace('@s.whatsapp.net', '');
+      pipeline.get(RedisKeys.unread(instancia, item.jid)); // 3i
+      pipeline.get(RedisKeys.contact(instancia, phone)); // 3i+1
+      pipeline.get(RedisKeys.contactGlobalLegacy(phone)); // 3i+2
     }
     const results = await pipeline.exec();
     return items.map((item, i) => {
-      const raw = results?.[i]?.[1] as string | null | undefined;
-      const count = raw ? parseInt(raw, 10) : 0;
-      return { ...item, unreadCount: Number.isFinite(count) && count > 0 ? count : 0 };
+      const unreadRaw = results?.[i * 3]?.[1] as string | null | undefined;
+      const contactRaw = results?.[i * 3 + 1]?.[1] as string | null | undefined;
+      const legacyRaw = results?.[i * 3 + 2]?.[1] as string | null | undefined;
+
+      const count = unreadRaw ? parseInt(unreadRaw, 10) : 0;
+      const { name, avatarUrl } = this.resolveContact(contactRaw, legacyRaw);
+
+      return {
+        ...item,
+        unreadCount: Number.isFinite(count) && count > 0 ? count : 0,
+        // Só sobrescreve o nome da projeção quando o Redis tem um nome melhor
+        // (a projeção pode carregar apenas o telefone mascarado).
+        contactName: name ?? item.contactName,
+        ...(avatarUrl ? { avatarUrl } : {}),
+      };
     });
+  }
+
+  /** Extrai nome/foto do contato: chave por tenant, com fallback na global do N8N. */
+  private resolveContact(
+    contactRaw: string | null | undefined,
+    legacyRaw: string | null | undefined,
+  ): { name: string | null; avatarUrl: string | null } {
+    const parse = (raw: string | null | undefined): Record<string, unknown> => {
+      if (!raw) return {};
+      try {
+        const v = JSON.parse(raw);
+        return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+      } catch {
+        // A chave global do N8N pode ser uma string simples (o próprio nome).
+        return { name: raw };
+      }
+    };
+    const c = parse(contactRaw);
+    const legacy = parse(legacyRaw);
+    const str = (v: unknown): string | null =>
+      typeof v === 'string' && v.trim() ? v.trim() : null;
+
+    const name =
+      str(c.name) ?? str(c.pushName) ?? str(legacy.name) ?? str(legacy.pushName);
+    const avatarUrl = str(c.profilePicUrl) ?? str(legacy.profilePicUrl);
+    return { name, avatarUrl };
   }
 
   async getConversationDetail(instancia: string, jid: string): Promise<ConversationDetail> {

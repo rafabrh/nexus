@@ -42,6 +42,12 @@ export const RedisKeys = {
   contact: (inst: string, phone: string) =>
     `contact:${inst}:${phone}`,
 
+  // Chave GLOBAL legada que o N8N popula (`contact:{phone}`, sem instância). O
+  // BFF a lê APENAS como fallback de nome/foto para contatos históricos que ainda
+  // não passaram pelo namespacing por tenant. Nunca escreve nela.
+  contactGlobalLegacy: (phone: string) =>
+    `contact:${phone}`,
+
   // ---- BFF exclusivo ----
 
   eventStream: (inst: string) =>

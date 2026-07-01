@@ -23,6 +23,11 @@ export interface ConversationListItem {
    * operador abre a conversa.
    */
   unreadCount?: number;
+  /**
+   * URL da foto de perfil do WhatsApp, quando a Evolution a expõe. Enriquecido na
+   * listagem a partir do contato no Redis; ausente → o avatar cai nas iniciais.
+   */
+  avatarUrl?: string;
 }
 
 export interface ConversationDetail extends ConversationListItem {

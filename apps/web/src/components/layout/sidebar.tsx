@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { Search, Flame } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn, timeAgo } from '@/lib/utils';
+import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { SegmentedControl } from '@/components/ui/segmented-control';
@@ -92,12 +93,6 @@ function ConversationItem({
   isLast: boolean;
 }) {
   const ai = getAiBadge(conversation.aiState);
-  const initials = conversation.contactName
-    .split(' ')
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
 
   // Selecionada já foi marcada como lida (abrir zera) — o realce de não-lida
   // nunca disputa com o fundo accent da linha selecionada.
@@ -137,16 +132,13 @@ function ConversationItem({
         />
       )}
 
-      {/* Avatar */}
-      <div
-        className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-medium flex-shrink-0"
-        style={{
-          background: selected ? 'rgba(255,255,255,0.2)' : 'var(--bg-active)',
-          color: selected ? 'rgba(255,255,255,0.9)' : 'var(--text-secondary)',
-        }}
-      >
-        {initials}
-      </div>
+      {/* Avatar — foto do WhatsApp com fallback nas iniciais */}
+      <Avatar
+        name={conversation.contactName}
+        url={conversation.avatarUrl}
+        size={36}
+        selected={selected}
+      />
 
       {/* Content */}
       <div className="flex-1 min-w-0">
