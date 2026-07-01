@@ -56,6 +56,13 @@ export const RedisKeys = {
   magicLink: (token: string) =>
     `magiclink:${token}`,
 
+  // Anti-spam de reenvio (minimizacao LGPD): enquanto esta chave curta existir,
+  // sendMagicLink NAO dispara outro email para o mesmo endereco. Evita lotar a
+  // caixa do cliente quando ele reclica "enviar link". Token = UUID, nunca
+  // colide com o segmento literal `cooldown:`.
+  magicLinkCooldown: (email: string) =>
+    `magiclink:cooldown:${email}`,
+
   idempotency: (reqId: string) =>
     `idempotency:${reqId}`,
 

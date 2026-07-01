@@ -7,6 +7,21 @@ describe('RedisKeys.conversationIndex', () => {
   });
 });
 
+describe('RedisKeys.magicLinkCooldown', () => {
+  it('namespaces the resend cooldown per email', () => {
+    expect(RedisKeys.magicLinkCooldown('user@x.com')).toBe(
+      'magiclink:cooldown:user@x.com',
+    );
+  });
+
+  it('never collides with a token key (magiclink:<uuid>)', () => {
+    const token = '11111111-2222-3333-4444-555555555555';
+    expect(RedisKeys.magicLink(token)).not.toBe(
+      RedisKeys.magicLinkCooldown('user@x.com'),
+    );
+  });
+});
+
 describe('RedisKeys.contact', () => {
   it('namespaces the contact key per instance', () => {
     expect(RedisKeys.contact('shk', '5511999999999')).toBe(
