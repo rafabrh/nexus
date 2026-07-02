@@ -15,10 +15,13 @@ import {
   Trash2,
   Flame,
   RotateCcw,
+  Pencil,
+  Check,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { notify } from '@/lib/notify';
 import { cn } from '@/lib/utils';
+import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -36,6 +39,7 @@ import {
   useUpdateStage,
   useToggleHot,
   useResetConversation,
+  useSaveContact,
 } from '@/hooks/use-conversations';
 import {
   useQuickReplies,
@@ -124,6 +128,19 @@ export function DetailPanel({ jid }: DetailPanelProps) {
   const [reminderMinutes, setReminderMinutes] = useState('30');
   const [qrName, setQrName] = useState('');
   const [qrContent, setQrContent] = useState('');
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const saveContact = useSaveContact(jid);
+
+  const handleSaveName = () => {
+    saveContact.mutate(nameDraft.trim(), {
+      onSuccess: () => {
+        setEditingName(false);
+        notify.success('Contato salvo');
+      },
+      onError: () => notify.error('Erro ao salvar contato'),
+    });
+  };
 
   const stages = FunnelStage.all();
   const jidReminders = reminders?.filter((r) => r.jid === jid) ?? [];
@@ -263,6 +280,60 @@ export function DetailPanel({ jid }: DetailPanelProps) {
             </div>
           ) : (
             <>
+              {/* Perfil do contato — foto grande, nome editável, número completo */}
+              <div
+                className="flex flex-col items-center gap-2 px-4 py-5"
+                style={{ borderBottom: '1px solid var(--separator)' }}
+              >
+                <Avatar name={detail.contactName} url={detail.avatarUrl} size={72} />
+                {editingName ? (
+                  <div className="flex items-center gap-1.5 w-full mt-1">
+                    <Input
+                      value={nameDraft}
+                      onChange={(e) => setNameDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveName();
+                        if (e.key === 'Escape') setEditingName(false);
+                      }}
+                      autoFocus
+                      placeholder="Nome do contato"
+                      className="h-8 text-sm"
+                    />
+                    <motion.div whileTap={{ scale: 0.95 }}>
+                      <Button
+                        size="xs"
+                        onClick={handleSaveName}
+                        disabled={saveContact.isPending}
+                        aria-label="Salvar nome"
+                      >
+                        <Check size={14} />
+                      </Button>
+                    </motion.div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setNameDraft(detail.contactName);
+                      setEditingName(true);
+                    }}
+                    className="group flex items-center gap-1.5"
+                    title="Editar nome do contato"
+                  >
+                    <span className="text-base font-semibold text-text-primary">
+                      {detail.contactName}
+                    </span>
+                    <Pencil
+                      size={12}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity"
+                      style={{ color: 'var(--text-muted)' }}
+                    />
+                  </button>
+                )}
+                <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+                  {detail.phoneDisplay}
+                </span>
+              </div>
+
               {/* Lead Info */}
               <Section title="Lead" icon={User}>
                 <div

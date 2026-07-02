@@ -29,6 +29,7 @@ import { AddTagRequestDto } from './dto/add-tag-request.dto';
 import { SendMessageRequestDto } from './dto/send-message-request.dto';
 import { UpdateStageRequestDto } from './dto/update-stage-request.dto';
 import { ToggleHotRequestDto } from './dto/toggle-hot-request.dto';
+import { SaveContactRequestDto } from './dto/save-contact-request.dto';
 
 @Controller('conversations')
 @UseGuards(JwtAuthGuard)
@@ -176,5 +177,15 @@ export class ConversationController {
       .header('Content-Type', mimetype)
       .header('Cache-Control', 'private, max-age=3600')
       .send(buffer);
+  }
+
+  @Post(':jid/contact')
+  @ApiOperation({ summary: 'Salva/edita o nome do contato (sobrepoe o pushName)' })
+  async saveContact(
+    @Tenant() instancia: string,
+    @Param('jid') jid: string,
+    @Body() dto: SaveContactRequestDto,
+  ) {
+    return this.service.saveContactName(instancia, jid, dto.name);
   }
 }

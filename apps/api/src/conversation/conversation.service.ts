@@ -278,4 +278,39 @@ export class ConversationService {
     this.logger.log(`Conversation marked read for ${instancia}/${jid}`);
     return { message: 'Marcado como lido' };
   }
+
+  /**
+   * Salva/edita o nome do contato (sobrepõe o pushName da Evolution). Nome vazio
+   * remove a sobreposição — volta ao pushName. Reprojeta para a lista e o detalhe
+   * refletirem imediatamente.
+   */
+  async saveContactName(
+    instancia: string,
+    jid: string,
+    name: string,
+  ): Promise<{ message: string }> {
+    const phone = jid.replace('@s.whatsapp.net', '');
+    const key = RedisKeys.contact(instancia, phone);
+    const existing = await this.redis.get(key);
+    let parsed: Record<string, unknown> = {};
+    if (existing) {
+      try {
+        parsed = JSON.parse(existing) as Record<string, unknown>;
+      } catch {
+        /* corrupted — overwrite */
+      }
+    }
+    const trimmed = name.trim();
+    if (trimmed) {
+      parsed.name = trimmed;
+    } else {
+      delete parsed.name;
+    }
+    await this.redis.set(key, JSON.stringify(parsed));
+    await this.projection.project(instancia, jid);
+    this.logger.log(
+      `Contact name ${trimmed ? 'saved' : 'cleared'} for ${instancia}/${jid}`,
+    );
+    return { message: trimmed ? 'Contato salvo' : 'Nome removido' };
+  }
 }

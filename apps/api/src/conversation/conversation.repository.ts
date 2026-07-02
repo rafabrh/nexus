@@ -188,6 +188,7 @@ export class ConversationRepository {
       lastMessagePreview: preview,
       lastActivity,
       isHot,
+      avatarUrl: (contact.profilePicUrl as string) || undefined,
       messageCount: messageCount ?? 0,
     };
   }

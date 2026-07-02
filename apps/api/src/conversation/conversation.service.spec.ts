@@ -82,6 +82,37 @@ describe('ConversationService', () => {
     );
   });
 
+  it('saves a custom contact name (merging, keeps pushName) and reprojects', async () => {
+    const redis = {
+      get: vi.fn(async () => JSON.stringify({ pushName: 'Jonny' })),
+      set: vi.fn(async () => 'OK'),
+    } as any;
+    const projection = { project: vi.fn(async () => undefined), list: vi.fn() } as any;
+    const svc = new ConversationService({} as any, {} as any, {} as any, redis, {} as any, projection);
+
+    await svc.saveContactName('shk', '5511@s.whatsapp.net', 'João Cliente');
+
+    const saved = JSON.parse(redis.set.mock.calls[0][1]);
+    expect(saved.name).toBe('João Cliente');
+    expect(saved.pushName).toBe('Jonny'); // merge preserva o pushName original
+    expect(projection.project).toHaveBeenCalledWith('shk', '5511@s.whatsapp.net');
+  });
+
+  it('clears the saved name when given a blank string', async () => {
+    const redis = {
+      get: vi.fn(async () => JSON.stringify({ name: 'Old', pushName: 'Jonny' })),
+      set: vi.fn(async () => 'OK'),
+    } as any;
+    const projection = { project: vi.fn(async () => undefined), list: vi.fn() } as any;
+    const svc = new ConversationService({} as any, {} as any, {} as any, redis, {} as any, projection);
+
+    await svc.saveContactName('shk', '5511@s.whatsapp.net', '   ');
+
+    const saved = JSON.parse(redis.set.mock.calls[0][1]);
+    expect(saved.name).toBeUndefined();
+    expect(saved.pushName).toBe('Jonny');
+  });
+
   it('persists the outbound message, pauses AI, indexes the jid, and reprojects', async () => {
     const calls: any = { rpush: [], set: [] };
     const redis = {
