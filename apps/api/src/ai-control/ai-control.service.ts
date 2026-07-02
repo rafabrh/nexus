@@ -6,6 +6,15 @@ import type { AiControlResponse } from '@nexus/shared';
 import type { AiToggleRequestDto } from './dto/ai-toggle-request.dto';
 import { EventPublisher } from '../realtime/event.publisher';
 
+/**
+ * "OFF permanente" — o MESMO valor que o comando `off NUM` do N8N grava (nó
+ * "Admin - OFF (set humanControlUntil)"). É um timestamp no ano ~2100, então a
+ * checagem do fluxo (`humanControlUntil > Date.now()`) fica sempre verdadeira até
+ * um `on`/`reset` limpar a chave. Manter idêntico garante que o botão do painel e
+ * o comando de chat tenham efeito EXATAMENTE igual.
+ */
+const PERMANENT_OFF_MS = 4102444800000;
+
 @Injectable()
 export class AiControlService {
   private readonly logger = new Logger(AiControlService.name);
@@ -28,6 +37,12 @@ export class AiControlService {
       return { state: 'ON', until: null };
     }
 
+    // Valor "permanente" (ano ~2100) = OFF permanente (comando `off`), não uma
+    // pausa temporizada — a UI mostra "Desligada", sem horário-limite.
+    if (until >= PERMANENT_OFF_MS) {
+      return { state: 'OFF', until: null };
+    }
+
     return {
       state: 'OFF_UNTIL',
       until: new Date(until).toISOString(),
@@ -46,13 +61,20 @@ export class AiControlService {
       return { state: 'ON', until: null };
     }
 
-    // OFF or OFF_UNTIL
-    const until = dto.expireAt
-      ? new Date(dto.expireAt).getTime()
-      : Date.now() + 24 * 60 * 60 * 1000; // 24h default
+    // OFF permanente (Switch = comando `off NUM`) ou OFF_UNTIL (pausar por tempo =
+    // `off NUM 2h`). Espelha o "Admin - OFF" do N8N: MESMA chave, MESMO valor
+    // permanente e MESMO TTL de 1 ano — botão do painel ≡ comando de chat.
+    const permanent = !dto.expireAt;
+    const until = permanent
+      ? PERMANENT_OFF_MS
+      : new Date(dto.expireAt as string).getTime();
 
-    await this.redis.set(key, until.toString());
-    this.logger.log(`IA turned OFF_UNTIL ${new Date(until).toISOString()} for ${instancia}/${jid}`);
+    await this.redis.set(key, until.toString(), 'EX', 31_536_000);
+    this.logger.log(
+      `IA turned ${
+        permanent ? 'OFF (permanent)' : `OFF_UNTIL ${new Date(until).toISOString()}`
+      } for ${instancia}/${jid}`,
+    );
 
     // Emit handoff.triggered when transitioning from ON to OFF/OFF_UNTIL
     if (previousState.state === 'ON') {
@@ -61,15 +83,12 @@ export class AiControlService {
         instancia,
         jid,
         ts: Date.now(),
-        payload: {
-          until: new Date(until).toISOString(),
-        },
+        payload: { until: permanent ? null : new Date(until).toISOString() },
       });
     }
 
-    return {
-      state: 'OFF_UNTIL',
-      until: new Date(until).toISOString(),
-    };
+    return permanent
+      ? { state: 'OFF', until: null }
+      : { state: 'OFF_UNTIL', until: new Date(until).toISOString() };
   }
 }
