@@ -40,12 +40,12 @@
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
   --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.03);
 
-  /* Glass blur (macOS vibrancy / Liquid Glass) — strong */
-  --glass-blur: 32px;
-  --glass-blur-heavy: 48px;
+  /* Glass blur (macOS vibrancy / Liquid Glass) — reforçado */
+  --glass-blur: 40px;
+  --glass-blur-heavy: 60px;
   /* Saturation boost that gives Liquid Glass its vivid refraction */
-  --glass-saturate: 1.8;
-  --glass-saturate-heavy: 2.1;
+  --glass-saturate: 2;
+  --glass-saturate-heavy: 2.4;
 
   /* Animation durations */
   --duration-instant: 100ms;
@@ -105,13 +105,13 @@ html[data-theme='light'] {
   --bubble-them: #E9E9EB;
   --stage-s0:#8E8E93; --stage-s1:#32ADE6; --stage-s2:#5856D6; --stage-s3:#FF9500;
   --stage-s4:#FF3B30; --stage-s5:#34C759; --stage-s6:#00C7BE;
-  --glass-bg: rgba(255,255,255,0.6);
-  --glass-border: rgba(0,0,0,0.08);
-  --shadow-control: 0 1px 2px rgba(0,0,0,0.08);
-  --shadow-panel: 0 8px 40px rgba(0,0,0,0.12);
+  --glass-bg: rgba(255,255,255,0.55);
+  --glass-border: rgba(0,0,0,0.10);
+  --shadow-control: 0 1px 3px rgba(0,0,0,0.10);
+  --shadow-panel: 0 12px 48px rgba(0,0,0,0.18);
   /* Mirror / specular ("efeito espelho") — bright on white surfaces */
-  --mirror-sheen-top: rgba(255,255,255,0.55);
-  --mirror-edge: rgba(255,255,255,0.9);
+  --mirror-sheen-top: rgba(255,255,255,0.65);
+  --mirror-edge: rgba(255,255,255,0.95);
   --mirror-sweep: rgba(255,255,255,0.5);
   /* Chat ambience — on light surfaces the cursor "reflection" is a glossy white
      bloom (the same light-reflection language as dark, translated up against the
@@ -151,13 +151,13 @@ html[data-theme='dark'] {
   --bubble-them: #3A3A3C;
   --stage-s0:#98989D; --stage-s1:#64D2FF; --stage-s2:#5E5CE6; --stage-s3:#FF9F0A;
   --stage-s4:#FF453A; --stage-s5:#30D158; --stage-s6:#66D4CF;
-  --glass-bg: rgba(40,40,42,0.6);
-  --glass-border: rgba(255,255,255,0.10);
-  --shadow-control: 0 1px 2px rgba(0,0,0,0.4);
-  --shadow-panel: 0 8px 40px rgba(0,0,0,0.5);
-  /* Mirror / specular ("efeito espelho") — restrained on dark glass */
-  --mirror-sheen-top: rgba(255,255,255,0.13);
-  --mirror-edge: rgba(255,255,255,0.22);
+  --glass-bg: rgba(40,40,42,0.52);
+  --glass-border: rgba(255,255,255,0.14);
+  --shadow-control: 0 1px 3px rgba(0,0,0,0.5);
+  --shadow-panel: 0 12px 48px rgba(0,0,0,0.62);
+  /* Mirror / specular ("efeito espelho") — reforçado no dark glass */
+  --mirror-sheen-top: rgba(255,255,255,0.18);
+  --mirror-edge: rgba(255,255,255,0.30);
   --mirror-sweep: rgba(255,255,255,0.16);
   /* Chat ambience — the cursor "reflection" is a soft white light over the
      dark void; the vignette grounds it with depth. */
@@ -391,14 +391,16 @@ body {
   .glass-popup,
   .vibrancy-panel,
   .vibrancy-bar {
-    background: var(--vibrancy-fallback) !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
+    /* Preferência de transparência reduzida (ex.: "Efeitos de transparência" off
+       no Windows): em vez de MATAR o vidro, mantemos um blur suave — ainda
+       legível, mas preservando a identidade Liquid Glass da interface. */
+    backdrop-filter: blur(18px) saturate(1.5) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(1.5) !important;
   }
-  /* Drop the moving specular sheen overlays that only read on translucency. */
+  /* Suaviza (sem apagar) o sheen especular em movimento. */
   .mirror::before,
   .mirror-sweep::after {
-    opacity: 0;
+    opacity: 0.5;
   }
 }
 
@@ -449,6 +451,15 @@ body {
 /* Vibrancy panel gains the same specular edge for cross-screen consistency */
 .vibrancy-panel {
   box-shadow: inset 0 1px 0 var(--mirror-edge);
+}
+
+/* Card de vidro "empilhado" — assenta sobre outra superfície de vidro (ex.: o
+   painel de detalhes) com borda fina e sheen especular no topo. Reforça a
+   sensação de camadas de Liquid Glass sem um backdrop-filter próprio. */
+.glass-stack {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--mirror-edge), var(--shadow-control);
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {

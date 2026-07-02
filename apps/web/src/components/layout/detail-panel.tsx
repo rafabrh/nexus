@@ -266,12 +266,8 @@ export function DetailPanel({ jid }: DetailPanelProps) {
               {/* Lead Info */}
               <Section title="Lead" icon={User}>
                 <div
-                  className="space-y-2 text-sm p-3 rounded-lg"
-                  style={{
-                    background: 'var(--glass-bg)',
-                    border: '1px solid var(--separator)',
-                    borderRadius: 'var(--radius-panel)',
-                  }}
+                  className="glass-stack space-y-2 text-sm p-3"
+                  style={{ borderRadius: 'var(--radius-panel)' }}
                 >
                   <div className="flex justify-between">
                     <span className="text-text-muted">Nome</span>
@@ -322,12 +318,8 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                 <div className="space-y-3">
                   {/* Main ON/OFF toggle with Switch */}
                   <div
-                    className="flex items-center justify-between p-3"
-                    style={{
-                      background: 'var(--glass-bg)',
-                      border: '1px solid var(--separator)',
-                      borderRadius: 'var(--radius-panel)',
-                    }}
+                    className="glass-stack flex items-center justify-between p-3"
+                    style={{ borderRadius: 'var(--radius-panel)' }}
                   >
                     <div className="flex items-center gap-2">
                       <Bot
@@ -355,12 +347,8 @@ export function DetailPanel({ jid }: DetailPanelProps) {
 
                   {/* Pausar por tempo flexível (comando off + tempo) */}
                   <div
-                    className="p-3 space-y-2"
-                    style={{
-                      background: 'var(--glass-bg)',
-                      border: '1px solid var(--separator)',
-                      borderRadius: 'var(--radius-panel)',
-                    }}
+                    className="glass-stack p-3 space-y-2"
+                    style={{ borderRadius: 'var(--radius-panel)' }}
                   >
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-xs text-text-muted">Pausar por:</span>
@@ -401,12 +389,8 @@ export function DetailPanel({ jid }: DetailPanelProps) {
               {/* Funnel Stage */}
               <Section title="Etapa do Funil" icon={Layers}>
                 <div
-                  className="space-y-1 p-2"
-                  style={{
-                    background: 'var(--glass-bg)',
-                    border: '1px solid var(--separator)',
-                    borderRadius: 'var(--radius-panel)',
-                  }}
+                  className="glass-stack space-y-1 p-2"
+                  style={{ borderRadius: 'var(--radius-panel)' }}
                 >
                   {stages.map((s) => {
                     const isCurrent = s.key === detail.stage;
