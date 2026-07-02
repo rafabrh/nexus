@@ -5,6 +5,7 @@ import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from '@/stores/auth.store';
 import { useRealtimeStore } from '@/stores/realtime.store';
 import { useSettingsStore } from '@/stores/settings.store';
+import { usePresenceStore, type Presence } from '@/stores/presence.store';
 import { queryClient } from '@/lib/query-client';
 import {
   jidFromPhone,
@@ -69,8 +70,12 @@ const EVENT_TO_QUERY_KEYS: Record<NexusEventType, string[][]> = {
   'payment.approved': [['dashboard'], ['leads'], ['conversations']],
   'note.added': [['conversation-detail']],
   'lead.hot': [['conversations']],
-  // Infrastructure event — handled apart from the feed (see the early return
-  // in the nexus-event handler); no query invalidation by this map.
+  // Outro dispositivo/aba do mesmo tenant marcou a conversa como lida — refaz a
+  // lista para o badge de não-lidas sumir aqui também (leitura sincronizada).
+  'conversation.read': [['conversations']],
+  // Ephemeral/infra events — handled apart from the feed (early return in the
+  // nexus-event handler); no query invalidation by this map.
+  'presence.update': [],
   'connection.update': [],
 };
 
@@ -210,6 +215,16 @@ export function useSocket() {
           queryClient.invalidateQueries({ queryKey: ['conversations'] });
           queryClient.invalidateQueries({ queryKey: ['leads'] });
           queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+        }
+        return;
+      }
+
+      // Presença efêmera (digitando/online) — atualiza o store dedicado e sai;
+      // não entra no feed de eventos nem invalida queries.
+      if (envelope.type === 'presence.update') {
+        const presence = envelope.payload?.presence as string | undefined;
+        if (presence) {
+          usePresenceStore.getState().setPresence(envelope.jid, presence as Presence);
         }
         return;
       }

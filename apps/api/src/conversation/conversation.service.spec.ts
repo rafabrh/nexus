@@ -8,11 +8,78 @@ describe('ConversationService', () => {
       { jid: 'b@lid', stage: 'S0', aiState: 'ON' },
     ];
     const projection = { list: vi.fn(async () => items), project: vi.fn() } as any;
-    const svc = new ConversationService({} as any, {} as any, {} as any, {} as any, {} as any, projection);
+    // A lista é enriquecida com o unread via pipeline Redis (um round-trip).
+    // Enriquecimento: 3 GETs por conversa (unread + contact inst + contact global).
+    const pipeline = {
+      get: vi.fn(),
+      exec: vi.fn(async () => items.flatMap(() => [[null, null], [null, null], [null, null]])),
+    };
+    const redis = { pipeline: () => pipeline } as any;
+    const svc = new ConversationService({} as any, {} as any, {} as any, redis, {} as any, projection);
 
     const result = await svc.listConversations('shk', { stage: 'S0' });
     expect(projection.list).toHaveBeenCalledWith('shk', { stage: 'S0' });
     expect(result).toHaveLength(2);
+  });
+
+  it('enriches each conversation with unread count, contact name and avatar from Redis', async () => {
+    const items = [{ jid: 'a@s.whatsapp.net', contactName: '55999', stage: 'S0', aiState: 'ON' }];
+    const projection = { list: vi.fn(async () => items), project: vi.fn() } as any;
+    const pipeline = {
+      get: vi.fn(),
+      exec: vi.fn(async () => [
+        [null, '3'], // unread
+        [null, JSON.stringify({ name: 'João Cliente', profilePicUrl: 'http://pic/j' })], // contact inst
+        [null, null], // legacy global
+      ]),
+    };
+    const redis = { pipeline: () => pipeline } as any;
+    const svc = new ConversationService({} as any, {} as any, {} as any, redis, {} as any, projection);
+
+    const result = await svc.listConversations('shk', {});
+
+    expect(pipeline.get).toHaveBeenCalledWith('chat:shk:a@s.whatsapp.net:unread');
+    expect(pipeline.get).toHaveBeenCalledWith('contact:shk:a');
+    expect(pipeline.get).toHaveBeenCalledWith('contact:a');
+    expect(result[0].unreadCount).toBe(3);
+    expect(result[0].contactName).toBe('João Cliente');
+    expect(result[0].avatarUrl).toBe('http://pic/j');
+  });
+
+  it('falls back to the N8N global contact key for the historical name', async () => {
+    const items = [{ jid: 'b@s.whatsapp.net', contactName: '55888', stage: 'S0', aiState: 'ON' }];
+    const projection = { list: vi.fn(async () => items), project: vi.fn() } as any;
+    const pipeline = {
+      get: vi.fn(),
+      exec: vi.fn(async () => [
+        [null, null], // unread
+        [null, null], // contact inst (vazio — namespacing "escondeu" o nome)
+        [null, JSON.stringify({ pushName: 'Maria Antiga' })], // legacy global N8N
+      ]),
+    };
+    const redis = { pipeline: () => pipeline } as any;
+    const svc = new ConversationService({} as any, {} as any, {} as any, redis, {} as any, projection);
+
+    const result = await svc.listConversations('shk', {});
+    expect(result[0].contactName).toBe('Maria Antiga');
+  });
+
+  it('marks a conversation as read: clears unread and publishes conversation.read', async () => {
+    const redis = { del: vi.fn(async () => 1) } as any;
+    const publisher = { publish: vi.fn(async () => undefined) } as any;
+    const projection = { list: vi.fn(), project: vi.fn() } as any;
+    const svc = new ConversationService({} as any, {} as any, publisher, redis, {} as any, projection);
+
+    await svc.markRead('shk', '5511@s.whatsapp.net');
+
+    expect(redis.del).toHaveBeenCalledWith('chat:shk:5511@s.whatsapp.net:unread');
+    expect(publisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'conversation.read',
+        instancia: 'shk',
+        jid: '5511@s.whatsapp.net',
+      }),
+    );
   });
 
   it('persists the outbound message, pauses AI, indexes the jid, and reprojects', async () => {

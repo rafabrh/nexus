@@ -154,3 +154,31 @@ export function useResetConversation(jid: string) {
     },
   });
 }
+
+/**
+ * Marca a conversa como lida (zera o contador de não-lidas). Atualização
+ * otimista: o badge some na hora, sem esperar o round-trip; se o POST falhar,
+ * o valor anterior é restaurado. O backend publica `conversation.read` para
+ * sincronizar outras abas/dispositivos.
+ */
+export function useMarkRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (jid: string) =>
+      api(`/api/v1/conversations/${encodeURIComponent(jid)}/read`, {
+        method: 'POST',
+        body: '{}',
+      }),
+    onMutate: async (jid: string) => {
+      await qc.cancelQueries({ queryKey: ['conversations'] });
+      const prev = qc.getQueryData<ConversationListItem[]>(['conversations']);
+      qc.setQueryData<ConversationListItem[]>(['conversations'], (old) =>
+        old?.map((c) => (c.jid === jid ? { ...c, unreadCount: 0 } : c)),
+      );
+      return { prev };
+    },
+    onError: (_e, _jid, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['conversations'], ctx.prev);
+    },
+  });
+}

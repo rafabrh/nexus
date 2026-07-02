@@ -42,6 +42,12 @@ export const RedisKeys = {
   contact: (inst: string, phone: string) =>
     `contact:${inst}:${phone}`,
 
+  // Chave GLOBAL legada que o N8N popula (`contact:{phone}`, sem instância). O
+  // BFF a lê APENAS como fallback de nome/foto para contatos históricos que ainda
+  // não passaram pelo namespacing por tenant. Nunca escreve nela.
+  contactGlobalLegacy: (phone: string) =>
+    `contact:${phone}`,
+
   // ---- BFF exclusivo ----
 
   eventStream: (inst: string) =>
@@ -76,6 +82,12 @@ export const RedisKeys = {
 
   isHot: (inst: string, jid: string) =>
     `chat:${inst}:${jid}:isHot`,
+
+  // ---- Contador de nao-lidas (BFF exclusivo) ----
+  // Incrementado a cada mensagem RECEBIDA do cliente (fromMe=false); zerado
+  // quando o operador abre a conversa (markRead). O N8N nao conhece esta chave.
+  unread: (inst: string, jid: string) =>
+    `chat:${inst}:${jid}:unread`,
 
   // ---- Reminders ----
 

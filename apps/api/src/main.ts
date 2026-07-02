@@ -97,7 +97,11 @@ async function bootstrap() {
   await app.listen(port, '0.0.0.0');
 
   const logger = app.get(Logger);
-  logger.log(`NEXUS API listening on port ${port}`);
+  // Marcador de versao do build: confirma NO LOG DE BOOT qual codigo subiu, sem
+  // precisar deduzir por timestamp. `GIT_SHA` e injetado pelo build quando
+  // disponivel; o fallback identifica a versao do codigo commitada junto.
+  const buildVersion = process.env.GIT_SHA ?? 'sendmsg-fix-2026-07-01';
+  logger.log(`NEXUS API listening on port ${port} — build=${buildVersion}`);
 }
 
 bootstrap();

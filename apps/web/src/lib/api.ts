@@ -104,6 +104,30 @@ export async function api<T = unknown>(
   return res.json();
 }
 
+/**
+ * Como `api()`, mas devolve o corpo bruto como Blob — para mídia autenticada.
+ * Um `<img src>` não envia o Bearer, então buscamos via fetch (com refresh) e
+ * transformamos em object URL no componente.
+ */
+export async function apiBlob(path: string): Promise<Blob> {
+  const token = await ensureToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  let res = await fetch(`${API_URL}${path}`, { headers, credentials: 'include' });
+
+  if (res.status === 401 && token) {
+    const newToken = await dedupedRefresh();
+    if (newToken) {
+      headers['Authorization'] = `Bearer ${newToken}`;
+      res = await fetch(`${API_URL}${path}`, { headers, credentials: 'include' });
+    }
+  }
+
+  if (!res.ok) throw new Error(`API ${res.status}`);
+  return res.blob();
+}
+
 export { API_URL };
 
 /**

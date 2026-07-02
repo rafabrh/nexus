@@ -17,6 +17,17 @@ export interface ConversationListItem {
   lastMessagePreview: string;
   lastActivity: string;
   isHot: boolean;
+  /**
+   * Mensagens recebidas do cliente ainda não lidas. Enriquecido na listagem a
+   * partir do Redis (`chat:{inst}:{jid}:unread`); ausente = 0. Zerado quando o
+   * operador abre a conversa.
+   */
+  unreadCount?: number;
+  /**
+   * URL da foto de perfil do WhatsApp, quando a Evolution a expõe. Enriquecido na
+   * listagem a partir do contato no Redis; ausente → o avatar cai nas iniciais.
+   */
+  avatarUrl?: string;
 }
 
 export interface ConversationDetail extends ConversationListItem {
@@ -29,5 +40,11 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   mediaType: 'text' | 'audio' | 'image' | 'document';
+  /**
+   * Id da mensagem de mídia — o frontend monta a URL do proxy do BFF
+   * (`/conversations/:jid/media/:mediaId`) que baixa a imagem descriptografada
+   * da Evolution sob demanda. Ausente em mensagens de texto.
+   */
+  mediaId?: string;
   ts: string | null;
 }

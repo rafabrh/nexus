@@ -52,7 +52,9 @@ export class WebhookService {
     // permanece no fluxo N8N do cliente. EXCECAO: `send.message` e a mensagem que a
     // PROPRIA IA enviou (via Evolution API) — o N8N nao precisa dela e reencaminhar
     // arriscaria loop; o BFF so a grava/publica para a resposta aparecer no painel.
-    if (event !== 'send.message') {
+    // `presence.update` (digitando/online) é efêmero e de alto volume — sinal de
+    // UI, não de fluxo; nunca reencaminha pro N8N (evita flood).
+    if (event !== 'send.message' && event !== 'presence.update') {
       void this.forwarder.forward(
         instanceName,
         tenant.n8nWebhookUrl ?? null,
@@ -76,6 +78,9 @@ export class WebhookService {
       case 'contacts.update':
       case 'contacts.upsert':
         await this.handleContactUpdate(instanceName, payload);
+        break;
+      case 'presence.update':
+        await this.handlePresenceUpdate(instanceName, payload);
         break;
       default:
         this.logger.debug(`webhook.unhandled event=${event} instance=${instanceName}`);
@@ -125,11 +130,28 @@ export class WebhookService {
     const mediaType = typeof data.messageType === 'string' ? data.messageType : 'text';
     if (!content) return;
 
-    // Persist message to chathistory:{instance}-{phone} (aligned with N8N)
+    // Persist message to chathistory:{instance}-{phone} (aligned with N8N).
+    // Guarda a REFERÊNCIA da mídia (id da mensagem) — nunca o binário no Redis;
+    // o proxy baixa a imagem descriptografada da Evolution sob demanda.
     const histKey = RedisKeys.chatHistory(instanceName, phone);
     const type = fromMe ? 'ai' : 'human';
-    const entry = JSON.stringify({ type, data: { content } });
+    const media = this.extractMedia(data);
+    const keyId = typeof key.id === 'string' ? key.id : null;
+    const entry = JSON.stringify({
+      type,
+      data: { content },
+      ...(media && keyId
+        ? { media: { kind: media.kind, id: keyId, fromMe, mimetype: media.mimetype } }
+        : {}),
+    });
     await this.redis.rpush(histKey, entry);
+
+    // Contador de nao-lidas: so conta mensagem RECEBIDA do cliente (fromMe=false).
+    // A resposta da IA e o envio do operador (fromMe=true) nao geram badge. Zerado
+    // quando o operador abre a conversa (ConversationService.markRead).
+    if (!fromMe) {
+      await this.redis.incr(RedisKeys.unread(instanceName, jid));
+    }
 
     // Register the conversation in the per-tenant discovery index.
     await this.index.addJid(instanceName, jid);
@@ -158,11 +180,10 @@ export class WebhookService {
       await this.redis.set(stepKey, 'S0');
     }
 
-    // Update contact name if available
+    // Update contact name if available (merge — preserva name/foto já gravados).
     const pushName = typeof data.pushName === 'string' ? data.pushName : null;
     if (pushName) {
-      const contactKey = RedisKeys.contact(instanceName, phone);
-      await this.redis.set(contactKey, JSON.stringify({ pushName }));
+      await this.upsertContact(instanceName, phone, { pushName });
     }
 
     // Detect lead.hot automatically
@@ -181,6 +202,32 @@ export class WebhookService {
     this.logger.log(
       `webhook.message-processed instance=${instanceName} jid=${jid} fromMe=${fromMe} type=${mediaType}`,
     );
+  }
+
+  /**
+   * Detecta se a mensagem carrega mídia (imagem/vídeo/áudio/documento) e devolve
+   * o tipo + mimetype. Só a referência é guardada; o binário é baixado sob demanda
+   * pelo proxy (getBase64FromMediaMessage).
+   */
+  private extractMedia(
+    data: Record<string, unknown>,
+  ): { kind: 'image' | 'video' | 'audio' | 'document'; mimetype: string | null } | null {
+    const messageObj = data.message as Record<string, unknown> | undefined;
+    if (!messageObj) return null;
+    const fields: Array<[string, 'image' | 'video' | 'audio' | 'document']> = [
+      ['imageMessage', 'image'],
+      ['stickerMessage', 'image'],
+      ['videoMessage', 'video'],
+      ['audioMessage', 'audio'],
+      ['documentMessage', 'document'],
+    ];
+    for (const [field, kind] of fields) {
+      const m = messageObj[field] as Record<string, unknown> | undefined;
+      if (m) {
+        return { kind, mimetype: typeof m.mimetype === 'string' ? m.mimetype : null };
+      }
+    }
+    return null;
   }
 
   private extractContent(data: Record<string, unknown>): string | null {
@@ -351,19 +398,88 @@ export class WebhookService {
         contact.remoteJid as string | undefined,
         contact.remoteJidAlt as string | undefined,
       );
-      const pushName = typeof contact.pushName === 'string' ? contact.pushName : null;
+      const name = this.pickContactName(contact);
+      const profilePicUrl =
+        typeof contact.profilePicUrl === 'string' ? contact.profilePicUrl : null;
 
-      if (resolved && pushName) {
-        await this.redis.set(
-          RedisKeys.contact(instanceName, resolved.phone),
-          JSON.stringify({ pushName }),
-        );
+      if (resolved && (name || profilePicUrl)) {
+        await this.upsertContact(instanceName, resolved.phone, { name, profilePicUrl });
       }
     }
 
     // Invalidate caches
     await this.redis.del(RedisKeys.cacheContacts(instanceName));
     await this.redis.del(RedisKeys.cacheConversations(instanceName));
+  }
+
+  /**
+   * Presença efêmera do contato (digitando/gravando/online). Extrai o estado do
+   * payload `presence.update` da Evolution e publica direto no socket — sinal de
+   * UI, sem persistir (o painel decide quando expira).
+   */
+  private async handlePresenceUpdate(
+    instanceName: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const data = payload.data as Record<string, unknown> | undefined;
+    if (!data) return;
+
+    const id = typeof data.id === 'string' ? data.id : undefined;
+    const presences = data.presences as Record<string, unknown> | undefined;
+    if (!id || !presences) return;
+
+    const entry = presences[id] as Record<string, unknown> | undefined;
+    const presence =
+      entry && typeof entry.lastKnownPresence === 'string'
+        ? entry.lastKnownPresence
+        : undefined;
+    if (!presence) return;
+
+    const resolved = resolvePersonalJid(id, undefined);
+    const jid = resolved?.jid ?? id;
+
+    await this.publisher.publish({
+      type: 'presence.update',
+      instancia: instanceName,
+      jid,
+      ts: Date.now(),
+      payload: { presence },
+    });
+  }
+
+  /** Melhor nome de um contato da Evolution: agenda > verificado > público. */
+  private pickContactName(c: Record<string, unknown>): string | null {
+    for (const v of [c.name, c.verifiedName, c.pushName, c.notify]) {
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return null;
+  }
+
+  /**
+   * Grava nome/foto do contato preservando os campos já existentes (merge). Assim
+   * um `messages.upsert` (que só traz pushName) não apaga o profilePicUrl vindo
+   * de um `contacts.upsert` anterior, e vice-versa.
+   */
+  private async upsertContact(
+    inst: string,
+    phone: string,
+    fields: { name?: string | null; pushName?: string | null; profilePicUrl?: string | null },
+  ): Promise<void> {
+    const key = RedisKeys.contact(inst, phone);
+    const existing = await this.redis.get(key);
+    let parsed: Record<string, unknown> = {};
+    if (existing) {
+      try {
+        parsed = JSON.parse(existing) as Record<string, unknown>;
+      } catch {
+        /* corrupted entry — overwrite */
+      }
+    }
+    const merged: Record<string, unknown> = { ...parsed };
+    if (fields.name) merged.name = fields.name;
+    if (fields.pushName) merged.pushName = fields.pushName;
+    if (fields.profilePicUrl) merged.profilePicUrl = fields.profilePicUrl;
+    await this.redis.set(key, JSON.stringify(merged));
   }
 
   private async updateTenantConnectionState(instanceName: string, connectionState: string): Promise<void> {

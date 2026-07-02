@@ -93,7 +93,7 @@ export class ConversationRepository {
 
     return {
       jid,
-      contactName: contact.pushName || contact.name || PhoneMask.mask(jid),
+      contactName: contact.name || contact.pushName || PhoneMask.mask(jid),
       phoneDisplay: PhoneMask.mask(jid),
       aiState: aiState.state,
       aiOffUntil: aiState.until,
@@ -173,7 +173,7 @@ export class ConversationRepository {
 
     return {
       jid,
-      contactName: contact.pushName || contact.name || PhoneMask.mask(jid),
+      contactName: contact.name || contact.pushName || PhoneMask.mask(jid),
       phoneDisplay: PhoneMask.mask(jid),
       aiState: aiState.state,
       aiOffUntil: aiState.until,
@@ -204,11 +204,13 @@ export class ConversationRepository {
     for (let i = 0; i < raw.length; i++) {
       try {
         const parsed = JSON.parse(raw[i]);
+        const media = parsed.media as { kind?: string; id?: string } | undefined;
         messages.push({
-          id: `msg-${i}`,
+          id: media?.id ?? `msg-${i}`,
           role: parsed.type === 'ai' ? 'assistant' : 'user',
           content: parsed.data?.content ?? '',
-          mediaType: 'text',
+          mediaType: this.mediaKindToType(media?.kind),
+          ...(media?.id ? { mediaId: media.id } : {}),
           ts: null,
         });
       } catch {
@@ -221,6 +223,52 @@ export class ConversationRepository {
       return messages.slice(-limit);
     }
     return messages;
+  }
+
+  /** Mapeia o `kind` interno da mídia para o `mediaType` do painel. */
+  private mediaKindToType(kind?: string): Message['mediaType'] {
+    switch (kind) {
+      case 'image':
+        return 'image';
+      case 'audio':
+        return 'audio';
+      case 'document':
+      case 'video':
+        return 'document';
+      default:
+        return 'text';
+    }
+  }
+
+  /**
+   * Localiza a referência de mídia de uma mensagem pelo id — o proxy usa isto
+   * para reconstruir a key (fromMe) e pedir o binário à Evolution.
+   */
+  async findMediaRef(
+    instancia: string,
+    jid: string,
+    mediaId: string,
+  ): Promise<{ fromMe: boolean; mimetype: string | null } | null> {
+    const phone = jid.replace('@s.whatsapp.net', '');
+    const histKey = RedisKeys.chatHistory(instancia, phone);
+    const raw = await this.redis.lrange(histKey, 0, -1);
+    for (const item of raw) {
+      try {
+        const parsed = JSON.parse(item);
+        const media = parsed.media as
+          | { id?: string; fromMe?: boolean; mimetype?: string | null }
+          | undefined;
+        if (media?.id === mediaId) {
+          return {
+            fromMe: media.fromMe === true,
+            mimetype: typeof media.mimetype === 'string' ? media.mimetype : null,
+          };
+        }
+      } catch {
+        // skip malformed
+      }
+    }
+    return null;
   }
 
   /**

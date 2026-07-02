@@ -33,7 +33,73 @@ export class ConversationService {
     // Lê da projeção Postgres: uma query indexada por (instancia, last_activity),
     // sem fan-out de N chaves Redis e sem o cache-aside de 30s que servia para
     // amortizar aquele fan-out. aiState é recomputado na leitura (sensível ao tempo).
-    return this.projection.list(instancia, filters);
+    const items = await this.projection.list(instancia, filters);
+    return this.enrichFromRedis(instancia, items);
+  }
+
+  /**
+   * Enriquece a lista com o que vive no Redis (fora da projeção Postgres): o
+   * contador de não-lidas, o nome e a foto do contato. Tudo num único pipeline
+   * (3 GETs por conversa) — sem fan-out sequencial. Nome/foto vêm da chave por
+   * tenant e, como fallback, da chave GLOBAL legada do N8N — recuperando os nomes
+   * históricos que o namespacing por tenant deixou de ler.
+   */
+  private async enrichFromRedis(
+    instancia: string,
+    items: ConversationListItem[],
+  ): Promise<ConversationListItem[]> {
+    if (items.length === 0) return items;
+    const pipeline = this.redis.pipeline();
+    for (const item of items) {
+      const phone = item.jid.replace('@s.whatsapp.net', '');
+      pipeline.get(RedisKeys.unread(instancia, item.jid)); // 3i
+      pipeline.get(RedisKeys.contact(instancia, phone)); // 3i+1
+      pipeline.get(RedisKeys.contactGlobalLegacy(phone)); // 3i+2
+    }
+    const results = await pipeline.exec();
+    return items.map((item, i) => {
+      const unreadRaw = results?.[i * 3]?.[1] as string | null | undefined;
+      const contactRaw = results?.[i * 3 + 1]?.[1] as string | null | undefined;
+      const legacyRaw = results?.[i * 3 + 2]?.[1] as string | null | undefined;
+
+      const count = unreadRaw ? parseInt(unreadRaw, 10) : 0;
+      const { name, avatarUrl } = this.resolveContact(contactRaw, legacyRaw);
+
+      return {
+        ...item,
+        unreadCount: Number.isFinite(count) && count > 0 ? count : 0,
+        // Só sobrescreve o nome da projeção quando o Redis tem um nome melhor
+        // (a projeção pode carregar apenas o telefone mascarado).
+        contactName: name ?? item.contactName,
+        ...(avatarUrl ? { avatarUrl } : {}),
+      };
+    });
+  }
+
+  /** Extrai nome/foto do contato: chave por tenant, com fallback na global do N8N. */
+  private resolveContact(
+    contactRaw: string | null | undefined,
+    legacyRaw: string | null | undefined,
+  ): { name: string | null; avatarUrl: string | null } {
+    const parse = (raw: string | null | undefined): Record<string, unknown> => {
+      if (!raw) return {};
+      try {
+        const v = JSON.parse(raw);
+        return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+      } catch {
+        // A chave global do N8N pode ser uma string simples (o próprio nome).
+        return { name: raw };
+      }
+    };
+    const c = parse(contactRaw);
+    const legacy = parse(legacyRaw);
+    const str = (v: unknown): string | null =>
+      typeof v === 'string' && v.trim() ? v.trim() : null;
+
+    const name =
+      str(c.name) ?? str(c.pushName) ?? str(legacy.name) ?? str(legacy.pushName);
+    const avatarUrl = str(c.profilePicUrl) ?? str(legacy.profilePicUrl);
+    return { name, avatarUrl };
   }
 
   async getConversationDetail(instancia: string, jid: string): Promise<ConversationDetail> {
@@ -46,6 +112,34 @@ export class ConversationService {
 
   async getMessages(instancia: string, jid: string, limit: number): Promise<Message[]> {
     return this.repo.getMessages(instancia, jid, limit);
+  }
+
+  /**
+   * Proxy de mídia: reconstrói a key a partir da referência guardada e baixa o
+   * binário descriptografado da Evolution. O painel nunca lida com a URL
+   * criptografada do WhatsApp.
+   */
+  async getMedia(
+    instancia: string,
+    jid: string,
+    mediaId: string,
+  ): Promise<{ buffer: Buffer; mimetype: string }> {
+    const ref = await this.repo.findMediaRef(instancia, jid, mediaId);
+    if (!ref) {
+      throw new NotFoundException('Mídia não encontrada');
+    }
+    const { base64, mimetype } = await this.evolution.getBase64FromMediaMessage(instancia, {
+      id: mediaId,
+      remoteJid: jid,
+      fromMe: ref.fromMe,
+    });
+    if (!base64) {
+      throw new NotFoundException('Mídia indisponível');
+    }
+    return {
+      buffer: Buffer.from(base64, 'base64'),
+      mimetype: mimetype || ref.mimetype || 'application/octet-stream',
+    };
   }
 
   async addNote(instancia: string, jid: string, text: string, userEmail: string): Promise<{ message: string }> {
@@ -163,5 +257,25 @@ export class ConversationService {
 
     this.logger.log(`isHot toggled to ${isHot} for ${instancia}/${jid}`);
     return { message: isHot ? 'Lead marcado como hot' : 'Lead removido de hot', isHot };
+  }
+
+  /**
+   * Marca a conversa como lida: zera o contador de não-lidas e publica
+   * `conversation.read` para sincronizar outros dispositivos/abas do mesmo tenant
+   * (o painel deles refaz a lista e o badge some). Idempotente (DEL).
+   */
+  async markRead(instancia: string, jid: string): Promise<{ message: string }> {
+    await this.redis.del(RedisKeys.unread(instancia, jid));
+
+    await this.publisher.publish({
+      type: 'conversation.read',
+      instancia,
+      jid,
+      ts: Date.now(),
+      payload: {},
+    });
+
+    this.logger.log(`Conversation marked read for ${instancia}/${jid}`);
+    return { message: 'Marcado como lido' };
   }
 }

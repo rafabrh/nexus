@@ -4,11 +4,13 @@ import { useMemo } from 'react';
 import { Search, Flame } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn, timeAgo } from '@/lib/utils';
+import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { useConversations } from '@/hooks/use-conversations';
 import { useConversationStore } from '@/stores/conversation.store';
+import { usePresenceStore } from '@/stores/presence.store';
 import { staggerContainer, staggerItem } from '@/lib/motion-variants';
 import { stageColorToken } from '@/lib/stage-colors';
 import type { ConversationListItem, AiState } from '@nexus/shared';
@@ -48,6 +50,38 @@ function ConversationSkeleton({ index }: { index: number }) {
   );
 }
 
+/**
+ * Contador de não-lidas — pílula verde com tratamento liquid-glass: gradiente
+ * vertical, sheen branco no topo, sombra interna na base, glow verde difuso e um
+ * ring fino. Entra com um "pop" (spring). Segue o verde macOS (--success).
+ */
+function UnreadBadge({ count }: { count: number }) {
+  return (
+    <motion.span
+      initial={{ scale: 0, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ type: 'spring', stiffness: 520, damping: 24 }}
+      className="flex items-center justify-center tabular-nums select-none"
+      style={{
+        minWidth: 20,
+        height: 20,
+        padding: '0 6px',
+        borderRadius: 999,
+        fontSize: 11,
+        fontWeight: 700,
+        lineHeight: 1,
+        color: '#ffffff',
+        backgroundImage:
+          'linear-gradient(180deg, color-mix(in srgb, var(--success) 76%, #ffffff) 0%, var(--success) 50%, color-mix(in srgb, var(--success) 84%, #000000) 100%)',
+        boxShadow:
+          'inset 0 1px 0.5px rgba(255,255,255,0.65), inset 0 -1px 1px color-mix(in srgb, var(--success) 55%, #000000), 0 1px 2px rgba(0,0,0,0.18), 0 0 8px color-mix(in srgb, var(--success) 50%, transparent), 0 0 0 0.5px color-mix(in srgb, var(--success) 38%, transparent)',
+      }}
+    >
+      {count > 99 ? '99+' : count}
+    </motion.span>
+  );
+}
+
 function ConversationItem({
   conversation,
   selected,
@@ -60,12 +94,15 @@ function ConversationItem({
   isLast: boolean;
 }) {
   const ai = getAiBadge(conversation.aiState);
-  const initials = conversation.contactName
-    .split(' ')
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
+
+  // Selecionada já foi marcada como lida (abrir zera) — o realce de não-lida
+  // nunca disputa com o fundo accent da linha selecionada.
+  const unread = conversation.unreadCount ?? 0;
+  const hasUnread = unread > 0 && !selected;
+
+  // Presença efêmera: "digitando…/gravando" substitui o preview (estilo WhatsApp).
+  const presence = usePresenceStore((s) => s.byJid[conversation.jid]?.presence);
+  const isTyping = presence === 'composing' || presence === 'recording';
 
   return (
     <motion.button
@@ -100,24 +137,24 @@ function ConversationItem({
         />
       )}
 
-      {/* Avatar */}
-      <div
-        className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-medium flex-shrink-0"
-        style={{
-          background: selected ? 'rgba(255,255,255,0.2)' : 'var(--bg-active)',
-          color: selected ? 'rgba(255,255,255,0.9)' : 'var(--text-secondary)',
-        }}
-      >
-        {initials}
-      </div>
+      {/* Avatar — foto do WhatsApp com fallback nas iniciais */}
+      <Avatar
+        name={conversation.contactName}
+        url={conversation.avatarUrl}
+        size={36}
+        selected={selected}
+      />
 
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
             <span
-              className="text-sm font-medium truncate"
-              style={{ color: selected ? '#ffffff' : 'var(--text-primary)' }}
+              className="text-sm truncate"
+              style={{
+                color: selected ? '#ffffff' : 'var(--text-primary)',
+                fontWeight: hasUnread ? 700 : 500,
+              }}
             >
               {conversation.contactName}
             </span>
@@ -129,20 +166,44 @@ function ConversationItem({
               />
             )}
           </div>
-          {/* Timestamp at the top-right corner — tabular for alignment */}
-          <span
-            className="text-xs flex-shrink-0 tabular-nums leading-5"
-            style={{ color: selected ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)' }}
-          >
-            {timeAgo(conversation.lastActivity)}
-          </span>
+          {/* Coluna direita: horário no topo, contador de não-lidas abaixo
+              (padrão WhatsApp). O horário fica verde quando há não-lidas. */}
+          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+            <span
+              className="text-xs tabular-nums leading-5"
+              style={{
+                color: selected
+                  ? 'rgba(255,255,255,0.7)'
+                  : hasUnread
+                    ? 'var(--success)'
+                    : 'var(--text-muted)',
+                fontWeight: hasUnread ? 600 : 400,
+              }}
+            >
+              {timeAgo(conversation.lastActivity)}
+            </span>
+            {hasUnread && <UnreadBadge count={unread} />}
+          </div>
         </div>
 
         <p
           className="text-xs truncate mt-0.5"
-          style={{ color: selected ? 'rgba(255,255,255,0.75)' : 'var(--text-muted)' }}
+          style={{
+            color: isTyping && !selected
+              ? 'var(--success)'
+              : selected
+                ? 'rgba(255,255,255,0.75)'
+                : hasUnread
+                  ? 'var(--text-secondary)'
+                  : 'var(--text-muted)',
+            fontWeight: isTyping || hasUnread ? 500 : 400,
+          }}
         >
-          {conversation.lastMessagePreview}
+          {isTyping
+            ? presence === 'recording'
+              ? 'gravando áudio…'
+              : 'digitando…'
+            : conversation.lastMessagePreview}
         </p>
 
         <div className="flex items-center gap-1.5 mt-1">

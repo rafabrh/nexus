@@ -6,11 +6,13 @@ import {
   Param,
   Query,
   Body,
+  Res,
   UseGuards,
   UseInterceptors,
   ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import type { FastifyReply } from 'fastify';
 import type {
   ConversationListItem,
   ConversationDetail,
@@ -150,5 +152,29 @@ export class ConversationController {
     @Param('jid') jid: string,
   ) {
     return this.service.resetState(instancia, jid);
+  }
+
+  @Post(':jid/read')
+  @ApiOperation({ summary: 'Marca a conversa como lida (zera o contador de nao-lidas)' })
+  async markRead(
+    @Tenant() instancia: string,
+    @Param('jid') jid: string,
+  ) {
+    return this.service.markRead(instancia, jid);
+  }
+
+  @Get(':jid/media/:mediaId')
+  @ApiOperation({ summary: 'Baixa a midia (imagem) de uma mensagem via proxy da Evolution' })
+  async media(
+    @Tenant() instancia: string,
+    @Param('jid') jid: string,
+    @Param('mediaId') mediaId: string,
+    @Res() reply: FastifyReply,
+  ): Promise<void> {
+    const { buffer, mimetype } = await this.service.getMedia(instancia, jid, mediaId);
+    void reply
+      .header('Content-Type', mimetype)
+      .header('Cache-Control', 'private, max-age=3600')
+      .send(buffer);
   }
 }

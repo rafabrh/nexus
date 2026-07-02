@@ -270,13 +270,21 @@ export class SyncService {
           contact.remoteJidAlt as string | undefined,
           contact.id as string | undefined,
         );
-        const pushName =
-          (contact.pushName as string) || (contact.notify as string) || '';
+        const name =
+          (contact.name as string) ||
+          (contact.verifiedName as string) ||
+          (contact.pushName as string) ||
+          (contact.notify as string) ||
+          '';
+        const profilePicUrl = (contact.profilePicUrl as string) || '';
 
-        if (resolved && pushName) {
+        if (resolved && (name || profilePicUrl)) {
+          const value: Record<string, string> = {};
+          if (name) value.name = name;
+          if (profilePicUrl) value.profilePicUrl = profilePicUrl;
           pipeline.set(
             RedisKeys.contact(instancia, resolved.phone),
-            JSON.stringify({ pushName }),
+            JSON.stringify(value),
           );
           saved++;
         }

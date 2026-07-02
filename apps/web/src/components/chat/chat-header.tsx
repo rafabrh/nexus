@@ -1,9 +1,12 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { Bot, Flame, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { useUiStore } from '@/stores/ui.store';
+import { usePresenceStore } from '@/stores/presence.store';
 import { stageColorToken } from '@/lib/stage-colors';
 import type { ConversationListItem, AiState } from '@nexus/shared';
 
@@ -18,6 +21,41 @@ function getAiLabel(state: AiState) {
   }
 }
 
+/** Rótulo humano da presença efêmera do contato. */
+function presenceText(p?: string): string | null {
+  switch (p) {
+    case 'composing':
+      return 'digitando…';
+    case 'recording':
+      return 'gravando áudio…';
+    case 'available':
+      return 'online';
+    default:
+      return null;
+  }
+}
+
+/** Três pontinhos saltitantes (estilo WhatsApp) para o estado "digitando". */
+function TypingDots() {
+  return (
+    <span className="inline-flex items-center gap-0.5" aria-hidden>
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="rounded-full"
+          style={{
+            width: 4,
+            height: 4,
+            background: 'var(--success)',
+            animation: 'typing-bounce 1.2s infinite ease-in-out',
+            animationDelay: `${i * 0.16}s`,
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
 interface ChatHeaderProps {
   conversation: ConversationListItem;
 }
@@ -26,12 +64,22 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
   const { detailPanelOpen, toggleDetailPanel } = useUiStore();
   const ai = getAiLabel(conversation.aiState);
 
-  const initials = conversation.contactName
-    .split(' ')
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
+  // Presença efêmera (digitando/gravando/online). "digitando/gravando" expira em
+  // 10s se a Evolution não emitir o fim, para o rótulo não ficar preso.
+  const presenceEntry = usePresenceStore((s) => s.byJid[conversation.jid]);
+  const rawPresence = presenceEntry?.presence;
+  const presenceTs = presenceEntry?.ts;
+  const [expired, setExpired] = useState(false);
+  useEffect(() => {
+    setExpired(false);
+    if (rawPresence === 'composing' || rawPresence === 'recording') {
+      const t = setTimeout(() => setExpired(true), 10_000);
+      return () => clearTimeout(t);
+    }
+  }, [rawPresence, presenceTs]);
+  const isTyping =
+    !expired && (rawPresence === 'composing' || rawPresence === 'recording');
+  const presenceLabel = expired ? null : presenceText(rawPresence);
 
   return (
     <div
@@ -44,13 +92,8 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
       {/* Left — contact info. Lifted above the header's specular sheen so the
           reflection sits behind the content, not over the text. */}
       <div className="relative z-10 flex items-center gap-3">
-        {/* Avatar 34px */}
-        <div
-          className="rounded-full flex items-center justify-center text-xs font-medium text-text-secondary flex-shrink-0 bg-bg-elevated border border-border"
-          style={{ width: 34, height: 34 }}
-        >
-          {initials}
-        </div>
+        {/* Avatar 34px — foto do WhatsApp com fallback nas iniciais */}
+        <Avatar name={conversation.contactName} url={conversation.avatarUrl} size={34} />
 
         <div>
           <div className="flex items-center gap-1.5">
@@ -62,9 +105,19 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
             )}
           </div>
           <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-xs text-text-muted font-mono">
-              {conversation.phoneDisplay}
-            </span>
+            {presenceLabel ? (
+              <span
+                className="text-xs flex items-center gap-1"
+                style={{ color: 'var(--success)', fontWeight: 500 }}
+              >
+                {isTyping && <TypingDots />}
+                {presenceLabel}
+              </span>
+            ) : (
+              <span className="text-xs text-text-muted font-mono">
+                {conversation.phoneDisplay}
+              </span>
+            )}
             <Badge
               style={{
                 backgroundColor: `color-mix(in srgb, ${stageColorToken(conversation.stage)} 13%, transparent)`,

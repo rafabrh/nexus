@@ -101,6 +101,21 @@ export class EvolutionClient {
     });
   }
 
+  /**
+   * Baixa e descriptografa a mídia de uma mensagem (imagem/vídeo/áudio/doc). A
+   * Evolution guarda as chaves de descriptografia — o painel nunca lida com a
+   * URL criptografada do WhatsApp diretamente. Retorna o conteúdo em base64.
+   */
+  async getBase64FromMediaMessage(
+    instanceName: string,
+    key: { id: string; remoteJid: string; fromMe: boolean },
+  ): Promise<{ base64: string; mimetype?: string }> {
+    return this.request('POST', `/chat/getBase64FromMediaMessage/${instanceName}`, {
+      message: { key },
+      convertToMp4: false,
+    });
+  }
+
   async findChats(instanceName: string): Promise<unknown> {
     return this.request('POST', `/chat/findChats/${instanceName}`, {});
   }
