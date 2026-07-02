@@ -114,6 +114,20 @@ export class WebhookService {
     const key = data.key as Record<string, unknown> | undefined;
     if (!key) return;
 
+    // POC status/stories: detecta se a Evolution repassa `status@broadcast` (hoje
+    // descartado como broadcast). Só LOGA — não processa como conversa. Serve pra
+    // medir a viabilidade de uma futura aba de Status antes de investir no
+    // subsistema (efêmero 24h, mídia, viewer). Se este log nunca aparecer, a
+    // Evolution não expõe status e a feature fica inviável sem outra fonte.
+    if (typeof key.remoteJid === 'string' && key.remoteJid.includes('status@broadcast')) {
+      this.logger.log(
+        `status.detected instance=${instanceName} author=${
+          (key.participant as string) ?? (key.remoteJidAlt as string) ?? '?'
+        }`,
+      );
+      return;
+    }
+
     // Resolve canonical phone/JID, handling both legacy @s.whatsapp.net and
     // @lid addressing (real phone in key.remoteJidAlt). Skip groups/broadcasts.
     const resolved = resolvePersonalJid(
