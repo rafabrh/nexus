@@ -313,4 +313,45 @@ export class ConversationService {
     );
     return { message: trimmed ? 'Contato salvo' : 'Nome removido' };
   }
+
+  /**
+   * Envia mídia (imagem/vídeo/documento) via Evolution e grava a referência no
+   * histórico pra aparecer na thread (a foto é servida pelo proxy `getMedia`).
+   * Envio do operador = human takeover: pausa a IA por 30min, como no texto.
+   */
+  async sendMediaMessage(
+    instancia: string,
+    jid: string,
+    opts: {
+      mediatype: 'image' | 'video' | 'document';
+      media: string;
+      fileName?: string;
+      caption?: string;
+      mimetype?: string;
+    },
+  ): Promise<{ message: string }> {
+    const res = await this.evolution.sendMedia(instancia, jid, opts);
+
+    // Grava a referência da mídia enviada (id retornado) no chathistory.
+    const key = (res?.key ?? {}) as Record<string, unknown>;
+    const msgId = typeof key.id === 'string' ? key.id : null;
+    const phone = jid.replace('@s.whatsapp.net', '');
+    const histKey = RedisKeys.chatHistory(instancia, phone);
+    const entry = JSON.stringify({
+      type: 'ai',
+      data: { content: opts.caption ?? '' },
+      ...(msgId
+        ? { media: { kind: opts.mediatype, id: msgId, fromMe: true, mimetype: opts.mimetype ?? null } }
+        : {}),
+    });
+    await this.redis.rpush(histKey, entry);
+
+    const until = Date.now() + 30 * 60 * 1000;
+    await this.redis.set(RedisKeys.humanControlUntil(instancia, jid), String(until));
+    await this.index.addJid(instancia, jid);
+    await this.projection.project(instancia, jid);
+
+    this.logger.log(`Media sent + persisted for ${instancia}/${jid} (${opts.mediatype})`);
+    return { message: 'Mídia enviada' };
+  }
 }

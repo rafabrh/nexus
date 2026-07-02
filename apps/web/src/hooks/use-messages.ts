@@ -45,3 +45,26 @@ export function useSendMessage(jid: string) {
     },
   });
 }
+
+export interface SendMediaPayload {
+  mediatype: 'image' | 'video' | 'document';
+  media: string; // base64 sem o prefixo data:
+  fileName?: string;
+  caption?: string;
+  mimetype?: string;
+}
+
+export function useSendMedia(jid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: SendMediaPayload) =>
+      api(`/api/v1/conversations/${encodeURIComponent(jid)}/send-media`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['messages', jid] });
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+}

@@ -2,9 +2,9 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Zap, AlertTriangle } from 'lucide-react';
+import { Send, Zap, AlertTriangle, Paperclip } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useSendMessage } from '@/hooks/use-messages';
+import { useSendMessage, useSendMedia } from '@/hooks/use-messages';
 import { useQuickReplies } from '@/hooks/use-quick-replies';
 import { useConversationStore } from '@/stores/conversation.store';
 import { notify } from '@/lib/notify';
@@ -23,8 +23,47 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const composerInsert = useConversationStore((s) => s.composerInsert);
   const clearComposerInsert = useConversationStore((s) => s.clearComposerInsert);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const sendMedia = useSendMedia(jid);
 
   const hasText = text.trim().length > 0;
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permite reenviar o mesmo arquivo
+    if (!file) return;
+    if (file.size > 16 * 1024 * 1024) {
+      notify.error('Arquivo muito grande (máx 16MB)');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+      const mediatype = file.type.startsWith('image/')
+        ? 'image'
+        : file.type.startsWith('video/')
+          ? 'video'
+          : 'document';
+      sendMedia.mutate(
+        {
+          mediatype,
+          media: base64,
+          fileName: file.name,
+          mimetype: file.type,
+          caption: text.trim() || undefined,
+        },
+        {
+          onSuccess: () => {
+            setText('');
+            notify.success('Mídia enviada');
+          },
+          onError: () => notify.error('Erro ao enviar mídia'),
+        },
+      );
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Fill (never send) the composer when a quick reply is clicked elsewhere
   // (detail panel). Appends if the operator already typed something.
@@ -126,6 +165,24 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
           title="Respostas rapidas"
         >
           <Zap size={16} />
+        </button>
+
+        {/* Anexar mídia */}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt"
+          className="hidden"
+          onChange={handleFile}
+        />
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={sendMedia.isPending}
+          className="flex-shrink-0 w-8 h-8 rounded-input flex items-center justify-center text-text-muted hover:text-text-secondary hover:bg-bg-hover transition-colors duration-150 disabled:opacity-50"
+          aria-label="Anexar arquivo"
+          title="Anexar imagem, vídeo ou documento"
+        >
+          <Paperclip size={16} />
         </button>
 
         {/* Textarea */}

@@ -30,6 +30,7 @@ import { SendMessageRequestDto } from './dto/send-message-request.dto';
 import { UpdateStageRequestDto } from './dto/update-stage-request.dto';
 import { ToggleHotRequestDto } from './dto/toggle-hot-request.dto';
 import { SaveContactRequestDto } from './dto/save-contact-request.dto';
+import { SendMediaRequestDto } from './dto/send-media-request.dto';
 
 @Controller('conversations')
 @UseGuards(JwtAuthGuard)
@@ -187,5 +188,15 @@ export class ConversationController {
     @Body() dto: SaveContactRequestDto,
   ) {
     return this.service.saveContactName(instancia, jid, dto.name);
+  }
+
+  @Post(':jid/send-media')
+  @ApiOperation({ summary: 'Envia midia (imagem/video/documento) via Evolution' })
+  async sendMedia(
+    @Tenant() instancia: string,
+    @Param('jid') jid: string,
+    @Body() dto: SendMediaRequestDto,
+  ) {
+    return this.service.sendMediaMessage(instancia, jid, dto);
   }
 }

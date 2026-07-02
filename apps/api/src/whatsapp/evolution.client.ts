@@ -116,6 +116,28 @@ export class EvolutionClient {
     });
   }
 
+  /** Envia mídia (imagem/vídeo/documento) — `media` é base64 puro ou uma URL. */
+  async sendMedia(
+    instanceName: string,
+    jid: string,
+    opts: {
+      mediatype: 'image' | 'video' | 'document';
+      media: string;
+      fileName?: string;
+      caption?: string;
+      mimetype?: string;
+    },
+  ): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>('POST', `/message/sendMedia/${instanceName}`, {
+      number: jid,
+      mediatype: opts.mediatype,
+      media: opts.media,
+      fileName: opts.fileName,
+      caption: opts.caption,
+      mimetype: opts.mimetype,
+    });
+  }
+
   async findChats(instanceName: string): Promise<unknown> {
     return this.request('POST', `/chat/findChats/${instanceName}`, {});
   }
