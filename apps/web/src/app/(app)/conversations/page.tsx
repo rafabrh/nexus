@@ -67,23 +67,25 @@ export default function ConversationsPage() {
       {/* Sidebar — 320px */}
       <Sidebar />
 
-      {/* Chat area — interactive mirror backdrop behind the content */}
-      <div
-        className={cn(
-          'relative flex-1 ml-80 flex flex-col transition-all duration-200',
-          detailPanelOpen && 'mr-[380px]',
-        )}
-      >
+      {/* Chat area — full width. O painel de detalhes FLUTUA por cima (à direita);
+          a lista de mensagens estende-se atrás dele, então os balões azuis refletem
+          pelo vidro. Só o header e o input recuam (mr-380) pra o toggle e o botão
+          de enviar não ficarem sob o painel. */}
+      <div className="relative flex-1 ml-80 flex flex-col">
         <ChatAmbience />
         <div className="relative z-[1] flex flex-col flex-1 min-h-0">
           {selectedConversation ? (
             <>
-              <ChatHeader conversation={selectedConversation} />
+              <div className={cn('transition-all duration-200', detailPanelOpen && 'mr-[380px]')}>
+                <ChatHeader conversation={selectedConversation} />
+              </div>
               <MessageList jid={selectedJid!} />
-              <MessageInput
-                jid={selectedJid!}
-                aiState={selectedConversation.aiState}
-              />
+              <div className={cn('transition-all duration-200', detailPanelOpen && 'mr-[380px]')}>
+                <MessageInput
+                  jid={selectedJid!}
+                  aiState={selectedConversation.aiState}
+                />
+              </div>
             </>
           ) : (
             <EmptyChat />

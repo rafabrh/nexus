@@ -85,7 +85,7 @@ html[data-theme='light'] {
   --bg-hover: rgba(0,0,0,0.04);
   --bg-active: rgba(0,0,0,0.08);
   --window: #FFFFFF;
-  --vibrancy-bg: rgba(246,246,246,0.7);
+  --vibrancy-bg: rgba(246,246,246,0.55);
   --vibrancy-fallback: #F6F6F6;
   --accent-500: #007AFF;
   --accent-600: #0066D6;
@@ -131,7 +131,7 @@ html[data-theme='dark'] {
   --bg-hover: rgba(255,255,255,0.06);
   --bg-active: rgba(255,255,255,0.10);
   --window: #1C1C1E;
-  --vibrancy-bg: rgba(40,40,42,0.6);
+  --vibrancy-bg: rgba(40,40,42,0.5);
   --vibrancy-fallback: #282829;
   --accent-500: #0A84FF;
   --accent-600: #0A84FF;
