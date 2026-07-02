@@ -5,6 +5,7 @@ import { RedisKeys } from '@nexus/shared';
 import type { AiControlResponse } from '@nexus/shared';
 import type { AiToggleRequestDto } from './dto/ai-toggle-request.dto';
 import { EventPublisher } from '../realtime/event.publisher';
+import { controlJids } from '../core/whatsapp/control-jids.util';
 
 /**
  * "OFF permanente" — o MESMO valor que o comando `off NUM` do N8N grava (nó
@@ -25,18 +26,21 @@ export class AiControlService {
   ) {}
 
   async getState(instancia: string, jid: string): Promise<AiControlResponse> {
-    const key = RedisKeys.humanControlUntil(instancia, jid);
-    const value = await this.redis.get(key);
+    // Checa a chave canônica E a do remoteJid cru (@lid) — o painel escreve na
+    // canônica, mas o N8N (controle humano automático) pode escrever só na cru.
+    const jids = await controlJids(this.redis, instancia, jid);
+    const values = await Promise.all(
+      jids.map((j) => this.redis.get(RedisKeys.humanControlUntil(instancia, j))),
+    );
+    const untils = values
+      .map((v) => (v ? parseInt(v, 10) : NaN))
+      .filter((n) => !isNaN(n) && n > Date.now());
 
-    if (!value) {
+    if (untils.length === 0) {
       return { state: 'ON', until: null };
     }
 
-    const until = parseInt(value, 10);
-    if (isNaN(until) || until <= Date.now()) {
-      return { state: 'ON', until: null };
-    }
-
+    const until = Math.max(...untils);
     // Valor "permanente" (ano ~2100) = OFF permanente (comando `off`), não uma
     // pausa temporizada — a UI mostra "Desligada", sem horário-limite.
     if (until >= PERMANENT_OFF_MS) {
@@ -50,30 +54,41 @@ export class AiControlService {
   }
 
   async toggle(instancia: string, jid: string, dto: AiToggleRequestDto): Promise<AiControlResponse> {
-    const key = RedisKeys.humanControlUntil(instancia, jid);
-
-    // Detect previous state to determine if handoff should be emitted
+    // Escreve nas MESMAS chaves que o N8N checa: a canônica (painel) e o
+    // remoteJid cru (@lid). Sem os dois, o OFF do painel não alcança o fluxo.
+    const jids = await controlJids(this.redis, instancia, jid);
     const previousState = await this.getState(instancia, jid);
 
     if (dto.state === 'ON') {
-      await this.redis.del(key);
-      this.logger.log(`IA turned ON for ${instancia}/${jid}`);
+      await Promise.all(
+        jids.map((j) => this.redis.del(RedisKeys.humanControlUntil(instancia, j))),
+      );
+      this.logger.log(`IA turned ON for ${instancia}/${jid} — jids=[${jids.join(', ')}]`);
       return { state: 'ON', until: null };
     }
 
     // OFF permanente (Switch = comando `off NUM`) ou OFF_UNTIL (pausar por tempo =
-    // `off NUM 2h`). Espelha o "Admin - OFF" do N8N: MESMA chave, MESMO valor
-    // permanente e MESMO TTL de 1 ano — botão do painel ≡ comando de chat.
+    // `off NUM 2h`). Espelha o "Admin - OFF" do N8N: MESMO valor permanente e
+    // MESMO TTL de 1 ano — botão do painel ≡ comando de chat.
     const permanent = !dto.expireAt;
     const until = permanent
       ? PERMANENT_OFF_MS
       : new Date(dto.expireAt as string).getTime();
 
-    await this.redis.set(key, until.toString(), 'EX', 31_536_000);
+    await Promise.all(
+      jids.map((j) =>
+        this.redis.set(
+          RedisKeys.humanControlUntil(instancia, j),
+          until.toString(),
+          'EX',
+          31_536_000,
+        ),
+      ),
+    );
     this.logger.log(
       `IA turned ${
         permanent ? 'OFF (permanent)' : `OFF_UNTIL ${new Date(until).toISOString()}`
-      } for ${instancia}/${jid}`,
+      } for ${instancia}/${jid} — jids=[${jids.join(', ')}]`,
     );
 
     // Emit handoff.triggered when transitioning from ON to OFF/OFF_UNTIL

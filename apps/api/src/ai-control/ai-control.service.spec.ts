@@ -1,10 +1,18 @@
 import { describe, it, expect, vi } from 'vitest';
 import { AiControlService } from './ai-control.service';
 
-/** Mock de deps no padrão dos outros specs da api. */
-function makeSvc(currentValue: string | null) {
+/**
+ * Mock de redis que responde por sufixo de chave: `:rawjid` (mapa canônico->cru
+ * do @lid) e `:humanControlUntil` (o valor de controle). Assim `controlJids`
+ * enxerga o rawjid separadamente do valor de controle.
+ */
+function makeSvc(controlValue: string | null, rawJid: string | null = null) {
   const redis = {
-    get: vi.fn(async () => currentValue),
+    get: vi.fn(async (key: string) => {
+      if (key.endsWith(':rawjid')) return rawJid;
+      if (key.endsWith(':humanControlUntil')) return controlValue;
+      return null;
+    }),
     set: vi.fn(async () => 'OK'),
     del: vi.fn(async () => 1),
   } as any;
@@ -21,10 +29,25 @@ describe('AiControlService espelha o Admin do N8N (humanControlUntil)', () => {
 
     const res = await svc.toggle('shk', '5511@s.whatsapp.net', { state: 'OFF' } as any);
 
-    // Mesmo valor (ano ~2100) e TTL de 1 ano que o nó "Admin - OFF" do N8N.
     expect(redis.set).toHaveBeenCalledWith(KEY, '4102444800000', 'EX', 31_536_000);
     expect(res.state).toBe('OFF');
     expect(res.until).toBeNull();
+  });
+
+  it('OFF permanente grava nas DUAS chaves quando há rawjid @lid (painel + N8N)', async () => {
+    const { svc, redis } = makeSvc(null, '99999@lid');
+
+    await svc.toggle('shk', '5511@s.whatsapp.net', { state: 'OFF' } as any);
+
+    // Chave canônica (usada pelo painel)…
+    expect(redis.set).toHaveBeenCalledWith(KEY, '4102444800000', 'EX', 31_536_000);
+    // …e a chave do remoteJid CRU, que é a que o N8N realmente checa.
+    expect(redis.set).toHaveBeenCalledWith(
+      'chat:shk:99999@lid:humanControlUntil',
+      '4102444800000',
+      'EX',
+      31_536_000,
+    );
   });
 
   it('OFF_UNTIL (com expireAt) grava a pausa temporizada', async () => {
@@ -40,12 +63,13 @@ describe('AiControlService espelha o Admin do N8N (humanControlUntil)', () => {
     expect(res.until).toBe(expireAt);
   });
 
-  it('ON deleta a chave (reativa a IA, = comando `on`)', async () => {
-    const { svc, redis } = makeSvc('4102444800000');
+  it('ON deleta a chave nas duas variantes (reativa a IA, = comando `on`)', async () => {
+    const { svc, redis } = makeSvc('4102444800000', '99999@lid');
 
     const res = await svc.toggle('shk', '5511@s.whatsapp.net', { state: 'ON' } as any);
 
     expect(redis.del).toHaveBeenCalledWith(KEY);
+    expect(redis.del).toHaveBeenCalledWith('chat:shk:99999@lid:humanControlUntil');
     expect(res.state).toBe('ON');
   });
 

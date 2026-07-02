@@ -137,6 +137,14 @@ export class WebhookService {
     if (!resolved) return;
     const { phone, jid } = resolved;
 
+    // O N8N indexa as chaves de conversa pelo `key.remoteJid` CRU (com @lid, é
+    // `{lid}@lid`), enquanto o painel usa o JID canônico. Guarda o mapa canônico
+    // -> cru para o controle de IA (humanControlUntil) convergir nos dois — sem
+    // isto, o OFF do painel grava numa chave que o N8N nunca checa.
+    if (typeof key.remoteJid === 'string' && key.remoteJid !== jid) {
+      await this.redis.set(RedisKeys.rawJid(instanceName, jid), key.remoteJid);
+    }
+
     const fromMe = key.fromMe === true;
 
     // Extract message content

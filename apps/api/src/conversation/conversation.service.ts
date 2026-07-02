@@ -12,6 +12,7 @@ import { ConversationIndexService } from './conversation-index.service';
 import { ConversationProjectionService } from './conversation-projection.service';
 import { EvolutionClient } from '../whatsapp/evolution.client';
 import { EventPublisher } from '../realtime/event.publisher';
+import { controlJids } from '../core/whatsapp/control-jids.util';
 
 @Injectable()
 export class ConversationService {
@@ -183,8 +184,14 @@ export class ConversationService {
     await this.redis.rpush(histKey, entry); // also fires keyspace message.received
 
     // Operator message = human takeover. Pause AI for 30min (V6.0 default).
+    // Espelha nas chaves canônica + cru (@lid) pra o N8N também ver a pausa.
     const until = Date.now() + 30 * 60 * 1000;
-    await this.redis.set(RedisKeys.humanControlUntil(instancia, jid), String(until));
+    const controlTargets = await controlJids(this.redis, instancia, jid);
+    await Promise.all(
+      controlTargets.map((j) =>
+        this.redis.set(RedisKeys.humanControlUntil(instancia, j), String(until)),
+      ),
+    );
 
     await this.index.addJid(instancia, jid);
     await this.projection.project(instancia, jid);
@@ -200,8 +207,9 @@ export class ConversationService {
    * automatic flow (mirrors the WhatsApp `reset` command, "safe" scope).
    */
   async resetState(instancia: string, jid: string): Promise<{ message: string }> {
+    const jids = await controlJids(this.redis, instancia, jid);
     await Promise.all([
-      this.redis.del(RedisKeys.humanControlUntil(instancia, jid)),
+      ...jids.map((j) => this.redis.del(RedisKeys.humanControlUntil(instancia, j))),
       this.redis.del(RedisKeys.processing(instancia, jid)),
       this.redis.del(RedisKeys.buffer(instancia, jid)),
     ]);
@@ -347,7 +355,12 @@ export class ConversationService {
     await this.redis.rpush(histKey, entry);
 
     const until = Date.now() + 30 * 60 * 1000;
-    await this.redis.set(RedisKeys.humanControlUntil(instancia, jid), String(until));
+    const controlTargets = await controlJids(this.redis, instancia, jid);
+    await Promise.all(
+      controlTargets.map((j) =>
+        this.redis.set(RedisKeys.humanControlUntil(instancia, j), String(until)),
+      ),
+    );
     await this.index.addJid(instancia, jid);
     await this.projection.project(instancia, jid);
 

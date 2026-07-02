@@ -4,6 +4,13 @@ export const RedisKeys = {
   humanControlUntil: (inst: string, jid: string) =>
     `chat:${inst}:${jid}:humanControlUntil`,
 
+  // Mapa do JID canônico do painel (`{phone}@s.whatsapp.net`) -> `key.remoteJid`
+  // CRU que o N8N usa para indexar as chaves de conversa (hoje `{lid}@lid`). O
+  // webhook grava quando os dois divergem; o controle de IA escreve/checa em
+  // AMBOS para o painel e o fluxo N8N convergirem no mesmo humanControlUntil.
+  rawJid: (inst: string, jid: string) =>
+    `chat:${inst}:${jid}:rawjid`,
+
   paymentStatus: (inst: string, jid: string) =>
     `chat:${inst}:${jid}:paymentStatus`,
 
