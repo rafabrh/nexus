@@ -117,8 +117,8 @@ export class ConversationProjectionService implements OnApplicationBootstrap {
     const aiState = this.resolveAiState(row.humanControlUntil);
     return {
       jid: row.jid,
-      contactName: row.contactName || PhoneMask.mask(row.jid),
-      phoneDisplay: PhoneMask.mask(row.jid),
+      contactName: row.contactName || PhoneMask.reveal(row.jid),
+      phoneDisplay: PhoneMask.reveal(row.jid),
       aiState: aiState.state,
       aiOffUntil: aiState.until,
       stage: funnelStage.key,
