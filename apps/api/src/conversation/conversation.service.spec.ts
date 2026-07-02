@@ -136,6 +136,56 @@ describe('ConversationService', () => {
     expect(projection.project).toHaveBeenCalledWith('shk', '5511@s.whatsapp.net');
   });
 
+  it('does NOT downgrade a permanent AI-OFF when the operator sends a message', async () => {
+    // Regressão: o Switch OFF permanente grava 4102444800000. Enviar uma mensagem
+    // pelo painel NÃO pode rebaixar isso para uma pausa curta (que expira e
+    // reativa a IA) — a causa raiz do "desliguei no botão e a IA continua".
+    const calls: any = { set: [] };
+    const redis = {
+      get: vi.fn(async (key: string) =>
+        String(key).endsWith(':humanControlUntil') ? '4102444800000' : null,
+      ),
+      set: vi.fn(async (...a: any[]) => { calls.set.push(a); return 'OK'; }),
+      rpush: vi.fn(async () => 1),
+      del: vi.fn(async () => 1),
+    } as any;
+    const evolution = { sendTextMessage: vi.fn(async () => undefined) } as any;
+    const index = { addJid: vi.fn(async () => undefined), listJids: vi.fn() } as any;
+    const projection = { list: vi.fn(), project: vi.fn(async () => undefined) } as any;
+    const svc = new ConversationService({} as any, evolution, {} as any, redis, index, projection);
+
+    await svc.sendMessage('shk', '5511@s.whatsapp.net', 'oi');
+
+    const controlWrite = calls.set.find((a: any[]) => String(a[0]).endsWith(':humanControlUntil'));
+    expect(controlWrite).toBeDefined();
+    expect(controlWrite[1]).toBe('4102444800000'); // preserva o OFF permanente
+    expect(controlWrite[2]).toBe('EX'); // com TTL, nunca uma chave sem expiração
+  });
+
+  it('sets a 30min human-takeover floor (with TTL) when the AI is on', async () => {
+    const calls: any = { set: [] };
+    const redis = {
+      get: vi.fn(async () => null), // sem OFF prévio e sem rawjid @lid
+      set: vi.fn(async (...a: any[]) => { calls.set.push(a); return 'OK'; }),
+      rpush: vi.fn(async () => 1),
+      del: vi.fn(async () => 1),
+    } as any;
+    const evolution = { sendTextMessage: vi.fn(async () => undefined) } as any;
+    const index = { addJid: vi.fn(async () => undefined), listJids: vi.fn() } as any;
+    const projection = { list: vi.fn(), project: vi.fn(async () => undefined) } as any;
+    const svc = new ConversationService({} as any, evolution, {} as any, redis, index, projection);
+
+    await svc.sendMessage('shk', '5511@s.whatsapp.net', 'oi');
+
+    const controlWrite = calls.set.find((a: any[]) => String(a[0]).endsWith(':humanControlUntil'));
+    expect(controlWrite).toBeDefined();
+    const until = Number(controlWrite[1]);
+    expect(until).toBeGreaterThan(Date.now() + 29 * 60 * 1000);
+    expect(until).toBeLessThan(Date.now() + 31 * 60 * 1000);
+    expect(controlWrite[2]).toBe('EX');
+    expect(controlWrite[3]).toBe(31_536_000);
+  });
+
   it('normalizes a bare phone to the canonical jid when updating stage', async () => {
     const calls: any = { set: [] };
     const redis = {

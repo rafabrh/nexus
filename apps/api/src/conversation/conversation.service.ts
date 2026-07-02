@@ -175,6 +175,34 @@ export class ConversationService {
     return { message: 'Tag removida' };
   }
 
+  /**
+   * Human takeover: garante uma pausa da IA de no mínimo `floorMs` a partir de
+   * agora — SEM nunca rebaixar uma pausa mais longa já existente. O Switch OFF
+   * permanente do painel grava `4102444800000` (~ano 2100); mandar uma mensagem
+   * ou mídia pelo painel é um takeover, mas não pode REATIVAR a IA que o
+   * operador desligou — só estender a janela humana. Escreve nas chaves canônica
+   * + cru (@lid) que o N8N também checa, com TTL de 1 ano (igual ao
+   * AiControlService). Antes disso, um `set` incondicional de `now + 30min`
+   * rebaixava o OFF permanente para uma pausa curta que expirava e reativava a IA.
+   */
+  private async pauseAiForHumanTakeover(
+    instancia: string,
+    jid: string,
+    floorMs: number,
+  ): Promise<void> {
+    const floor = Date.now() + floorMs;
+    const targets = await controlJids(this.redis, instancia, jid);
+    await Promise.all(
+      targets.map(async (j) => {
+        const key = RedisKeys.humanControlUntil(instancia, j);
+        const existing = await this.redis.get(key);
+        const existingMs = existing ? Number(existing) : NaN;
+        const until = !Number.isNaN(existingMs) && existingMs > floor ? existingMs : floor;
+        await this.redis.set(key, String(until), 'EX', 31_536_000);
+      }),
+    );
+  }
+
   async sendMessage(instancia: string, jid: string, text: string): Promise<{ message: string }> {
     await this.evolution.sendTextMessage(instancia, jid, text);
 
@@ -183,15 +211,9 @@ export class ConversationService {
     const entry = JSON.stringify({ type: 'ai', data: { content: text, timestamp: Date.now() } });
     await this.redis.rpush(histKey, entry); // also fires keyspace message.received
 
-    // Operator message = human takeover. Pause AI for 30min (V6.0 default).
-    // Espelha nas chaves canônica + cru (@lid) pra o N8N também ver a pausa.
-    const until = Date.now() + 30 * 60 * 1000;
-    const controlTargets = await controlJids(this.redis, instancia, jid);
-    await Promise.all(
-      controlTargets.map((j) =>
-        this.redis.set(RedisKeys.humanControlUntil(instancia, j), String(until)),
-      ),
-    );
+    // Mensagem do operador = human takeover → pausa a IA por 30min (padrão V6.0),
+    // mas NUNCA rebaixa um OFF mais longo/permanente já setado pelo operador.
+    await this.pauseAiForHumanTakeover(instancia, jid, 30 * 60 * 1000);
 
     await this.index.addJid(instancia, jid);
     await this.projection.project(instancia, jid);
@@ -354,13 +376,7 @@ export class ConversationService {
     });
     await this.redis.rpush(histKey, entry);
 
-    const until = Date.now() + 30 * 60 * 1000;
-    const controlTargets = await controlJids(this.redis, instancia, jid);
-    await Promise.all(
-      controlTargets.map((j) =>
-        this.redis.set(RedisKeys.humanControlUntil(instancia, j), String(until)),
-      ),
-    );
+    await this.pauseAiForHumanTakeover(instancia, jid, 30 * 60 * 1000);
     await this.index.addJid(instancia, jid);
     await this.projection.project(instancia, jid);
 
