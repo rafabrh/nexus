@@ -5,6 +5,7 @@ import {
   RedisKeys,
   FunnelStage,
   PhoneMask,
+  resolveDisplayName,
 } from '@nexus/shared';
 import type {
   ConversationListItem,
@@ -93,8 +94,8 @@ export class ConversationRepository {
 
     return {
       jid,
-      contactName: contact.name || contact.pushName || PhoneMask.mask(jid),
-      phoneDisplay: PhoneMask.mask(jid),
+      contactName: resolveDisplayName(contact.name || contact.pushName, jid),
+      phoneDisplay: PhoneMask.reveal(jid),
       aiState: aiState.state,
       aiOffUntil: aiState.until,
       stage: funnelStage.key,
@@ -173,8 +174,8 @@ export class ConversationRepository {
 
     return {
       jid,
-      contactName: contact.name || contact.pushName || PhoneMask.mask(jid),
-      phoneDisplay: PhoneMask.mask(jid),
+      contactName: resolveDisplayName(contact.name || contact.pushName, jid),
+      phoneDisplay: PhoneMask.reveal(jid),
       aiState: aiState.state,
       aiOffUntil: aiState.until,
       stage: funnelStage.key,
@@ -188,6 +189,7 @@ export class ConversationRepository {
       lastMessagePreview: preview,
       lastActivity,
       isHot,
+      avatarUrl: (contact.profilePicUrl as string) || undefined,
       messageCount: messageCount ?? 0,
     };
   }
@@ -199,19 +201,53 @@ export class ConversationRepository {
     const phone = jid.replace('@s.whatsapp.net', '');
     const histKey = RedisKeys.chatHistory(instancia, phone);
     const raw = await this.redis.lrange(histKey, 0, -1);
+    // Status de entrega/leitura das mensagens de saída (hash lateral de ACK).
+    const ackMap = await this.redis.hgetall(RedisKeys.ackStatus(instancia, jid));
 
     const messages: Message[] = [];
+    // Dedup por WAMID: uma mensagem enviada pelo painel é gravada 2x no
+    // chathistory — uma no envio (ConversationService) e outra quando a Evolution
+    // ecoa o próprio envio de volta (webhook `send.message`/`messages.upsert`
+    // fromMe=true). Ambas carregam o MESMO id de mensagem do WhatsApp; sem dedup
+    // a bolha (texto, áudio, imagem) aparece repetida na visão do operador,
+    // embora o destinatário receba só uma. Entradas sem id real (legadas, fallback
+    // `msg-i`) nunca colidem → preservadas.
+    const seenIds = new Set<string>();
     for (let i = 0; i < raw.length; i++) {
       try {
         const parsed = JSON.parse(raw[i]);
         const media = parsed.media as { kind?: string; id?: string } | undefined;
+        const realId = (typeof parsed.id === 'string' && parsed.id) || media?.id || null;
+        if (realId) {
+          if (seenIds.has(realId)) continue; // eco do próprio envio — ignora a cópia
+          seenIds.add(realId);
+        }
+        const ts =
+          typeof parsed.data?.timestamp === 'number'
+            ? new Date(parsed.data.timestamp).toISOString()
+            : null;
+        const quoted =
+          parsed.quoted && typeof parsed.quoted === 'object'
+            ? {
+                id: String(parsed.quoted.id ?? ''),
+                preview: String(parsed.quoted.preview ?? ''),
+                fromMe: parsed.quoted.fromMe === true,
+              }
+            : undefined;
+        const id = realId || `msg-${i}`;
+        const isOutgoing = parsed.type === 'ai';
+        const status = isOutgoing
+          ? (ackMap[id] as Message['status'] | undefined)
+          : undefined;
         messages.push({
-          id: media?.id ?? `msg-${i}`,
-          role: parsed.type === 'ai' ? 'assistant' : 'user',
+          id,
+          role: isOutgoing ? 'assistant' : 'user',
           content: parsed.data?.content ?? '',
           mediaType: this.mediaKindToType(media?.kind),
           ...(media?.id ? { mediaId: media.id } : {}),
-          ts: null,
+          ts,
+          ...(quoted ? { quoted } : {}),
+          ...(status ? { status } : {}),
         });
       } catch {
         // Skip malformed entries
@@ -232,8 +268,9 @@ export class ConversationRepository {
         return 'image';
       case 'audio':
         return 'audio';
-      case 'document':
       case 'video':
+        return 'video';
+      case 'document':
         return 'document';
       default:
         return 'text';

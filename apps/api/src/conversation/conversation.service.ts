@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, Logger, Inject } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../core/redis/redis.module';
-import { RedisKeys, jidFromPhone } from '@nexus/shared';
+import { RedisKeys, jidFromPhone, PhoneMask } from '@nexus/shared';
 import type {
   ConversationListItem,
   ConversationDetail,
@@ -12,6 +12,61 @@ import { ConversationIndexService } from './conversation-index.service';
 import { ConversationProjectionService } from './conversation-projection.service';
 import { EvolutionClient } from '../whatsapp/evolution.client';
 import { EventPublisher } from '../realtime/event.publisher';
+import { controlJids } from '../core/whatsapp/control-jids.util';
+
+/** Sufixos de host do CDN oficial WhatsApp/Meta que servem foto de perfil. */
+const AVATAR_HOST_SUFFIXES = ['.whatsapp.net', '.fbcdn.net'] as const;
+/** Teto do corpo da foto (5 MB) — fotos reais têm poucas centenas de KB. */
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Confina a URL da foto ao CDN do WhatsApp/Meta sobre HTTPS. A URL é resolvida
+ * pela Evolution (fonte externa/não-confiável) e buscada server-side pelo BFF —
+ * sem esta allowlist o proxy de avatar vira um vetor de SSRF (buscaria qualquer
+ * host interno, ex.: metadata/loopback, e devolveria os bytes ao cliente).
+ */
+function isAllowedAvatarUrl(raw: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'https:') return false;
+  const host = u.hostname.toLowerCase();
+  return AVATAR_HOST_SUFFIXES.some(
+    (sfx) => host === sfx.slice(1) || host.endsWith(sfx),
+  );
+}
+
+/**
+ * Lê o corpo da resposta com teto de bytes, cancelando o stream ao estourar —
+ * evita exaustão de memória por uma resposta gigante (ou sem Content-Length).
+ */
+async function readCappedBody(resp: Response, maxBytes: number): Promise<Buffer> {
+  const reader = resp.body?.getReader();
+  if (!reader) {
+    const buf = Buffer.from(await resp.arrayBuffer());
+    if (buf.byteLength > maxBytes) {
+      throw new NotFoundException('Foto de perfil indisponível');
+    }
+    return buf;
+  }
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw new NotFoundException('Foto de perfil indisponível');
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks);
+}
 
 @Injectable()
 export class ConversationService {
@@ -95,9 +150,17 @@ export class ConversationService {
     const legacy = parse(legacyRaw);
     const str = (v: unknown): string | null =>
       typeof v === 'string' && v.trim() ? v.trim() : null;
+    // Nome mascarado (contém `*`) nunca vira nome de contato — cai no número real.
+    const cleanName = (v: unknown): string | null => {
+      const s = str(v);
+      return s && !PhoneMask.isMasked(s) ? s : null;
+    };
 
     const name =
-      str(c.name) ?? str(c.pushName) ?? str(legacy.name) ?? str(legacy.pushName);
+      cleanName(c.name) ??
+      cleanName(c.pushName) ??
+      cleanName(legacy.name) ??
+      cleanName(legacy.pushName);
     const avatarUrl = str(c.profilePicUrl) ?? str(legacy.profilePicUrl);
     return { name, avatarUrl };
   }
@@ -142,6 +205,75 @@ export class ConversationService {
     };
   }
 
+  /**
+   * Foto de perfil via proxy: resolve a URL na Evolution (fetchProfilePictureUrl)
+   * — que não vem nos webhooks — cacheia por 6h e faz stream dos bytes. Contorna a
+   * expiração/CORS da URL crua do pps.whatsapp.net. `url === ''` cacheado marca
+   * "sem foto" e evita re-hit. Lança NotFound quando não há foto (front → iniciais).
+   */
+  async getAvatar(
+    instancia: string,
+    jid: string,
+  ): Promise<{ buffer: Buffer; mimetype: string }> {
+    const phone = jid.replace('@s.whatsapp.net', '');
+    const cacheKey = RedisKeys.avatar(instancia, phone);
+
+    let url: string | null = null;
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached) as { url?: string };
+        if (parsed.url === '') throw new NotFoundException('Sem foto de perfil');
+        if (typeof parsed.url === 'string' && parsed.url) url = parsed.url;
+      } catch (err) {
+        if (err instanceof NotFoundException) throw err;
+        /* cache corrompido — revalida abaixo */
+      }
+    }
+
+    if (!url) {
+      const resolved = await this.evolution.fetchProfilePictureUrl(instancia, jid);
+      // URL ausente OU fora do CDN oficial → negativa-cacheia e degrada p/ iniciais.
+      // Rejeitar aqui é a barreira anti-SSRF antes de qualquer fetch server-side.
+      if (!resolved || !isAllowedAvatarUrl(resolved)) {
+        if (resolved) {
+          this.logger.warn(`getAvatar: URL de foto rejeitada (host nao permitido) para ${jid}`);
+        }
+        await this.redis.set(cacheKey, JSON.stringify({ url: '', ts: Date.now() }), 'EX', 1800);
+        throw new NotFoundException('Sem foto de perfil');
+      }
+      url = resolved;
+      await this.redis.set(cacheKey, JSON.stringify({ url, ts: Date.now() }), 'EX', 21600);
+    } else if (!isAllowedAvatarUrl(url)) {
+      // Cache legado com URL fora da allowlist — invalida e degrada.
+      await this.redis.del(cacheKey);
+      throw new NotFoundException('Sem foto de perfil');
+    }
+
+    let resp: Response;
+    try {
+      resp = await fetch(url, { signal: AbortSignal.timeout(10_000), redirect: 'error' });
+    } catch (err) {
+      // Timeout/rede/redirect bloqueado — não estoura 500, degrada p/ iniciais.
+      await this.redis.del(cacheKey);
+      this.logger.debug(`getAvatar fetch failed for ${jid}: ${(err as Error).message}`);
+      throw new NotFoundException('Foto de perfil indisponível');
+    }
+    if (!resp.ok) {
+      // URL expirada/indisponível — invalida o cache para revalidar no próximo acesso.
+      await this.redis.del(cacheKey);
+      throw new NotFoundException('Foto de perfil indisponível');
+    }
+
+    const mimetype = resp.headers.get('content-type') || 'image/jpeg';
+    if (!mimetype.startsWith('image/')) {
+      // Só servimos imagem — nunca repassa HTML/octet vindo de um host inesperado.
+      throw new NotFoundException('Foto de perfil indisponível');
+    }
+    const buffer = await readCappedBody(resp, MAX_AVATAR_BYTES);
+    return { buffer, mimetype };
+  }
+
   async addNote(instancia: string, jid: string, text: string, userEmail: string): Promise<{ message: string }> {
     await this.repo.appendNote(instancia, jid, text);
 
@@ -174,17 +306,67 @@ export class ConversationService {
     return { message: 'Tag removida' };
   }
 
-  async sendMessage(instancia: string, jid: string, text: string): Promise<{ message: string }> {
-    await this.evolution.sendTextMessage(instancia, jid, text);
+  /**
+   * Human takeover: garante uma pausa da IA de no mínimo `floorMs` a partir de
+   * agora — SEM nunca rebaixar uma pausa mais longa já existente. O Switch OFF
+   * permanente do painel grava `4102444800000` (~ano 2100); mandar uma mensagem
+   * ou mídia pelo painel é um takeover, mas não pode REATIVAR a IA que o
+   * operador desligou — só estender a janela humana. Escreve nas chaves canônica
+   * + cru (@lid) que o N8N também checa, com TTL de 1 ano (igual ao
+   * AiControlService). Antes disso, um `set` incondicional de `now + 30min`
+   * rebaixava o OFF permanente para uma pausa curta que expirava e reativava a IA.
+   */
+  private async pauseAiForHumanTakeover(
+    instancia: string,
+    jid: string,
+    floorMs: number,
+  ): Promise<void> {
+    const floor = Date.now() + floorMs;
+    const targets = await controlJids(this.redis, instancia, jid);
+    await Promise.all(
+      targets.map(async (j) => {
+        const key = RedisKeys.humanControlUntil(instancia, j);
+        const existing = await this.redis.get(key);
+        const existingMs = existing ? Number(existing) : NaN;
+        const until = !Number.isNaN(existingMs) && existingMs > floor ? existingMs : floor;
+        await this.redis.set(key, String(until), 'EX', 31_536_000);
+      }),
+    );
+  }
 
+  async sendMessage(
+    instancia: string,
+    jid: string,
+    text: string,
+    quotedId?: string,
+  ): Promise<{ message: string }> {
     const phone = jid.replace('@s.whatsapp.net', '');
     const histKey = RedisKeys.chatHistory(instancia, phone);
-    const entry = JSON.stringify({ type: 'ai', data: { content: text, timestamp: Date.now() } });
+
+    // Responder/quote: monta a citação a partir do histórico (preview + fromMe) para
+    // o balão enviado e a Evolution referenciarem a mensagem original.
+    const quoted = quotedId ? await this.buildQuoted(instancia, phone, quotedId) : null;
+
+    const res = await this.evolution.sendTextMessage(
+      instancia,
+      jid,
+      text,
+      quoted ? { id: quoted.id, text: quoted.preview } : undefined,
+    );
+    const sentKey = (res?.key ?? {}) as Record<string, unknown>;
+    const msgId = typeof sentKey.id === 'string' ? sentKey.id : null;
+
+    const entry = JSON.stringify({
+      type: 'ai',
+      data: { content: text, timestamp: Date.now() },
+      ...(msgId ? { id: msgId } : {}),
+      ...(quoted ? { quoted } : {}),
+    });
     await this.redis.rpush(histKey, entry); // also fires keyspace message.received
 
-    // Operator message = human takeover. Pause AI for 30min (V6.0 default).
-    const until = Date.now() + 30 * 60 * 1000;
-    await this.redis.set(RedisKeys.humanControlUntil(instancia, jid), String(until));
+    // Mensagem do operador = human takeover → pausa a IA por 30min (padrão V6.0),
+    // mas NUNCA rebaixa um OFF mais longo/permanente já setado pelo operador.
+    await this.pauseAiForHumanTakeover(instancia, jid, 30 * 60 * 1000);
 
     await this.index.addJid(instancia, jid);
     await this.projection.project(instancia, jid);
@@ -194,14 +376,48 @@ export class ConversationService {
   }
 
   /**
+   * Monta a referência de citação a partir do histórico: localiza a mensagem pelo
+   * id (key.id) e extrai um preview curto + se era de saída (fromMe). Se não achar,
+   * cita só pelo id (a Evolution ainda referencia a original pelo id).
+   */
+  private async buildQuoted(
+    instancia: string,
+    phone: string,
+    quotedId: string,
+  ): Promise<{ id: string; preview: string; fromMe: boolean }> {
+    try {
+      const raw = await this.redis.lrange(
+        RedisKeys.chatHistory(instancia, phone),
+        -200,
+        -1,
+      );
+      for (const item of raw) {
+        try {
+          const p = JSON.parse(item);
+          if (p?.id === quotedId) {
+            const content = typeof p?.data?.content === 'string' ? p.data.content : '';
+            return { id: quotedId, preview: content.slice(0, 120), fromMe: p?.type === 'ai' };
+          }
+        } catch {
+          /* entrada malformada — ignora */
+        }
+      }
+    } catch (err) {
+      this.logger.debug(`buildQuoted lookup failed: ${(err as Error).message}`);
+    }
+    return { id: quotedId, preview: '', fromMe: false };
+  }
+
+  /**
    * Reset the lead's transient state: clears human-takeover (re-enables the AI),
    * the processing flag and the message buffer. History, stage, tags and notes
    * are intentionally preserved — this only returns the conversation to the
    * automatic flow (mirrors the WhatsApp `reset` command, "safe" scope).
    */
   async resetState(instancia: string, jid: string): Promise<{ message: string }> {
+    const jids = await controlJids(this.redis, instancia, jid);
     await Promise.all([
-      this.redis.del(RedisKeys.humanControlUntil(instancia, jid)),
+      ...jids.map((j) => this.redis.del(RedisKeys.humanControlUntil(instancia, j))),
       this.redis.del(RedisKeys.processing(instancia, jid)),
       this.redis.del(RedisKeys.buffer(instancia, jid)),
     ]);
@@ -277,5 +493,115 @@ export class ConversationService {
 
     this.logger.log(`Conversation marked read for ${instancia}/${jid}`);
     return { message: 'Marcado como lido' };
+  }
+
+  /**
+   * Salva/edita o nome do contato (sobrepõe o pushName da Evolution). Nome vazio
+   * remove a sobreposição — volta ao pushName. Reprojeta para a lista e o detalhe
+   * refletirem imediatamente.
+   */
+  async saveContactName(
+    instancia: string,
+    jid: string,
+    name: string,
+  ): Promise<{ message: string }> {
+    const phone = jid.replace('@s.whatsapp.net', '');
+    const key = RedisKeys.contact(instancia, phone);
+    const existing = await this.redis.get(key);
+    let parsed: Record<string, unknown> = {};
+    if (existing) {
+      try {
+        parsed = JSON.parse(existing) as Record<string, unknown>;
+      } catch {
+        /* corrupted — overwrite */
+      }
+    }
+    const trimmed = name.trim();
+    if (trimmed) {
+      parsed.name = trimmed;
+    } else {
+      delete parsed.name;
+    }
+    await this.redis.set(key, JSON.stringify(parsed));
+    await this.projection.project(instancia, jid);
+    this.logger.log(
+      `Contact name ${trimmed ? 'saved' : 'cleared'} for ${instancia}/${jid}`,
+    );
+    return { message: trimmed ? 'Contato salvo' : 'Nome removido' };
+  }
+
+  /**
+   * Envia mídia (imagem/vídeo/documento) via Evolution e grava a referência no
+   * histórico pra aparecer na thread (a foto é servida pelo proxy `getMedia`).
+   * Envio do operador = human takeover: pausa a IA por 30min, como no texto.
+   */
+  async sendMediaMessage(
+    instancia: string,
+    jid: string,
+    opts: {
+      mediatype: 'image' | 'video' | 'document';
+      media: string;
+      fileName?: string;
+      caption?: string;
+      mimetype?: string;
+    },
+  ): Promise<{ message: string }> {
+    const res = await this.evolution.sendMedia(instancia, jid, opts);
+
+    // Grava a referência da mídia enviada (id retornado) no chathistory.
+    const key = (res?.key ?? {}) as Record<string, unknown>;
+    const msgId = typeof key.id === 'string' ? key.id : null;
+    const phone = jid.replace('@s.whatsapp.net', '');
+    const histKey = RedisKeys.chatHistory(instancia, phone);
+    const entry = JSON.stringify({
+      type: 'ai',
+      data: { content: opts.caption ?? '' },
+      ...(msgId
+        ? { media: { kind: opts.mediatype, id: msgId, fromMe: true, mimetype: opts.mimetype ?? null } }
+        : {}),
+    });
+    await this.redis.rpush(histKey, entry);
+
+    await this.pauseAiForHumanTakeover(instancia, jid, 30 * 60 * 1000);
+    await this.index.addJid(instancia, jid);
+    await this.projection.project(instancia, jid);
+
+    this.logger.log(`Media sent + persisted for ${instancia}/${jid} (${opts.mediatype})`);
+    return { message: 'Mídia enviada' };
+  }
+
+  /**
+   * Envia uma nota de voz gravada no painel via Evolution e grava a referência no
+   * histórico (o áudio é servido pelo proxy `getMedia`, igual às demais mídias).
+   * Envio do operador = human takeover: pausa a IA por 30min, como texto/mídia.
+   */
+  async sendAudioMessage(
+    instancia: string,
+    jid: string,
+    audio: string,
+    mimetype?: string,
+  ): Promise<{ message: string }> {
+    const res = await this.evolution.sendWhatsAppAudio(instancia, jid, audio);
+
+    const key = (res?.key ?? {}) as Record<string, unknown>;
+    const msgId = typeof key.id === 'string' ? key.id : null;
+    const phone = jid.replace('@s.whatsapp.net', '');
+    const histKey = RedisKeys.chatHistory(instancia, phone);
+    const entry = JSON.stringify({
+      type: 'ai',
+      data: { content: '', timestamp: Date.now() },
+      ...(msgId ? { id: msgId } : {}),
+      ...(msgId
+        ? { media: { kind: 'audio', id: msgId, fromMe: true, mimetype: mimetype ?? null } }
+        : {}),
+    });
+    await this.redis.rpush(histKey, entry);
+
+    await this.pauseAiForHumanTakeover(instancia, jid, 30 * 60 * 1000);
+    await this.index.addJid(instancia, jid);
+    await this.projection.project(instancia, jid);
+
+    this.logger.log(`Audio sent + persisted for ${instancia}/${jid}`);
+    return { message: 'Áudio enviado' };
   }
 }

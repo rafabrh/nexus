@@ -1,9 +1,10 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../core/redis/redis.module';
-import { RedisKeys } from '@nexus/shared';
+import { RedisKeys, PhoneMask } from '@nexus/shared';
 import { EventPublisher } from '../realtime/event.publisher';
 import { resolvePersonalJid } from '../core/whatsapp/jid.util';
+import { isAiOff } from '../core/whatsapp/ai-off.util';
 import { ConversationIndexService } from '../conversation/conversation-index.service';
 import { TenantRepository } from '../admin/tenant.repository';
 import { N8nForwarderService } from './n8n-forwarder.service';
@@ -16,6 +17,13 @@ const HOT_KEYWORDS = [
 
 /** Stages S3+ are considered advanced enough to contribute to isHot */
 const HOT_STAGES = new Set(['S3', 'S4', 'S5', 'S6']);
+
+/**
+ * Quantas entradas recentes do chathistory varrer ao checar se um envio já foi
+ * persistido (dedup do eco). O eco da Evolution chega poucos instantes após o
+ * envio, então o WAMID estará entre as últimas mensagens — a janela é folgada.
+ */
+const ECHO_SCAN_WINDOW = 50;
 
 @Injectable()
 export class WebhookService {
@@ -52,15 +60,34 @@ export class WebhookService {
     // permanece no fluxo N8N do cliente. EXCECAO: `send.message` e a mensagem que a
     // PROPRIA IA enviou (via Evolution API) — o N8N nao precisa dela e reencaminhar
     // arriscaria loop; o BFF so a grava/publica para a resposta aparecer no painel.
-    // `presence.update` (digitando/online) é efêmero e de alto volume — sinal de
-    // UI, não de fluxo; nunca reencaminha pro N8N (evita flood).
-    if (event !== 'send.message' && event !== 'presence.update') {
-      void this.forwarder.forward(
-        instanceName,
-        tenant.n8nWebhookUrl ?? null,
-        this.extractMsgId(payload),
-        payload,
-      );
+    // `presence.update` (digitando/online) e `messages.update` (ACK de entregue/
+    // lido) são efêmeros e de alto volume — sinal de UI, não de fluxo; nunca
+    // reencaminham pro N8N (evita flood).
+    if (
+      event !== 'send.message' &&
+      event !== 'presence.update' &&
+      event !== 'messages.update'
+    ) {
+      // BFF-gate do controle de IA: quando a conversa está com a IA desligada, o
+      // BFF NÃO reencaminha a mensagem pro N8N — o desligamento é enforçado aqui,
+      // na origem. O gate interno do fluxo N8N se provou inconfiável (lê o
+      // `humanControlUntil` correto e responde assim mesmo), então o hub barra.
+      // Só mensagens entram na checagem; demais eventos (connection, contacts)
+      // seguem sempre. O painel continua gravando/publicando a mensagem normal.
+      const aiOff =
+        event === 'messages.upsert' && (await this.isInboundAiOff(instanceName, payload));
+      if (aiOff) {
+        this.logger.log(
+          `n8n.forward-gated instancia=${instanceName} reason=ai-off (human takeover)`,
+        );
+      } else {
+        void this.forwarder.forward(
+          instanceName,
+          tenant.n8nWebhookUrl ?? null,
+          this.extractMsgId(payload),
+          payload,
+        );
+      }
     }
 
     switch (event) {
@@ -81,6 +108,9 @@ export class WebhookService {
         break;
       case 'presence.update':
         await this.handlePresenceUpdate(instanceName, payload);
+        break;
+      case 'messages.update':
+        await this.handleMessageUpdate(instanceName, payload);
         break;
       default:
         this.logger.debug(`webhook.unhandled event=${event} instance=${instanceName}`);
@@ -114,6 +144,20 @@ export class WebhookService {
     const key = data.key as Record<string, unknown> | undefined;
     if (!key) return;
 
+    // POC status/stories: detecta se a Evolution repassa `status@broadcast` (hoje
+    // descartado como broadcast). Só LOGA — não processa como conversa. Serve pra
+    // medir a viabilidade de uma futura aba de Status antes de investir no
+    // subsistema (efêmero 24h, mídia, viewer). Se este log nunca aparecer, a
+    // Evolution não expõe status e a feature fica inviável sem outra fonte.
+    if (typeof key.remoteJid === 'string' && key.remoteJid.includes('status@broadcast')) {
+      this.logger.log(
+        `status.detected instance=${instanceName} author=${
+          (key.participant as string) ?? (key.remoteJidAlt as string) ?? '?'
+        }`,
+      );
+      return;
+    }
+
     // Resolve canonical phone/JID, handling both legacy @s.whatsapp.net and
     // @lid addressing (real phone in key.remoteJidAlt). Skip groups/broadcasts.
     const resolved = resolvePersonalJid(
@@ -122,6 +166,14 @@ export class WebhookService {
     );
     if (!resolved) return;
     const { phone, jid } = resolved;
+
+    // O N8N indexa as chaves de conversa pelo `key.remoteJid` CRU (com @lid, é
+    // `{lid}@lid`), enquanto o painel usa o JID canônico. Guarda o mapa canônico
+    // -> cru para o controle de IA (humanControlUntil) convergir nos dois — sem
+    // isto, o OFF do painel grava numa chave que o N8N nunca checa.
+    if (typeof key.remoteJid === 'string' && key.remoteJid !== jid) {
+      await this.redis.set(RedisKeys.rawJid(instanceName, jid), key.remoteJid);
+    }
 
     const fromMe = key.fromMe === true;
 
@@ -137,14 +189,30 @@ export class WebhookService {
     const type = fromMe ? 'ai' : 'human';
     const media = this.extractMedia(data);
     const keyId = typeof key.id === 'string' ? key.id : null;
+    const timestamp = this.extractTimestamp(data);
+    const quoted = this.extractQuoted(data, fromMe);
     const entry = JSON.stringify({
       type,
-      data: { content },
+      data: { content, ...(timestamp ? { timestamp } : {}) },
+      ...(keyId ? { id: keyId } : {}),
+      ...(quoted ? { quoted } : {}),
       ...(media && keyId
         ? { media: { kind: media.kind, id: keyId, fromMe, mimetype: media.mimetype } }
         : {}),
     });
-    await this.redis.rpush(histKey, entry);
+    // Eco do próprio envio: quando NÓS enviamos (fromMe), a Evolution devolve a
+    // mensagem de volta (`send.message` e/ou `messages.upsert` fromMe=true) e um
+    // mesmo envio pode chegar em mais de um evento. O envio do operador pelo
+    // painel JÁ foi gravado pelo ConversationService; regravar aqui duplicaria a
+    // bolha na visão do operador (o destinatário recebe só uma). Como o WAMID
+    // (key.id) é único e estável, não regravamos quando ele já está no histórico
+    // recente. A resposta da IA (N8N), que o painel não grava, tem id inédito →
+    // é persistida normalmente. O restante (índice, realtime, cache) segue.
+    const alreadyStored =
+      fromMe && keyId ? await this.isMessageAlreadyStored(histKey, keyId) : false;
+    if (!alreadyStored) {
+      await this.redis.rpush(histKey, entry);
+    }
 
     // Contador de nao-lidas: so conta mensagem RECEBIDA do cliente (fromMe=false).
     // A resposta da IA e o envio do operador (fromMe=true) nao geram badge. Zerado
@@ -205,6 +273,29 @@ export class WebhookService {
   }
 
   /**
+   * True quando uma mensagem de saída com este WAMID já está no chathistory
+   * recente — evita persistir o eco do próprio envio (o painel grava no envio; a
+   * Evolution pode devolver a mesma mensagem em `send.message` e/ou
+   * `messages.upsert`). Varre só as últimas entradas (o eco chega logo após o
+   * envio). Confere o id no topo e em `media.id` (mídia enviada pelo painel guarda
+   * o WAMID só em `media.id`).
+   */
+  private async isMessageAlreadyStored(histKey: string, msgId: string): Promise<boolean> {
+    const recent = await this.redis.lrange(histKey, -ECHO_SCAN_WINDOW, -1);
+    for (const item of recent) {
+      try {
+        const parsed = JSON.parse(item);
+        const media = parsed.media as { id?: string } | undefined;
+        const id = (typeof parsed.id === 'string' && parsed.id) || media?.id || null;
+        if (id === msgId) return true;
+      } catch {
+        /* entrada malformada — ignora */
+      }
+    }
+    return false;
+  }
+
+  /**
    * Detecta se a mensagem carrega mídia (imagem/vídeo/áudio/documento) e devolve
    * o tipo + mimetype. Só a referência é guardada; o binário é baixado sob demanda
    * pelo proxy (getBase64FromMediaMessage).
@@ -228,6 +319,41 @@ export class WebhookService {
       }
     }
     return null;
+  }
+
+  /** Timestamp da mensagem (a Evolution manda em segundos) → ms. Null se ausente. */
+  private extractTimestamp(data: Record<string, unknown>): number | null {
+    const t = data.messageTimestamp;
+    const n = typeof t === 'number' ? t : typeof t === 'string' ? parseInt(t, 10) : NaN;
+    if (!Number.isFinite(n) || n <= 0) return null;
+    // Valores em segundos (< 10^12) são normalizados para ms.
+    return n < 1e12 ? n * 1000 : n;
+  }
+
+  /**
+   * Extrai a citação (quote) quando a mensagem responde outra. O `contextInfo` (com
+   * `stanzaId` + `quotedMessage`) aparece em extendedTextMessage e nos tipos de
+   * mídia. O `fromMe` da citada é aproximado como o oposto da atual (num vai-e-volta
+   * típico) — só um indicador visual do balão. Retorna null quando não há citação.
+   */
+  private extractQuoted(
+    data: Record<string, unknown>,
+    fromMe: boolean,
+  ): { id: string; preview: string; fromMe: boolean } | null {
+    const message = data.message as Record<string, unknown> | undefined;
+    if (!message) return null;
+    let ctx: Record<string, unknown> | undefined;
+    for (const v of Object.values(message)) {
+      if (v && typeof v === 'object' && 'contextInfo' in (v as Record<string, unknown>)) {
+        ctx = (v as Record<string, unknown>).contextInfo as Record<string, unknown>;
+        break;
+      }
+    }
+    const stanzaId = ctx && typeof ctx.stanzaId === 'string' ? ctx.stanzaId : null;
+    if (!stanzaId) return null;
+    const quotedMsg = ctx?.quotedMessage as Record<string, unknown> | undefined;
+    const preview = quotedMsg ? this.extractContent({ message: quotedMsg }) ?? '' : '';
+    return { id: stanzaId, preview: preview.slice(0, 120), fromMe: !fromMe };
   }
 
   private extractContent(data: Record<string, unknown>): string | null {
@@ -447,10 +573,133 @@ export class WebhookService {
     });
   }
 
+  /**
+   * `messages.update` = mudança de ACK (entregue/lido/reproduzido) de uma mensagem
+   * já enviada. Só interessa o status das mensagens de SAÍDA (fromMe): grava no
+   * hash lateral de ACK e publica `message.status` para o painel pintar os tiques
+   * ao vivo. Nunca reencaminhado ao N8N (alto volume, sinal de UI).
+   */
+  private async handleMessageUpdate(
+    instanceName: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const dataObj = payload.data;
+    const items = Array.isArray(dataObj) ? dataObj : dataObj ? [dataObj] : [];
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue;
+      const data = item as Record<string, unknown>;
+      const key = data.key as Record<string, unknown> | undefined;
+      if (!key || key.fromMe !== true) continue; // só o ACK das NOSSAS mensagens
+      const msgId = typeof key.id === 'string' ? key.id : null;
+      if (!msgId) continue;
+
+      const status = this.mapAckStatus(data);
+      if (!status) continue;
+
+      const resolved = resolvePersonalJid(
+        key.remoteJid as string | undefined,
+        key.remoteJidAlt as string | undefined,
+      );
+      if (!resolved) continue;
+      const { jid } = resolved;
+
+      const advanced = await this.upsertAckStatus(instanceName, jid, msgId, status);
+      if (!advanced) continue; // update fora de ordem não rebaixa o status
+
+      // Tique é sinal de UI de alto volume: entrega ao vivo, mas NÃO persiste no
+      // stream de replay (a janela é finita; o estado real vive no hash de ACK).
+      await this.publisher.publish(
+        {
+          type: 'message.status',
+          instancia: instanceName,
+          jid,
+          ts: Date.now(),
+          payload: { id: msgId, status },
+        },
+        { persistToStream: false },
+      );
+    }
+  }
+
+  /**
+   * CAS atômico do status de ACK (read-compare-write num único passo no Redis). Só
+   * grava quando o novo status é um AVANÇO no ranking (sent<delivered<read<played);
+   * o ranking vive dentro do script para não haver janela entre HGET e HSET. Sem
+   * isto, dois `messages.update` concorrentes do mesmo msgId poderiam intercalar e
+   * REBAIXAR o status (ex.: `read` sobrescrito por um `delivered` atrasado).
+   * Retorna 1 se avançou, 0 caso contrário.
+   */
+  private static readonly ACK_CAS_LUA = `
+local ranks = { sent = 1, delivered = 2, read = 3, played = 4 }
+local cur = redis.call('HGET', KEYS[1], ARGV[1])
+local curRank = 0
+if cur and ranks[cur] then curRank = ranks[cur] end
+local newRank = ranks[ARGV[2]] or 0
+if newRank <= curRank then return 0 end
+redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+return 1
+`;
+
+  /**
+   * Mapeia o status de ACK da Evolution/Baileys (numérico WAMessageStatus ou string)
+   * para o enum do painel. 2=servidor, 3=entregue, 4=lido, 5=reproduzido.
+   */
+  private mapAckStatus(
+    data: Record<string, unknown>,
+  ): 'sent' | 'delivered' | 'read' | 'played' | null {
+    const raw =
+      (data.status as unknown) ??
+      ((data.update as Record<string, unknown> | undefined)?.status as unknown);
+    if (raw == null) return null;
+    // Numérico do WAMessageStatus — direto (number) ou como string de dígitos ("3"),
+    // que algumas versões da Evolution enviam. 2=servidor..5=reproduzido.
+    const num =
+      typeof raw === 'number'
+        ? raw
+        : typeof raw === 'string' && /^\d+$/.test(raw.trim())
+          ? parseInt(raw.trim(), 10)
+          : null;
+    if (num != null) {
+      if (num >= 5) return 'played';
+      if (num === 4) return 'read';
+      if (num === 3) return 'delivered';
+      if (num === 2) return 'sent';
+      return null;
+    }
+    const s = String(raw).toUpperCase();
+    if (s.includes('PLAYED')) return 'played';
+    if (s.includes('READ')) return 'read';
+    if (s.includes('DELIVERY') || s === 'DELIVERED') return 'delivered';
+    if (s.includes('SERVER') || s === 'SENT') return 'sent';
+    return null;
+  }
+
+  /**
+   * Grava o status no hash de ACK apenas quando é um AVANÇO (sent<delivered<read<
+   * played) — updates da Evolution podem chegar fora de ordem/concorrentes. O
+   * compare-and-set roda atômico no Redis (ACK_CAS_LUA). Retorna se avançou.
+   */
+  private async upsertAckStatus(
+    inst: string,
+    jid: string,
+    msgId: string,
+    status: 'sent' | 'delivered' | 'read' | 'played',
+  ): Promise<boolean> {
+    const hkey = RedisKeys.ackStatus(inst, jid);
+    const advanced = await this.redis.eval(
+      WebhookService.ACK_CAS_LUA,
+      1,
+      hkey,
+      msgId,
+      status,
+    );
+    return advanced === 1;
+  }
+
   /** Melhor nome de um contato da Evolution: agenda > verificado > público. */
   private pickContactName(c: Record<string, unknown>): string | null {
     for (const v of [c.name, c.verifiedName, c.pushName, c.notify]) {
-      if (typeof v === 'string' && v.trim()) return v.trim();
+      if (typeof v === 'string' && v.trim() && !PhoneMask.isMasked(v)) return v.trim();
     }
     return null;
   }
@@ -476,8 +725,11 @@ export class WebhookService {
       }
     }
     const merged: Record<string, unknown> = { ...parsed };
-    if (fields.name) merged.name = fields.name;
-    if (fields.pushName) merged.pushName = fields.pushName;
+    // Nunca persiste nome mascarado (contém `*`) — o painel exibiria a máscara.
+    if (fields.name && !PhoneMask.isMasked(fields.name)) merged.name = fields.name;
+    if (fields.pushName && !PhoneMask.isMasked(fields.pushName)) {
+      merged.pushName = fields.pushName;
+    }
     if (fields.profilePicUrl) merged.profilePicUrl = fields.profilePicUrl;
     await this.redis.set(key, JSON.stringify(merged));
   }
@@ -497,15 +749,43 @@ export class WebhookService {
    * do reencaminhamento ao N8N. `data` pode ser um objeto ou um array de eventos.
    * Retorna null quando o evento nao carrega uma mensagem (ex.: connection.update).
    */
-  private extractMsgId(payload: Record<string, unknown>): string | null {
+  /**
+   * Extrai o `key` da primeira mensagem do payload da Evolution. `data` pode ser
+   * um objeto único ou um array de eventos. Retorna null quando o evento nao
+   * carrega uma mensagem (ex.: connection.update).
+   */
+  private firstMessageKey(payload: Record<string, unknown>): Record<string, unknown> | null {
     const data = payload.data as
       | Record<string, unknown>
       | Record<string, unknown>[]
       | undefined;
     const first = Array.isArray(data) ? data[0] : data;
-    const key = (first as Record<string, unknown> | undefined)?.key as
-      | Record<string, unknown>
-      | undefined;
-    return typeof key?.id === 'string' ? key.id : null;
+    const key = (first as Record<string, unknown> | undefined)?.key;
+    return key && typeof key === 'object' ? (key as Record<string, unknown>) : null;
+  }
+
+  private extractMsgId(payload: Record<string, unknown>): string | null {
+    const id = this.firstMessageKey(payload)?.id;
+    return typeof id === 'string' ? id : null;
+  }
+
+  /**
+   * BFF-gate: true quando a conversa da mensagem recebida está com a IA
+   * desligada — nesse caso o BFF nao reencaminha o payload pro N8N. Resolve o
+   * mesmo JID canonico que o painel usa e checa `humanControlUntil` (canonica +
+   * cru @lid), idêntico ao `AiControlService.getState`.
+   */
+  private async isInboundAiOff(
+    instanceName: string,
+    payload: Record<string, unknown>,
+  ): Promise<boolean> {
+    const key = this.firstMessageKey(payload);
+    if (!key) return false;
+    const resolved = resolvePersonalJid(
+      key.remoteJid as string | undefined,
+      key.remoteJidAlt as string | undefined,
+    );
+    if (!resolved) return false;
+    return isAiOff(this.redis, instanceName, resolved.jid);
   }
 }

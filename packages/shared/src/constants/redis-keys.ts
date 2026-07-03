@@ -4,6 +4,13 @@ export const RedisKeys = {
   humanControlUntil: (inst: string, jid: string) =>
     `chat:${inst}:${jid}:humanControlUntil`,
 
+  // Mapa do JID canônico do painel (`{phone}@s.whatsapp.net`) -> `key.remoteJid`
+  // CRU que o N8N usa para indexar as chaves de conversa (hoje `{lid}@lid`). O
+  // webhook grava quando os dois divergem; o controle de IA escreve/checa em
+  // AMBOS para o painel e o fluxo N8N convergirem no mesmo humanControlUntil.
+  rawJid: (inst: string, jid: string) =>
+    `chat:${inst}:${jid}:rawjid`,
+
   paymentStatus: (inst: string, jid: string) =>
     `chat:${inst}:${jid}:paymentStatus`,
 
@@ -47,6 +54,19 @@ export const RedisKeys = {
   // não passaram pelo namespacing por tenant. Nunca escreve nela.
   contactGlobalLegacy: (phone: string) =>
     `contact:${phone}`,
+
+  // Cache da foto de perfil (BFF exclusivo): guarda JSON `{ url, ts }` resolvido via
+  // Evolution `fetchProfilePictureUrl`. `url === ''` marca "sem foto" (evita re-hit
+  // constante). O proxy `/conversations/:jid/avatar` revalida e faz stream dos bytes.
+  avatar: (inst: string, phone: string) =>
+    `avatar:${inst}:${phone}`,
+
+  // Hash de status de entrega/leitura das mensagens de SAÍDA (BFF exclusivo):
+  // messageId -> 'sent'|'delivered'|'read'|'played'. Alimentado pelo evento
+  // `messages.update` da Evolution; mesclado na leitura (getMessages). O N8N não
+  // conhece esta chave.
+  ackStatus: (inst: string, jid: string) =>
+    `chat:${inst}:${jid}:ack`,
 
   // ---- BFF exclusivo ----
 

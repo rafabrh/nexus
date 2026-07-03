@@ -13,6 +13,7 @@ import { useConversationStore } from '@/stores/conversation.store';
 import { usePresenceStore } from '@/stores/presence.store';
 import { staggerContainer, staggerItem } from '@/lib/motion-variants';
 import { stageColorToken } from '@/lib/stage-colors';
+import { stripFormatting } from '@/lib/rich-text';
 import type { ConversationListItem, AiState } from '@nexus/shared';
 
 const FILTERS = [
@@ -137,9 +138,10 @@ function ConversationItem({
         />
       )}
 
-      {/* Avatar — foto do WhatsApp com fallback nas iniciais */}
+      {/* Avatar — foto do WhatsApp via proxy autenticado (por jid), fallback nas iniciais */}
       <Avatar
         name={conversation.contactName}
+        jid={conversation.jid}
         url={conversation.avatarUrl}
         size={36}
         selected={selected}
@@ -203,7 +205,7 @@ function ConversationItem({
             ? presence === 'recording'
               ? 'gravando áudio…'
               : 'digitando…'
-            : conversation.lastMessagePreview}
+            : stripFormatting(conversation.lastMessagePreview)}
         </p>
 
         <div className="flex items-center gap-1.5 mt-1">

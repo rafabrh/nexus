@@ -29,6 +29,9 @@ import { AddTagRequestDto } from './dto/add-tag-request.dto';
 import { SendMessageRequestDto } from './dto/send-message-request.dto';
 import { UpdateStageRequestDto } from './dto/update-stage-request.dto';
 import { ToggleHotRequestDto } from './dto/toggle-hot-request.dto';
+import { SaveContactRequestDto } from './dto/save-contact-request.dto';
+import { SendMediaRequestDto } from './dto/send-media-request.dto';
+import { SendAudioRequestDto } from './dto/send-audio-request.dto';
 
 @Controller('conversations')
 @UseGuards(JwtAuthGuard)
@@ -119,7 +122,7 @@ export class ConversationController {
     @Param('jid') jid: string,
     @Body() dto: SendMessageRequestDto,
   ) {
-    return this.service.sendMessage(instancia, jid, dto.text);
+    return this.service.sendMessage(instancia, jid, dto.text, dto.quotedId);
   }
 
   @Post(':jid/stage')
@@ -176,5 +179,49 @@ export class ConversationController {
       .header('Content-Type', mimetype)
       .header('Cache-Control', 'private, max-age=3600')
       .send(buffer);
+  }
+
+  @Get(':jid/avatar')
+  @ApiOperation({ summary: 'Foto de perfil do contato via proxy (stream dos bytes)' })
+  async avatar(
+    @Tenant() instancia: string,
+    @Param('jid') jid: string,
+    @Res() reply: FastifyReply,
+  ): Promise<void> {
+    const { buffer, mimetype } = await this.service.getAvatar(instancia, jid);
+    void reply
+      .header('Content-Type', mimetype)
+      .header('Cache-Control', 'private, max-age=21600')
+      .send(buffer);
+  }
+
+  @Post(':jid/contact')
+  @ApiOperation({ summary: 'Salva/edita o nome do contato (sobrepoe o pushName)' })
+  async saveContact(
+    @Tenant() instancia: string,
+    @Param('jid') jid: string,
+    @Body() dto: SaveContactRequestDto,
+  ) {
+    return this.service.saveContactName(instancia, jid, dto.name);
+  }
+
+  @Post(':jid/send-media')
+  @ApiOperation({ summary: 'Envia midia (imagem/video/documento) via Evolution' })
+  async sendMedia(
+    @Tenant() instancia: string,
+    @Param('jid') jid: string,
+    @Body() dto: SendMediaRequestDto,
+  ) {
+    return this.service.sendMediaMessage(instancia, jid, dto);
+  }
+
+  @Post(':jid/audio')
+  @ApiOperation({ summary: 'Envia nota de voz (áudio) gravada no painel via Evolution' })
+  async sendAudio(
+    @Tenant() instancia: string,
+    @Param('jid') jid: string,
+    @Body() dto: SendAudioRequestDto,
+  ) {
+    return this.service.sendAudioMessage(instancia, jid, dto.audio, dto.mimetype);
   }
 }

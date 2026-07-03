@@ -182,3 +182,22 @@ export function useMarkRead() {
     },
   });
 }
+
+/**
+ * Salva/edita o nome do contato (sobrepõe o pushName). Nome vazio remove a
+ * sobreposição. Refaz a lista e o detalhe pra o novo nome aparecer.
+ */
+export function useSaveContact(jid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) =>
+      api(`/api/v1/conversations/${encodeURIComponent(jid)}/contact`, {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['conversation-detail', jid] });
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+}

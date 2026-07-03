@@ -92,8 +92,13 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
       {/* Left — contact info. Lifted above the header's specular sheen so the
           reflection sits behind the content, not over the text. */}
       <div className="relative z-10 flex items-center gap-3">
-        {/* Avatar 34px — foto do WhatsApp com fallback nas iniciais */}
-        <Avatar name={conversation.contactName} url={conversation.avatarUrl} size={34} />
+        {/* Avatar 34px — foto do WhatsApp via proxy autenticado (por jid), fallback nas iniciais */}
+        <Avatar
+          name={conversation.contactName}
+          jid={conversation.jid}
+          url={conversation.avatarUrl}
+          size={34}
+        />
 
         <div>
           <div className="flex items-center gap-1.5">

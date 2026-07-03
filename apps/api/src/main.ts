@@ -22,7 +22,16 @@ import { resolveTrustProxy } from './core/config/trust-proxy';
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({ logger: false, trustProxy: resolveTrustProxy() }),
+    new FastifyAdapter({
+      logger: false,
+      trustProxy: resolveTrustProxy(),
+      // Envios de mídia/áudio trafegam base64 no corpo JSON (nota de voz, imagem,
+      // vídeo, documento). O default do Fastify (1 MiB) rejeitaria com 413 ANTES da
+      // validação do DTO — quebrando notas de voz de poucos segundos. Elevamos para
+      // acomodar o teto do SendAudioRequestDto (~20 MB base64) + envelope JSON; o
+      // MaxLength do DTO continua sendo a fronteira que devolve 400 limpo.
+      bodyLimit: 25 * 1024 * 1024,
+    }),
     { bufferLogs: true },
   );
 

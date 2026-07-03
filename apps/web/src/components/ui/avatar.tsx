@@ -1,9 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { apiBlob } from '@/lib/api';
+import { useInView } from '@/hooks/use-in-view';
 
 interface AvatarProps {
   name: string;
+  /**
+   * JID do contato. Caminho robusto da foto: baixa os bytes do proxy autenticado
+   * (`/conversations/:jid/avatar`) via `apiBlob` → object URL. Um `<img src>` cru
+   * não serve (não envia o Bearer). 404/erro → cai no `url` (se houver) e, por fim,
+   * nas iniciais.
+   */
+  jid?: string;
+  /** Fallback opcional: URL de foto já exposta pela API (CDN do WhatsApp). */
   url?: string | null;
   size?: number;
   /** Numa linha selecionada (fundo accent) o avatar clareia para contrastar. */
@@ -11,24 +21,58 @@ interface AvatarProps {
 }
 
 /**
- * Avatar de contato com tratamento liquid-glass: mostra a foto do WhatsApp quando
- * há `profilePicUrl`, com fallback gracioso nas iniciais. Um sheen especular no
- * topo, ring fino e sombra macOS dão profundidade tanto sobre a foto quanto sobre
- * as iniciais. Se a imagem falhar (URL do CDN do WhatsApp expira), cai nas
- * iniciais via `onError`.
+ * Avatar de contato com tratamento liquid-glass: mostra a foto do WhatsApp com
+ * fallback gracioso nas iniciais. Um sheen especular no topo, ring fino e sombra
+ * macOS dão profundidade tanto sobre a foto quanto sobre as iniciais.
+ *
+ * A foto é buscada com autenticação pelo proxy do BFF a partir do `jid` (o Bearer
+ * é obrigatório) e só quando o avatar entra em tela (`useInView`), para não disparar
+ * centenas de requisições de uma vez na lista de conversas. O object URL é revogado
+ * no cleanup.
  */
-export function Avatar({ name, url, size = 36, selected = false }: AvatarProps) {
-  const [failed, setFailed] = useState(false);
+export function Avatar({ name, jid, url, size = 36, selected = false }: AvatarProps) {
+  const { ref, inView } = useInView<HTMLDivElement>();
+  const [objUrl, setObjUrl] = useState<string | null>(null);
+  const [proxyFailed, setProxyFailed] = useState(false);
+  const [urlFailed, setUrlFailed] = useState(false);
+
   const initials = name
     .split(' ')
     .map((w) => w[0])
     .slice(0, 2)
     .join('')
     .toUpperCase();
-  const showImg = Boolean(url) && !failed;
+
+  // Foto via proxy autenticado (por jid). Só dispara quando visível.
+  useEffect(() => {
+    if (!jid || !inView) return;
+    let active = true;
+    let created: string | null = null;
+    setProxyFailed(false);
+    apiBlob(`/api/v1/conversations/${encodeURIComponent(jid)}/avatar`)
+      .then((blob) => {
+        if (!active) return;
+        created = URL.createObjectURL(blob);
+        setObjUrl(created);
+      })
+      .catch(() => {
+        // 404 (sem foto) ou erro → tenta o fallback `url`, senão iniciais.
+        if (active) setProxyFailed(true);
+      });
+    return () => {
+      active = false;
+      if (created) URL.revokeObjectURL(created);
+      setObjUrl(null);
+    };
+  }, [jid, inView]);
+
+  // Fonte efetiva: blob do proxy > url de fallback (se o proxy falhou) > iniciais.
+  const src = objUrl ?? (proxyFailed && url && !urlFailed ? url : null);
+  const showImg = Boolean(src);
 
   return (
     <div
+      ref={ref}
       className="relative rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden"
       style={{
         width: size,
@@ -44,13 +88,14 @@ export function Avatar({ name, url, size = 36, selected = false }: AvatarProps) 
       {showImg ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={url as string}
+          src={src as string}
           alt={name}
           width={size}
           height={size}
           className="w-full h-full object-cover"
           referrerPolicy="no-referrer"
-          onError={() => setFailed(true)}
+          // Só o fallback `url` pode falhar por CDN expirado; o blob local não.
+          onError={() => setUrlFailed(true)}
         />
       ) : (
         <span className="relative z-[1] select-none">{initials}</span>

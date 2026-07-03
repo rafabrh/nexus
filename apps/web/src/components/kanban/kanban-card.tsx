@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Flame } from 'lucide-react';
 import { timeAgo } from '@/lib/utils';
 import { stageColorToken } from '@/lib/stage-colors';
+import { stripFormatting } from '@/lib/rich-text';
 import type { ConversationListItem } from '@nexus/shared';
 
 interface KanbanCardProps {
@@ -83,7 +84,7 @@ export function KanbanCard({ conv, onDragStart }: KanbanCardProps) {
       {/* Last message preview */}
       {conv.lastMessagePreview && (
         <p className="text-xs text-text-secondary leading-relaxed line-clamp-2 mb-2">
-          {conv.lastMessagePreview}
+          {stripFormatting(conv.lastMessagePreview)}
         </p>
       )}
 

@@ -11,6 +11,9 @@ function makeDeps(tenantGet: () => Promise<unknown>) {
     del: vi.fn(async () => 1),
     lrange: vi.fn(async () => []),
     incr: vi.fn(async () => 1),
+    // CAS atômico do ACK (ACK_CAS_LUA): 1 = avançou. Testes que precisam simular
+    // "não avançou" (fora de ordem) sobrescrevem para retornar 0.
+    eval: vi.fn(async () => 1),
   } as any;
   const publisher = { publish: vi.fn(async () => undefined) } as any;
   const index = { addJid: vi.fn(async () => undefined) } as any;
@@ -91,6 +94,44 @@ describe('WebhookService is the hub (forward + realtime)', () => {
   });
 });
 
+describe('WebhookService BFF-gate do controle de IA', () => {
+  it('does NOT forward an inbound message to N8N when the AI is OFF for the conversation', async () => {
+    const d = makeDeps(knownTenant({ n8nWebhookUrl: 'https://n8n/w/shk' }));
+    // Conversa com a IA desligada: humanControlUntil no futuro (OFF permanente).
+    d.redis.get = vi.fn(async (key: string) =>
+      String(key).endsWith(':humanControlUntil') ? '4102444800000' : null,
+    );
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(msgUpsert({ id: 'M9' }));
+
+    // Barrado na origem — o N8N nem recebe a mensagem, então nao responde.
+    expect(d.forwarder.forward).not.toHaveBeenCalled();
+    // Mas o painel continua registrando tudo (historico + realtime).
+    expect(d.redis.rpush).toHaveBeenCalled();
+    expect(d.publisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'message.received', instancia: 'shk' }),
+    );
+  });
+
+  it('still forwards to N8N when the AI-OFF pause has already expired', async () => {
+    const d = makeDeps(knownTenant({ n8nWebhookUrl: 'https://n8n/w/shk' }));
+    d.redis.get = vi.fn(async (key: string) =>
+      String(key).endsWith(':humanControlUntil') ? String(Date.now() - 1000) : null,
+    );
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(msgUpsert({ id: 'M9' }));
+
+    expect(d.forwarder.forward).toHaveBeenCalledWith(
+      'shk',
+      'https://n8n/w/shk',
+      'M9',
+      expect.any(Object),
+    );
+  });
+});
+
 describe('WebhookService handles send.message (AI reply via API)', () => {
   it('persists + publishes the AI reply but does NOT forward it back to N8N', async () => {
     const d = makeDeps(knownTenant({ n8nWebhookUrl: 'https://n8n/w/shk' }));
@@ -112,6 +153,77 @@ describe('WebhookService handles send.message (AI reply via API)', () => {
     );
     // ...mas NAO volta pro N8N (evita a IA reprocessar a propria resposta).
     expect(d.forwarder.forward).not.toHaveBeenCalled();
+  });
+});
+
+describe('WebhookService deduplica o eco do proprio envio', () => {
+  const sendEcho = (key: Record<string, unknown>, message: Record<string, unknown>) => ({
+    event: 'send.message',
+    instance: 'shk',
+    data: { key: { remoteJid: '5511999@s.whatsapp.net', fromMe: true, ...key }, message },
+  });
+
+  it('NAO regrava uma mensagem de saida cujo WAMID ja esta no historico (eco)', async () => {
+    const d = makeDeps(knownTenant());
+    // Envio ja persistido (pelo painel ou por um eco anterior): id 'AI1' presente.
+    d.redis.lrange = vi.fn(async () => [
+      JSON.stringify({ type: 'ai', data: { content: 'resposta da IA' }, id: 'AI1' }),
+    ]);
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(sendEcho({ id: 'AI1' }, { conversation: 'resposta da IA' }));
+
+    // Eco: nao duplica no historico...
+    expect(d.redis.rpush).not.toHaveBeenCalled();
+    // ...mas o realtime/indice seguem (idempotentes).
+    expect(d.publisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'message.received', instancia: 'shk' }),
+    );
+  });
+
+  it('grava a mensagem de saida quando o WAMID ainda nao esta no historico (envio novo)', async () => {
+    const d = makeDeps(knownTenant());
+    d.redis.lrange = vi.fn(async () => [
+      JSON.stringify({ type: 'human', data: { content: 'oi' }, id: 'X1' }),
+    ]);
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(sendEcho({ id: 'AI2' }, { conversation: 'nova resposta' }));
+
+    expect(d.redis.rpush).toHaveBeenCalled();
+  });
+
+  it('deduplica midia de saida pelo media.id (o painel guarda o WAMID em media.id)', async () => {
+    const d = makeDeps(knownTenant());
+    // Painel gravou a imagem com o WAMID so em media.id (sem id no topo).
+    d.redis.lrange = vi.fn(async () => [
+      JSON.stringify({
+        type: 'ai',
+        data: { content: '' },
+        media: { kind: 'image', id: 'IMG1', fromMe: true },
+      }),
+    ]);
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(
+      sendEcho({ id: 'IMG1' }, { imageMessage: { caption: 'foto', mimetype: 'image/jpeg' } }),
+    );
+
+    // O eco da imagem casa com o media.id gravado pelo painel → nao duplica.
+    expect(d.redis.rpush).not.toHaveBeenCalled();
+  });
+
+  it('grava normalmente a mensagem RECEBIDA do cliente (fromMe=false nao entra no dedup)', async () => {
+    const d = makeDeps(knownTenant());
+    // Mesmo que o historico tenha algo, uma msg do cliente sempre grava.
+    d.redis.lrange = vi.fn(async () => [
+      JSON.stringify({ type: 'human', data: { content: 'oi' }, id: 'C1' }),
+    ]);
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(msgUpsert({ id: 'C2' }));
+
+    expect(d.redis.rpush).toHaveBeenCalled();
   });
 });
 
@@ -166,5 +278,68 @@ describe('WebhookService presence.update (typing/online)', () => {
     );
     // Presença é sinal de UI — nunca vai pro N8N (evita flood).
     expect(d.forwarder.forward).not.toHaveBeenCalled();
+  });
+});
+
+describe('WebhookService messages.update (read receipts / ACK)', () => {
+  const ackUpdate = (
+    status: unknown,
+    keyExtra: Record<string, unknown> = { id: 'AI1', fromMe: true },
+  ) => ({
+    event: 'messages.update',
+    instance: 'shk',
+    data: { key: { remoteJid: '5511999@s.whatsapp.net', ...keyExtra }, status },
+  });
+
+  it('publishes message.status for OUR message and never forwards ACK to N8N', async () => {
+    const d = makeDeps(knownTenant({ n8nWebhookUrl: 'https://n8n/w/shk' }));
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(ackUpdate('READ'));
+
+    expect(d.publisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'message.status',
+        instancia: 'shk',
+        jid: '5511999@s.whatsapp.net',
+        payload: { id: 'AI1', status: 'read' },
+      }),
+      // Tique não é persistido no stream de replay (alto volume).
+      { persistToStream: false },
+    );
+    // ACK é alto volume/sinal de UI — nunca reencaminha pro N8N.
+    expect(d.forwarder.forward).not.toHaveBeenCalled();
+  });
+
+  it('maps the numeric WAMessageStatus (3 = delivered)', async () => {
+    const d = makeDeps(knownTenant());
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(ackUpdate(3));
+
+    expect(d.publisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: { id: 'AI1', status: 'delivered' } }),
+      { persistToStream: false },
+    );
+  });
+
+  it('ignores the ACK of inbound (fromMe=false) messages', async () => {
+    const d = makeDeps(knownTenant());
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(ackUpdate('READ', { id: 'X', fromMe: false }));
+
+    expect(d.redis.eval).not.toHaveBeenCalled();
+    expect(d.publisher.publish).not.toHaveBeenCalled();
+  });
+
+  it('does NOT publish when the CAS did not advance (out-of-order/duplicate ACK)', async () => {
+    const d = makeDeps(knownTenant());
+    d.redis.eval = vi.fn(async () => 0); // Lua: novo status <= atual, não gravou
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(ackUpdate('DELIVERY_ACK'));
+
+    expect(d.publisher.publish).not.toHaveBeenCalled();
   });
 });
