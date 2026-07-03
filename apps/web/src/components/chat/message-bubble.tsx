@@ -3,7 +3,16 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { cn, formatTime } from '@/lib/utils';
-import { FileText, Headphones, ImageIcon, CornerUpLeft, Video } from 'lucide-react';
+import {
+  FileText,
+  Headphones,
+  ImageIcon,
+  CornerUpLeft,
+  Video,
+  Check,
+  CheckCheck,
+  Clock,
+} from 'lucide-react';
 import { messageIncoming, messageOutgoing } from '@/lib/motion-variants';
 import { apiBlob } from '@/lib/api';
 import { useConversationStore } from '@/stores/conversation.store';
@@ -137,7 +146,10 @@ function QuotedBlock({
   const barColor = outgoing ? 'rgba(255,255,255,0.85)' : 'var(--accent-500)';
   const bg = outgoing
     ? 'rgba(255,255,255,0.16)'
-    : 'color-mix(in srgb, var(--accent-500) 10%, transparent)';
+    : 'color-mix(in srgb, var(--accent-500) 14%, var(--bg-hover))';
+  const border = outgoing
+    ? undefined
+    : '1px solid color-mix(in srgb, var(--accent-500) 24%, transparent)';
   const labelColor = outgoing ? '#ffffff' : 'var(--accent-500)';
   const previewColor = outgoing ? 'rgba(255,255,255,0.78)' : 'var(--text-secondary)';
 
@@ -147,7 +159,7 @@ function QuotedBlock({
       onClick={onClick}
       aria-label="Ir para a mensagem citada"
       className="w-full text-left mb-1 rounded-md overflow-hidden flex items-stretch gap-2 transition-opacity duration-150 hover:opacity-90"
-      style={{ background: bg }}
+      style={{ background: bg, border }}
     >
       <span aria-hidden style={{ width: 3, background: barColor, flexShrink: 0 }} />
       <span className="min-w-0 block py-1 pr-2">
@@ -187,6 +199,25 @@ function ReplyButton({ onClick }: { onClick: () => void }) {
   );
 }
 
+/**
+ * Tiques de confirmação da mensagem de SAÍDA, estilo WhatsApp, sobre a bolha accent:
+ * relógio (enviando) → ✓ (enviado) → ✓✓ translúcido (entregue) → ✓✓ branco forte
+ * (lido/reproduzido). Sem status → nada (ainda sem ACK).
+ */
+function MessageStatus({ status }: { status?: Message['status'] }) {
+  if (!status) return null;
+  if (status === 'pending') return <Clock size={12} className="text-white/45" />;
+  if (status === 'sent') return <Check size={12} className="text-white/55" />;
+  const read = status === 'read' || status === 'played';
+  return (
+    <CheckCheck
+      size={12}
+      className={read ? '' : 'text-white/70'}
+      style={read ? { color: '#ffffff' } : undefined}
+    />
+  );
+}
+
 export function MessageBubble({ message, jid, onJumpTo, highlighted = false }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const isImage = message.mediaType === 'image' && !!message.mediaId;
@@ -208,7 +239,7 @@ export function MessageBubble({ message, jid, onJumpTo, highlighted = false }: M
     <motion.div
       data-msg-id={message.id}
       className={cn(
-        'group flex mb-2 items-center gap-1',
+        'group flex mb-2 items-center gap-2',
         isUser ? 'justify-start' : 'justify-end',
       )}
       variants={isUser ? messageIncoming : messageOutgoing}
@@ -226,9 +257,11 @@ export function MessageBubble({ message, jid, onJumpTo, highlighted = false }: M
             : 'bg-accent-500 text-white rounded-[16px_4px_16px_16px]',
         )}
         style={{
-          transition: 'box-shadow 0.35s var(--ease-out)',
+          transition: 'box-shadow 0.25s var(--ease-out)',
           boxShadow: highlighted
-            ? '0 0 0 2px var(--accent-500), 0 0 16px color-mix(in srgb, var(--accent-500) 45%, transparent)'
+            ? !isUser
+              ? '0 0 0 2px rgba(255,255,255,0.65), 0 0 20px color-mix(in srgb, var(--accent-500) 55%, transparent)'
+              : '0 0 0 2px var(--accent-500), 0 0 12px color-mix(in srgb, var(--accent-500) 40%, transparent)'
             : undefined,
         }}
       >
@@ -259,14 +292,24 @@ export function MessageBubble({ message, jid, onJumpTo, highlighted = false }: M
           </p>
         )}
 
-        {message.ts && (
+        {(message.ts || (!isUser && message.status)) && (
           <div
             className={cn(
-              'text-[10px] mt-1',
-              isUser ? 'text-text-muted' : 'text-white/60',
+              'flex items-center gap-1 mt-1',
+              isUser ? 'justify-start' : 'justify-end',
             )}
           >
-            {formatTime(message.ts)}
+            {message.ts && (
+              <span
+                className={cn(
+                  'text-[10px]',
+                  isUser ? 'text-text-muted' : 'text-white/60',
+                )}
+              >
+                {formatTime(message.ts)}
+              </span>
+            )}
+            {!isUser && <MessageStatus status={message.status} />}
           </div>
         )}
       </div>

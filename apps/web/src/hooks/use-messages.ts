@@ -78,3 +78,23 @@ export function useSendMedia(jid: string) {
     },
   });
 }
+
+export interface SendAudioPayload {
+  audio: string; // base64 sem o prefixo data:
+  mimetype?: string;
+}
+
+export function useSendAudio(jid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: SendAudioPayload) =>
+      api(`/api/v1/conversations/${encodeURIComponent(jid)}/audio`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['messages', jid] });
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+}

@@ -31,6 +31,7 @@ import { UpdateStageRequestDto } from './dto/update-stage-request.dto';
 import { ToggleHotRequestDto } from './dto/toggle-hot-request.dto';
 import { SaveContactRequestDto } from './dto/save-contact-request.dto';
 import { SendMediaRequestDto } from './dto/send-media-request.dto';
+import { SendAudioRequestDto } from './dto/send-audio-request.dto';
 
 @Controller('conversations')
 @UseGuards(JwtAuthGuard)
@@ -212,5 +213,15 @@ export class ConversationController {
     @Body() dto: SendMediaRequestDto,
   ) {
     return this.service.sendMediaMessage(instancia, jid, dto);
+  }
+
+  @Post(':jid/audio')
+  @ApiOperation({ summary: 'Envia nota de voz (áudio) gravada no painel via Evolution' })
+  async sendAudio(
+    @Tenant() instancia: string,
+    @Param('jid') jid: string,
+    @Body() dto: SendAudioRequestDto,
+  ) {
+    return this.service.sendAudioMessage(instancia, jid, dto.audio, dto.mimetype);
   }
 }

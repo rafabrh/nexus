@@ -1,5 +1,6 @@
 export type NexusEventType =
   | 'message.received'
+  | 'message.status'
   | 'ai.thinking'
   | 'ai.responded'
   | 'ai.toggled'

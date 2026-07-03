@@ -2,10 +2,11 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Zap, AlertTriangle, Paperclip, X } from 'lucide-react';
+import { Send, Zap, AlertTriangle, Paperclip, X, Mic, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useSendMessage, useSendMedia } from '@/hooks/use-messages';
+import { useSendMessage, useSendMedia, useSendAudio } from '@/hooks/use-messages';
 import { useQuickReplies } from '@/hooks/use-quick-replies';
+import { useVoiceRecorder } from '@/hooks/use-voice-recorder';
 import { useConversationStore } from '@/stores/conversation.store';
 import { notify } from '@/lib/notify';
 import { EmojiPickerButton } from './emoji-picker';
@@ -28,6 +29,25 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
   const clearReplyingTo = useConversationStore((s) => s.clearReplyingTo);
   const fileRef = useRef<HTMLInputElement>(null);
   const sendMedia = useSendMedia(jid);
+  const sendAudio = useSendAudio(jid);
+  const recorder = useVoiceRecorder();
+
+  const startRecording = async () => {
+    const ok = await recorder.start();
+    if (!ok) notify.error('Não foi possível acessar o microfone');
+  };
+
+  const sendRecording = async () => {
+    const rec = await recorder.stop();
+    if (!rec) return;
+    sendAudio.mutate(
+      { audio: rec.base64, mimetype: rec.mimetype },
+      {
+        onSuccess: () => notify.success('Áudio enviado'),
+        onError: () => notify.error('Erro ao enviar áudio'),
+      },
+    );
+  };
   // Última posição do cursor no textarea — para inserir emoji no lugar certo
   // mesmo quando o foco está no popover do picker.
   const caretRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
@@ -269,8 +289,63 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
         )}
       </AnimatePresence>
 
+      {/* Barra de gravação de voz — substitui o composer enquanto grava. */}
+      <AnimatePresence initial={false}>
+        {recorder.isRecording && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            style={{ overflow: 'hidden' }}
+          >
+            <div className="flex items-center gap-3 p-3">
+          <button
+            type="button"
+            onClick={recorder.cancel}
+            aria-label="Cancelar gravação"
+            title="Cancelar"
+            className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-colors duration-150 focus-ring hover:[background:color-mix(in_srgb,var(--error)_12%,transparent)]"
+            style={{ color: 'var(--error)' }}
+          >
+            <Trash2 size={17} />
+          </button>
+          <div className="flex-1 flex items-center gap-2 min-w-0">
+            <span
+              className="rounded-full flex-shrink-0"
+              style={{
+                width: 10,
+                height: 10,
+                background: 'var(--error)',
+                animation: 'recording-pulse 1.4s ease-in-out infinite',
+              }}
+            />
+            <span className="text-sm tabular-nums" style={{ color: 'var(--text-secondary)' }}>
+              {Math.floor(recorder.seconds / 60)}:
+              {String(recorder.seconds % 60).padStart(2, '0')}
+            </span>
+            <span className="text-sm truncate" style={{ color: 'var(--text-muted)' }}>
+              Gravando…
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={sendRecording}
+            disabled={sendAudio.isPending}
+            aria-label="Enviar áudio"
+            title="Enviar"
+            className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-white disabled:opacity-50 transition-transform duration-150 active:scale-95 focus-ring"
+            style={{ background: 'var(--accent-500)' }}
+          >
+            <Send size={16} />
+          </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Input area */}
-      <div className="flex items-end gap-2 p-3">
+      <div className={cn('flex items-end gap-2 p-3', recorder.isRecording && 'hidden')}>
         {/* Quick replies toggle */}
         <button
           onClick={() => setShowQuickReplies(!showQuickReplies)}
@@ -357,7 +432,7 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
               key="active"
               onClick={handleSend}
               disabled={sendMessage.isPending}
-              className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-white rounded-lg"
+              className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-white rounded-lg focus-ring disabled:opacity-50"
               style={{
                 background: 'var(--accent-500)',
               }}
@@ -374,15 +449,19 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
             </motion.button>
           ) : (
             <motion.button
-              key="inactive"
-              disabled
-              className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-text-muted rounded-lg bg-bg-elevated"
+              key="mic"
+              onClick={startRecording}
+              className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-text-muted hover:text-text-secondary hover:bg-bg-hover rounded-lg transition-colors duration-150 focus-ring"
+              aria-label="Gravar áudio"
+              title="Gravar nota de voz"
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+              whileHover={{ scale: 1.06 }}
+              whileTap={{ scale: 0.93 }}
             >
-              <Send size={16} />
+              <Mic size={16} />
             </motion.button>
           )}
         </AnimatePresence>

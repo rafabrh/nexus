@@ -569,4 +569,39 @@ export class ConversationService {
     this.logger.log(`Media sent + persisted for ${instancia}/${jid} (${opts.mediatype})`);
     return { message: 'Mídia enviada' };
   }
+
+  /**
+   * Envia uma nota de voz gravada no painel via Evolution e grava a referência no
+   * histórico (o áudio é servido pelo proxy `getMedia`, igual às demais mídias).
+   * Envio do operador = human takeover: pausa a IA por 30min, como texto/mídia.
+   */
+  async sendAudioMessage(
+    instancia: string,
+    jid: string,
+    audio: string,
+    mimetype?: string,
+  ): Promise<{ message: string }> {
+    const res = await this.evolution.sendWhatsAppAudio(instancia, jid, audio);
+
+    const key = (res?.key ?? {}) as Record<string, unknown>;
+    const msgId = typeof key.id === 'string' ? key.id : null;
+    const phone = jid.replace('@s.whatsapp.net', '');
+    const histKey = RedisKeys.chatHistory(instancia, phone);
+    const entry = JSON.stringify({
+      type: 'ai',
+      data: { content: '', timestamp: Date.now() },
+      ...(msgId ? { id: msgId } : {}),
+      ...(msgId
+        ? { media: { kind: 'audio', id: msgId, fromMe: true, mimetype: mimetype ?? null } }
+        : {}),
+    });
+    await this.redis.rpush(histKey, entry);
+
+    await this.pauseAiForHumanTakeover(instancia, jid, 30 * 60 * 1000);
+    await this.index.addJid(instancia, jid);
+    await this.projection.project(instancia, jid);
+
+    this.logger.log(`Audio sent + persisted for ${instancia}/${jid}`);
+    return { message: 'Áudio enviado' };
+  }
 }

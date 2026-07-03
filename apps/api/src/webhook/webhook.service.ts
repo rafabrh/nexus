@@ -53,9 +53,14 @@ export class WebhookService {
     // permanece no fluxo N8N do cliente. EXCECAO: `send.message` e a mensagem que a
     // PROPRIA IA enviou (via Evolution API) — o N8N nao precisa dela e reencaminhar
     // arriscaria loop; o BFF so a grava/publica para a resposta aparecer no painel.
-    // `presence.update` (digitando/online) é efêmero e de alto volume — sinal de
-    // UI, não de fluxo; nunca reencaminha pro N8N (evita flood).
-    if (event !== 'send.message' && event !== 'presence.update') {
+    // `presence.update` (digitando/online) e `messages.update` (ACK de entregue/
+    // lido) são efêmeros e de alto volume — sinal de UI, não de fluxo; nunca
+    // reencaminham pro N8N (evita flood).
+    if (
+      event !== 'send.message' &&
+      event !== 'presence.update' &&
+      event !== 'messages.update'
+    ) {
       // BFF-gate do controle de IA: quando a conversa está com a IA desligada, o
       // BFF NÃO reencaminha a mensagem pro N8N — o desligamento é enforçado aqui,
       // na origem. O gate interno do fluxo N8N se provou inconfiável (lê o
@@ -96,6 +101,9 @@ export class WebhookService {
         break;
       case 'presence.update':
         await this.handlePresenceUpdate(instanceName, payload);
+        break;
+      case 'messages.update':
+        await this.handleMessageUpdate(instanceName, payload);
         break;
       default:
         this.logger.debug(`webhook.unhandled event=${event} instance=${instanceName}`);
@@ -521,6 +529,129 @@ export class WebhookService {
       ts: Date.now(),
       payload: { presence },
     });
+  }
+
+  /**
+   * `messages.update` = mudança de ACK (entregue/lido/reproduzido) de uma mensagem
+   * já enviada. Só interessa o status das mensagens de SAÍDA (fromMe): grava no
+   * hash lateral de ACK e publica `message.status` para o painel pintar os tiques
+   * ao vivo. Nunca reencaminhado ao N8N (alto volume, sinal de UI).
+   */
+  private async handleMessageUpdate(
+    instanceName: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const dataObj = payload.data;
+    const items = Array.isArray(dataObj) ? dataObj : dataObj ? [dataObj] : [];
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue;
+      const data = item as Record<string, unknown>;
+      const key = data.key as Record<string, unknown> | undefined;
+      if (!key || key.fromMe !== true) continue; // só o ACK das NOSSAS mensagens
+      const msgId = typeof key.id === 'string' ? key.id : null;
+      if (!msgId) continue;
+
+      const status = this.mapAckStatus(data);
+      if (!status) continue;
+
+      const resolved = resolvePersonalJid(
+        key.remoteJid as string | undefined,
+        key.remoteJidAlt as string | undefined,
+      );
+      if (!resolved) continue;
+      const { jid } = resolved;
+
+      const advanced = await this.upsertAckStatus(instanceName, jid, msgId, status);
+      if (!advanced) continue; // update fora de ordem não rebaixa o status
+
+      // Tique é sinal de UI de alto volume: entrega ao vivo, mas NÃO persiste no
+      // stream de replay (a janela é finita; o estado real vive no hash de ACK).
+      await this.publisher.publish(
+        {
+          type: 'message.status',
+          instancia: instanceName,
+          jid,
+          ts: Date.now(),
+          payload: { id: msgId, status },
+        },
+        { persistToStream: false },
+      );
+    }
+  }
+
+  /**
+   * CAS atômico do status de ACK (read-compare-write num único passo no Redis). Só
+   * grava quando o novo status é um AVANÇO no ranking (sent<delivered<read<played);
+   * o ranking vive dentro do script para não haver janela entre HGET e HSET. Sem
+   * isto, dois `messages.update` concorrentes do mesmo msgId poderiam intercalar e
+   * REBAIXAR o status (ex.: `read` sobrescrito por um `delivered` atrasado).
+   * Retorna 1 se avançou, 0 caso contrário.
+   */
+  private static readonly ACK_CAS_LUA = `
+local ranks = { sent = 1, delivered = 2, read = 3, played = 4 }
+local cur = redis.call('HGET', KEYS[1], ARGV[1])
+local curRank = 0
+if cur and ranks[cur] then curRank = ranks[cur] end
+local newRank = ranks[ARGV[2]] or 0
+if newRank <= curRank then return 0 end
+redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+return 1
+`;
+
+  /**
+   * Mapeia o status de ACK da Evolution/Baileys (numérico WAMessageStatus ou string)
+   * para o enum do painel. 2=servidor, 3=entregue, 4=lido, 5=reproduzido.
+   */
+  private mapAckStatus(
+    data: Record<string, unknown>,
+  ): 'sent' | 'delivered' | 'read' | 'played' | null {
+    const raw =
+      (data.status as unknown) ??
+      ((data.update as Record<string, unknown> | undefined)?.status as unknown);
+    if (raw == null) return null;
+    // Numérico do WAMessageStatus — direto (number) ou como string de dígitos ("3"),
+    // que algumas versões da Evolution enviam. 2=servidor..5=reproduzido.
+    const num =
+      typeof raw === 'number'
+        ? raw
+        : typeof raw === 'string' && /^\d+$/.test(raw.trim())
+          ? parseInt(raw.trim(), 10)
+          : null;
+    if (num != null) {
+      if (num >= 5) return 'played';
+      if (num === 4) return 'read';
+      if (num === 3) return 'delivered';
+      if (num === 2) return 'sent';
+      return null;
+    }
+    const s = String(raw).toUpperCase();
+    if (s.includes('PLAYED')) return 'played';
+    if (s.includes('READ')) return 'read';
+    if (s.includes('DELIVERY') || s === 'DELIVERED') return 'delivered';
+    if (s.includes('SERVER') || s === 'SENT') return 'sent';
+    return null;
+  }
+
+  /**
+   * Grava o status no hash de ACK apenas quando é um AVANÇO (sent<delivered<read<
+   * played) — updates da Evolution podem chegar fora de ordem/concorrentes. O
+   * compare-and-set roda atômico no Redis (ACK_CAS_LUA). Retorna se avançou.
+   */
+  private async upsertAckStatus(
+    inst: string,
+    jid: string,
+    msgId: string,
+    status: 'sent' | 'delivered' | 'read' | 'played',
+  ): Promise<boolean> {
+    const hkey = RedisKeys.ackStatus(inst, jid);
+    const advanced = await this.redis.eval(
+      WebhookService.ACK_CAS_LUA,
+      1,
+      hkey,
+      msgId,
+      status,
+    );
+    return advanced === 1;
   }
 
   /** Melhor nome de um contato da Evolution: agenda > verificado > público. */

@@ -61,6 +61,13 @@ export const RedisKeys = {
   avatar: (inst: string, phone: string) =>
     `avatar:${inst}:${phone}`,
 
+  // Hash de status de entrega/leitura das mensagens de SAÍDA (BFF exclusivo):
+  // messageId -> 'sent'|'delivered'|'read'|'played'. Alimentado pelo evento
+  // `messages.update` da Evolution; mesclado na leitura (getMessages). O N8N não
+  // conhece esta chave.
+  ackStatus: (inst: string, jid: string) =>
+    `chat:${inst}:${jid}:ack`,
+
   // ---- BFF exclusivo ----
 
   eventStream: (inst: string) =>

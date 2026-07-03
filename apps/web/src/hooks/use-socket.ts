@@ -15,6 +15,7 @@ import {
   type ConversationListItem,
   type FunnelStageKey,
   type AiState,
+  type Message,
 } from '@nexus/shared';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
@@ -77,6 +78,8 @@ const EVENT_TO_QUERY_KEYS: Record<NexusEventType, string[][]> = {
   // nexus-event handler); no query invalidation by this map.
   'presence.update': [],
   'connection.update': [],
+  // Status (tiques) da mensagem — patch cirúrgico à parte (early return), sem refetch.
+  'message.status': [],
 };
 
 // Patch the matching lead card in the ['leads'] cache to its new stage.
@@ -133,6 +136,14 @@ function patchConversationAi(
     });
   });
   return matched;
+}
+
+// Patch o status (tiques) de UMA mensagem no cache ['messages', jid] — sem refetch.
+function patchMessageStatus(jid: string, id: string, status: Message['status']): void {
+  queryClient.setQueryData<Message[]>(['messages', jid], (old) => {
+    if (!old) return old;
+    return old.map((m) => (m.id === id ? { ...m, status } : m));
+  });
 }
 
 export function useSocket() {
@@ -226,6 +237,14 @@ export function useSocket() {
         if (presence) {
           usePresenceStore.getState().setPresence(envelope.jid, presence as Presence);
         }
+        return;
+      }
+
+      // Status de entrega/leitura (tiques) — patch cirúrgico na bolha e sai.
+      if (envelope.type === 'message.status') {
+        const id = envelope.payload?.id as string | undefined;
+        const status = envelope.payload?.status as Message['status'] | undefined;
+        if (id && status) patchMessageStatus(envelope.jid, id, status);
         return;
       }
 

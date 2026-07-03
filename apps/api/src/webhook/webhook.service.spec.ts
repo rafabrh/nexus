@@ -11,6 +11,9 @@ function makeDeps(tenantGet: () => Promise<unknown>) {
     del: vi.fn(async () => 1),
     lrange: vi.fn(async () => []),
     incr: vi.fn(async () => 1),
+    // CAS atômico do ACK (ACK_CAS_LUA): 1 = avançou. Testes que precisam simular
+    // "não avançou" (fora de ordem) sobrescrevem para retornar 0.
+    eval: vi.fn(async () => 1),
   } as any;
   const publisher = { publish: vi.fn(async () => undefined) } as any;
   const index = { addJid: vi.fn(async () => undefined) } as any;
@@ -204,5 +207,68 @@ describe('WebhookService presence.update (typing/online)', () => {
     );
     // Presença é sinal de UI — nunca vai pro N8N (evita flood).
     expect(d.forwarder.forward).not.toHaveBeenCalled();
+  });
+});
+
+describe('WebhookService messages.update (read receipts / ACK)', () => {
+  const ackUpdate = (
+    status: unknown,
+    keyExtra: Record<string, unknown> = { id: 'AI1', fromMe: true },
+  ) => ({
+    event: 'messages.update',
+    instance: 'shk',
+    data: { key: { remoteJid: '5511999@s.whatsapp.net', ...keyExtra }, status },
+  });
+
+  it('publishes message.status for OUR message and never forwards ACK to N8N', async () => {
+    const d = makeDeps(knownTenant({ n8nWebhookUrl: 'https://n8n/w/shk' }));
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(ackUpdate('READ'));
+
+    expect(d.publisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'message.status',
+        instancia: 'shk',
+        jid: '5511999@s.whatsapp.net',
+        payload: { id: 'AI1', status: 'read' },
+      }),
+      // Tique não é persistido no stream de replay (alto volume).
+      { persistToStream: false },
+    );
+    // ACK é alto volume/sinal de UI — nunca reencaminha pro N8N.
+    expect(d.forwarder.forward).not.toHaveBeenCalled();
+  });
+
+  it('maps the numeric WAMessageStatus (3 = delivered)', async () => {
+    const d = makeDeps(knownTenant());
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(ackUpdate(3));
+
+    expect(d.publisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: { id: 'AI1', status: 'delivered' } }),
+      { persistToStream: false },
+    );
+  });
+
+  it('ignores the ACK of inbound (fromMe=false) messages', async () => {
+    const d = makeDeps(knownTenant());
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(ackUpdate('READ', { id: 'X', fromMe: false }));
+
+    expect(d.redis.eval).not.toHaveBeenCalled();
+    expect(d.publisher.publish).not.toHaveBeenCalled();
+  });
+
+  it('does NOT publish when the CAS did not advance (out-of-order/duplicate ACK)', async () => {
+    const d = makeDeps(knownTenant());
+    d.redis.eval = vi.fn(async () => 0); // Lua: novo status <= atual, não gravou
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(ackUpdate('DELIVERY_ACK'));
+
+    expect(d.publisher.publish).not.toHaveBeenCalled();
   });
 });

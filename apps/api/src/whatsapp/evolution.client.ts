@@ -171,6 +171,23 @@ export class EvolutionClient {
     });
   }
 
+  /**
+   * Envia uma nota de voz (áudio PTT) — `audio` é base64 puro ou URL. A Evolution
+   * transcodifica para o formato do WhatsApp (opus/ogg) no lado dela, então o
+   * painel pode mandar o webm/opus do MediaRecorder do navegador.
+   */
+  async sendWhatsAppAudio(
+    instancia: string,
+    jid: string,
+    audio: string,
+  ): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>(
+      'POST',
+      `/message/sendWhatsAppAudio/${instancia}`,
+      { number: jid, audio },
+    );
+  }
+
   async findChats(instanceName: string): Promise<unknown> {
     return this.request('POST', `/chat/findChats/${instanceName}`, {});
   }

@@ -201,6 +201,8 @@ export class ConversationRepository {
     const phone = jid.replace('@s.whatsapp.net', '');
     const histKey = RedisKeys.chatHistory(instancia, phone);
     const raw = await this.redis.lrange(histKey, 0, -1);
+    // Status de entrega/leitura das mensagens de saída (hash lateral de ACK).
+    const ackMap = await this.redis.hgetall(RedisKeys.ackStatus(instancia, jid));
 
     const messages: Message[] = [];
     for (let i = 0; i < raw.length; i++) {
@@ -219,14 +221,20 @@ export class ConversationRepository {
                 fromMe: parsed.quoted.fromMe === true,
               }
             : undefined;
+        const id = (typeof parsed.id === 'string' && parsed.id) || media?.id || `msg-${i}`;
+        const isOutgoing = parsed.type === 'ai';
+        const status = isOutgoing
+          ? (ackMap[id] as Message['status'] | undefined)
+          : undefined;
         messages.push({
-          id: (typeof parsed.id === 'string' && parsed.id) || media?.id || `msg-${i}`,
-          role: parsed.type === 'ai' ? 'assistant' : 'user',
+          id,
+          role: isOutgoing ? 'assistant' : 'user',
           content: parsed.data?.content ?? '',
           mediaType: this.mediaKindToType(media?.kind),
           ...(media?.id ? { mediaId: media.id } : {}),
           ts,
           ...(quoted ? { quoted } : {}),
+          ...(status ? { status } : {}),
         });
       } catch {
         // Skip malformed entries
