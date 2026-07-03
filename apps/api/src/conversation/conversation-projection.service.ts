@@ -4,7 +4,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { DB, type Database } from '../core/db/db.module';
 import { conversations } from '../core/db/schema';
-import { RedisKeys, FunnelStage, PhoneMask } from '@nexus/shared';
+import { RedisKeys, FunnelStage, PhoneMask, resolveDisplayName } from '@nexus/shared';
 import type { ConversationListItem, AiState } from '@nexus/shared';
 import type { ConversationRow } from '../core/db/schema';
 import { ConversationRepository } from './conversation.repository';
@@ -117,7 +117,7 @@ export class ConversationProjectionService implements OnApplicationBootstrap {
     const aiState = this.resolveAiState(row.humanControlUntil);
     return {
       jid: row.jid,
-      contactName: row.contactName || PhoneMask.reveal(row.jid),
+      contactName: resolveDisplayName(row.contactName, row.jid),
       phoneDisplay: PhoneMask.reveal(row.jid),
       aiState: aiState.state,
       aiOffUntil: aiState.until,

@@ -137,9 +137,10 @@ function ConversationItem({
         />
       )}
 
-      {/* Avatar — foto do WhatsApp com fallback nas iniciais */}
+      {/* Avatar — foto do WhatsApp via proxy autenticado (por jid), fallback nas iniciais */}
       <Avatar
         name={conversation.contactName}
+        jid={conversation.jid}
         url={conversation.avatarUrl}
         size={36}
         selected={selected}

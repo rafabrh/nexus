@@ -39,7 +39,7 @@ export interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  mediaType: 'text' | 'audio' | 'image' | 'document';
+  mediaType: 'text' | 'audio' | 'image' | 'video' | 'document';
   /**
    * Id da mensagem de mídia — o frontend monta a URL do proxy do BFF
    * (`/conversations/:jid/media/:mediaId`) que baixa a imagem descriptografada
@@ -47,4 +47,17 @@ export interface Message {
    */
   mediaId?: string;
   ts: string | null;
+  /**
+   * Status de entrega/leitura da mensagem de SAÍDA (role 'assistant'), estilo
+   * WhatsApp. Populado a partir do hash lateral de ACK (`chat:{inst}:{jid}:ack`)
+   * alimentado pelo evento `messages.update` da Evolution. Ausente nas mensagens
+   * recebidas (role 'user').
+   */
+  status?: 'pending' | 'sent' | 'delivered' | 'read' | 'played';
+  /**
+   * Mensagem citada (responder/quote). `id` referencia a mensagem original;
+   * `preview` é um trecho curto para renderizar o bloco citado; `fromMe` indica
+   * se a original foi enviada pelo operador/IA. Ausente quando não há citação.
+   */
+  quoted?: { id: string; preview: string; fromMe: boolean } | null;
 }

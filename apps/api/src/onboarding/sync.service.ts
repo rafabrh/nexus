@@ -1,7 +1,7 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../core/redis/redis.module';
-import { RedisKeys } from '@nexus/shared';
+import { RedisKeys, PhoneMask } from '@nexus/shared';
 import { EvolutionClient } from '../whatsapp/evolution.client';
 import { resolvePersonalJid } from '../core/whatsapp/jid.util';
 import { ConversationIndexService } from '../conversation/conversation-index.service';
@@ -243,7 +243,7 @@ export class SyncService {
     }
 
     const contactName = chat.pushName || chat.name;
-    if (contactName) {
+    if (contactName && !PhoneMask.isMasked(contactName)) {
       pipeline.set(RedisKeys.contact(instancia, phone), JSON.stringify({ pushName: contactName }));
     }
 
@@ -270,12 +270,13 @@ export class SyncService {
           contact.remoteJidAlt as string | undefined,
           contact.id as string | undefined,
         );
-        const name =
+        const rawName =
           (contact.name as string) ||
           (contact.verifiedName as string) ||
           (contact.pushName as string) ||
           (contact.notify as string) ||
           '';
+        const name = PhoneMask.isMasked(rawName) ? '' : rawName;
         const profilePicUrl = (contact.profilePicUrl as string) || '';
 
         if (resolved && (name || profilePicUrl)) {

@@ -128,7 +128,7 @@ describe('ConversationService', () => {
 
     await svc.sendMessage('shk', '5511@s.whatsapp.net', 'oi');
 
-    expect(evolution.sendTextMessage).toHaveBeenCalledWith('shk', '5511@s.whatsapp.net', 'oi');
+    expect(evolution.sendTextMessage).toHaveBeenCalledWith('shk', '5511@s.whatsapp.net', 'oi', undefined);
     expect(calls.rpush[0][0]).toBe('chathistory:shk-5511'); // history key
     expect(JSON.parse(calls.rpush[0][1]).data.content).toBe('oi');
     expect(redis.set).toHaveBeenCalled(); // humanControlUntil

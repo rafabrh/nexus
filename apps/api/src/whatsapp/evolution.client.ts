@@ -41,11 +41,24 @@ export class EvolutionClient {
     });
   }
 
-  async sendTextMessage(instancia: string, jid: string, text: string): Promise<void> {
-    await this.request('POST', `/message/sendText/${instancia}`, {
-      number: jid,
-      text,
-    });
+  async sendTextMessage(
+    instancia: string,
+    jid: string,
+    text: string,
+    quoted?: { id: string; text?: string },
+  ): Promise<Record<string, unknown>> {
+    const body: Record<string, unknown> = { number: jid, text };
+    if (quoted?.id) {
+      body.quoted = {
+        key: { id: quoted.id },
+        ...(quoted.text ? { message: { conversation: quoted.text } } : {}),
+      };
+    }
+    return this.request<Record<string, unknown>>(
+      'POST',
+      `/message/sendText/${instancia}`,
+      body,
+    );
   }
 
   async healthCheck(): Promise<void> {
@@ -92,6 +105,26 @@ export class EvolutionClient {
 
   async findContacts(instanceName: string): Promise<unknown> {
     return this.request('POST', `/chat/findContacts/${instanceName}`, {});
+  }
+
+  /**
+   * Busca a URL da foto de perfil de um contato. Baileys/Evolution NÃO trazem a
+   * foto nos webhooks/findContacts — é preciso pedir explicitamente. Retorna null
+   * quando o contato não tem foto ou a Evolution não a expõe (degrada p/ iniciais).
+   */
+  async fetchProfilePictureUrl(instancia: string, jid: string): Promise<string | null> {
+    try {
+      const res = await this.request<Record<string, unknown>>(
+        'POST',
+        `/chat/fetchProfilePictureUrl/${instancia}`,
+        { number: jid },
+      );
+      const url = (res?.profilePictureUrl ?? res?.profilePicUrl) as unknown;
+      return typeof url === 'string' && url ? url : null;
+    } catch (err) {
+      this.logger.debug(`fetchProfilePictureUrl failed for ${jid}: ${(err as Error).message}`);
+      return null;
+    }
   }
 
   async findMessages(instanceName: string, remoteJid: string, limit: number): Promise<unknown> {

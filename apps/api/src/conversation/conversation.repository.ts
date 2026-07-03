@@ -5,6 +5,7 @@ import {
   RedisKeys,
   FunnelStage,
   PhoneMask,
+  resolveDisplayName,
 } from '@nexus/shared';
 import type {
   ConversationListItem,
@@ -93,7 +94,7 @@ export class ConversationRepository {
 
     return {
       jid,
-      contactName: contact.name || contact.pushName || PhoneMask.reveal(jid),
+      contactName: resolveDisplayName(contact.name || contact.pushName, jid),
       phoneDisplay: PhoneMask.reveal(jid),
       aiState: aiState.state,
       aiOffUntil: aiState.until,
@@ -173,7 +174,7 @@ export class ConversationRepository {
 
     return {
       jid,
-      contactName: contact.name || contact.pushName || PhoneMask.reveal(jid),
+      contactName: resolveDisplayName(contact.name || contact.pushName, jid),
       phoneDisplay: PhoneMask.reveal(jid),
       aiState: aiState.state,
       aiOffUntil: aiState.until,
@@ -206,13 +207,26 @@ export class ConversationRepository {
       try {
         const parsed = JSON.parse(raw[i]);
         const media = parsed.media as { kind?: string; id?: string } | undefined;
+        const ts =
+          typeof parsed.data?.timestamp === 'number'
+            ? new Date(parsed.data.timestamp).toISOString()
+            : null;
+        const quoted =
+          parsed.quoted && typeof parsed.quoted === 'object'
+            ? {
+                id: String(parsed.quoted.id ?? ''),
+                preview: String(parsed.quoted.preview ?? ''),
+                fromMe: parsed.quoted.fromMe === true,
+              }
+            : undefined;
         messages.push({
-          id: media?.id ?? `msg-${i}`,
+          id: (typeof parsed.id === 'string' && parsed.id) || media?.id || `msg-${i}`,
           role: parsed.type === 'ai' ? 'assistant' : 'user',
           content: parsed.data?.content ?? '',
           mediaType: this.mediaKindToType(media?.kind),
           ...(media?.id ? { mediaId: media.id } : {}),
-          ts: null,
+          ts,
+          ...(quoted ? { quoted } : {}),
         });
       } catch {
         // Skip malformed entries
@@ -233,8 +247,9 @@ export class ConversationRepository {
         return 'image';
       case 'audio':
         return 'audio';
-      case 'document':
       case 'video':
+        return 'video';
+      case 'document':
         return 'document';
       default:
         return 'text';

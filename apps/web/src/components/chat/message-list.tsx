@@ -1,11 +1,16 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageBubble } from './message-bubble';
 import { useMessages } from '@/hooks/use-messages';
 import { MessageSquare } from 'lucide-react';
-import type { Message } from '@nexus/shared';
+
+/** Escapa o id para uso seguro em seletor de atributo. */
+function escapeAttr(id: string): string {
+  if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(id);
+  return id.replace(/["\\]/g, '\\$&');
+}
 
 interface MessageListProps {
   jid: string;
@@ -82,10 +87,34 @@ function TypingIndicator() {
 export function MessageList({ jid }: MessageListProps) {
   const { data: messages, isLoading } = useMessages(jid);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    return () => {
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+    };
+  }, []);
+
+  // Rola até a mensagem citada e dá um flash sutil de destaque.
+  const jumpTo = useCallback((id: string) => {
+    const root = containerRef.current;
+    if (!root) return;
+    const target = root.querySelector<HTMLElement>(`[data-msg-id="${escapeAttr(id)}"]`);
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightId(id);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(
+      () => setHighlightId((cur) => (cur === id ? null : cur)),
+      1600,
+    );
+  }, []);
 
   if (isLoading) return <MessageSkeleton />;
 
@@ -108,9 +137,15 @@ export function MessageList({ jid }: MessageListProps) {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-4">
+    <div ref={containerRef} className="flex-1 overflow-y-auto p-4">
       {messages.map((msg) => (
-        <MessageBubble key={msg.id} message={msg} jid={jid} />
+        <MessageBubble
+          key={msg.id}
+          message={msg}
+          jid={jid}
+          onJumpTo={jumpTo}
+          highlighted={highlightId === msg.id}
+        />
       ))}
       {/* Typing indicator slot — rendered via AnimatePresence if needed */}
       <div ref={bottomRef} />

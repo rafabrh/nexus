@@ -121,7 +121,7 @@ export class ConversationController {
     @Param('jid') jid: string,
     @Body() dto: SendMessageRequestDto,
   ) {
-    return this.service.sendMessage(instancia, jid, dto.text);
+    return this.service.sendMessage(instancia, jid, dto.text, dto.quotedId);
   }
 
   @Post(':jid/stage')
@@ -177,6 +177,20 @@ export class ConversationController {
     void reply
       .header('Content-Type', mimetype)
       .header('Cache-Control', 'private, max-age=3600')
+      .send(buffer);
+  }
+
+  @Get(':jid/avatar')
+  @ApiOperation({ summary: 'Foto de perfil do contato via proxy (stream dos bytes)' })
+  async avatar(
+    @Tenant() instancia: string,
+    @Param('jid') jid: string,
+    @Res() reply: FastifyReply,
+  ): Promise<void> {
+    const { buffer, mimetype } = await this.service.getAvatar(instancia, jid);
+    void reply
+      .header('Content-Type', mimetype)
+      .header('Cache-Control', 'private, max-age=21600')
       .send(buffer);
   }
 

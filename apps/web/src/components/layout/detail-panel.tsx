@@ -285,7 +285,7 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                 className="flex flex-col items-center gap-2 px-4 py-5"
                 style={{ borderBottom: '1px solid var(--separator)' }}
               >
-                <Avatar name={detail.contactName} url={detail.avatarUrl} size={72} />
+                <Avatar name={detail.contactName} jid={jid} url={detail.avatarUrl} size={72} />
                 {editingName ? (
                   <div className="flex items-center gap-1.5 w-full mt-1">
                     <Input

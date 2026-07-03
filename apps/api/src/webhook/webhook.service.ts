@@ -1,7 +1,7 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../core/redis/redis.module';
-import { RedisKeys } from '@nexus/shared';
+import { RedisKeys, PhoneMask } from '@nexus/shared';
 import { EventPublisher } from '../realtime/event.publisher';
 import { resolvePersonalJid } from '../core/whatsapp/jid.util';
 import { isAiOff } from '../core/whatsapp/ai-off.util';
@@ -174,9 +174,13 @@ export class WebhookService {
     const type = fromMe ? 'ai' : 'human';
     const media = this.extractMedia(data);
     const keyId = typeof key.id === 'string' ? key.id : null;
+    const timestamp = this.extractTimestamp(data);
+    const quoted = this.extractQuoted(data, fromMe);
     const entry = JSON.stringify({
       type,
-      data: { content },
+      data: { content, ...(timestamp ? { timestamp } : {}) },
+      ...(keyId ? { id: keyId } : {}),
+      ...(quoted ? { quoted } : {}),
       ...(media && keyId
         ? { media: { kind: media.kind, id: keyId, fromMe, mimetype: media.mimetype } }
         : {}),
@@ -265,6 +269,41 @@ export class WebhookService {
       }
     }
     return null;
+  }
+
+  /** Timestamp da mensagem (a Evolution manda em segundos) → ms. Null se ausente. */
+  private extractTimestamp(data: Record<string, unknown>): number | null {
+    const t = data.messageTimestamp;
+    const n = typeof t === 'number' ? t : typeof t === 'string' ? parseInt(t, 10) : NaN;
+    if (!Number.isFinite(n) || n <= 0) return null;
+    // Valores em segundos (< 10^12) são normalizados para ms.
+    return n < 1e12 ? n * 1000 : n;
+  }
+
+  /**
+   * Extrai a citação (quote) quando a mensagem responde outra. O `contextInfo` (com
+   * `stanzaId` + `quotedMessage`) aparece em extendedTextMessage e nos tipos de
+   * mídia. O `fromMe` da citada é aproximado como o oposto da atual (num vai-e-volta
+   * típico) — só um indicador visual do balão. Retorna null quando não há citação.
+   */
+  private extractQuoted(
+    data: Record<string, unknown>,
+    fromMe: boolean,
+  ): { id: string; preview: string; fromMe: boolean } | null {
+    const message = data.message as Record<string, unknown> | undefined;
+    if (!message) return null;
+    let ctx: Record<string, unknown> | undefined;
+    for (const v of Object.values(message)) {
+      if (v && typeof v === 'object' && 'contextInfo' in (v as Record<string, unknown>)) {
+        ctx = (v as Record<string, unknown>).contextInfo as Record<string, unknown>;
+        break;
+      }
+    }
+    const stanzaId = ctx && typeof ctx.stanzaId === 'string' ? ctx.stanzaId : null;
+    if (!stanzaId) return null;
+    const quotedMsg = ctx?.quotedMessage as Record<string, unknown> | undefined;
+    const preview = quotedMsg ? this.extractContent({ message: quotedMsg }) ?? '' : '';
+    return { id: stanzaId, preview: preview.slice(0, 120), fromMe: !fromMe };
   }
 
   private extractContent(data: Record<string, unknown>): string | null {
@@ -487,7 +526,7 @@ export class WebhookService {
   /** Melhor nome de um contato da Evolution: agenda > verificado > público. */
   private pickContactName(c: Record<string, unknown>): string | null {
     for (const v of [c.name, c.verifiedName, c.pushName, c.notify]) {
-      if (typeof v === 'string' && v.trim()) return v.trim();
+      if (typeof v === 'string' && v.trim() && !PhoneMask.isMasked(v)) return v.trim();
     }
     return null;
   }
@@ -513,8 +552,11 @@ export class WebhookService {
       }
     }
     const merged: Record<string, unknown> = { ...parsed };
-    if (fields.name) merged.name = fields.name;
-    if (fields.pushName) merged.pushName = fields.pushName;
+    // Nunca persiste nome mascarado (contém `*`) — o painel exibiria a máscara.
+    if (fields.name && !PhoneMask.isMasked(fields.name)) merged.name = fields.name;
+    if (fields.pushName && !PhoneMask.isMasked(fields.pushName)) {
+      merged.pushName = fields.pushName;
+    }
     if (fields.profilePicUrl) merged.profilePicUrl = fields.profilePicUrl;
     await this.redis.set(key, JSON.stringify(merged));
   }

@@ -2,12 +2,13 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Zap, AlertTriangle, Paperclip } from 'lucide-react';
+import { Send, Zap, AlertTriangle, Paperclip, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSendMessage, useSendMedia } from '@/hooks/use-messages';
 import { useQuickReplies } from '@/hooks/use-quick-replies';
 import { useConversationStore } from '@/stores/conversation.store';
 import { notify } from '@/lib/notify';
+import { EmojiPickerButton } from './emoji-picker';
 import type { AiState, QuickReply } from '@nexus/shared';
 
 interface MessageInputProps {
@@ -23,10 +24,58 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const composerInsert = useConversationStore((s) => s.composerInsert);
   const clearComposerInsert = useConversationStore((s) => s.clearComposerInsert);
+  const replyingTo = useConversationStore((s) => s.replyingTo);
+  const clearReplyingTo = useConversationStore((s) => s.clearReplyingTo);
   const fileRef = useRef<HTMLInputElement>(null);
   const sendMedia = useSendMedia(jid);
+  // Última posição do cursor no textarea — para inserir emoji no lugar certo
+  // mesmo quando o foco está no popover do picker.
+  const caretRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
 
   const hasText = text.trim().length > 0;
+
+  const rememberCaret = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    caretRef.current = {
+      start: el.selectionStart ?? el.value.length,
+      end: el.selectionEnd ?? el.value.length,
+    };
+  };
+
+  // Insere o emoji na posição do cursor (não concatena no fim). Usa a forma
+  // funcional do setState para ser correto sob inserções rápidas.
+  const insertEmoji = (emoji: string) => {
+    setText((prev) => {
+      const start = Math.min(caretRef.current.start, prev.length);
+      const end = Math.min(caretRef.current.end, prev.length);
+      const next = prev.slice(0, start) + emoji + prev.slice(end);
+      const pos = start + emoji.length;
+      caretRef.current = { start: pos, end: pos };
+      requestAnimationFrame(() => {
+        const el = inputRef.current;
+        if (!el) return;
+        // Só reposiciona a seleção se o textarea ainda tem foco — reposicionar
+        // enquanto o picker está aberto fecharia o popover.
+        if (document.activeElement === el) el.setSelectionRange(pos, pos);
+        el.style.height = 'auto';
+        el.style.height = Math.min(el.scrollHeight, 96) + 'px';
+      });
+      return next;
+    });
+  };
+
+  // Ao fechar o picker, devolve o foco ao textarea na posição do cursor.
+  const handleEmojiOpenChange = (open: boolean) => {
+    if (open) return;
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      const { start, end } = caretRef.current;
+      el.setSelectionRange(start, end);
+    });
+  };
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -85,21 +134,43 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
   const handleSend = () => {
     const trimmed = text.trim();
     if (!trimmed) return;
-    sendMessage.mutate(trimmed, {
-      onSuccess: () => {
-        setText('');
-        inputRef.current?.focus();
+    const reply = replyingTo;
+    sendMessage.mutate(
+      {
+        text: trimmed,
+        quotedId: reply?.id,
+        // Citação otimista para a bolha já nascer com o bloco citado.
+        quoted: reply
+          ? { id: reply.id, preview: reply.preview, fromMe: reply.fromMe }
+          : null,
       },
-      onError: () => notify.error('Erro ao enviar mensagem'),
-    });
+      {
+        onSuccess: () => {
+          setText('');
+          caretRef.current = { start: 0, end: 0 };
+          clearReplyingTo();
+          inputRef.current?.focus();
+        },
+        onError: () => notify.error('Erro ao enviar mensagem'),
+      },
+    );
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    } else if (e.key === 'Escape' && replyingTo) {
+      // Esc cancela a resposta em andamento (paridade WhatsApp).
+      e.preventDefault();
+      clearReplyingTo();
     }
   };
+
+  // Ao acionar "responder" numa bolha, foca o composer para digitar a resposta.
+  useEffect(() => {
+    if (replyingTo) inputRef.current?.focus();
+  }, [replyingTo]);
 
   const handleQuickReply = (qr: QuickReply) => {
     setText(qr.content);
@@ -150,6 +221,54 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
         </div>
       )}
 
+      {/* Barra de citação (responder) — estilo WhatsApp: barra accent à esquerda,
+          preview truncado e X para cancelar. Anima altura/opacidade ao entrar/sair. */}
+      <AnimatePresence initial={false}>
+        {replyingTo && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            style={{ overflow: 'hidden', borderBottom: '1px solid var(--separator)' }}
+          >
+            <div className="flex items-center gap-2 px-3 py-2">
+              <div
+                className="flex-1 min-w-0 flex items-stretch gap-2 rounded-lg overflow-hidden"
+                style={{ background: 'var(--bg-hover)' }}
+              >
+                <span
+                  aria-hidden
+                  style={{ width: 3, background: 'var(--accent-500)', flexShrink: 0 }}
+                />
+                <div className="min-w-0 py-1.5 pr-2">
+                  <div
+                    className="text-xs font-medium"
+                    style={{ color: 'var(--accent-500)' }}
+                  >
+                    {replyingTo.fromMe ? 'Você' : 'Contato'}
+                  </div>
+                  <div
+                    className="text-xs truncate"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    {replyingTo.preview}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={clearReplyingTo}
+                aria-label="Cancelar resposta"
+                className="flex-shrink-0 w-7 h-7 rounded-input flex items-center justify-center text-text-muted hover:text-text-secondary hover:bg-bg-hover transition-colors duration-150 focus-ring"
+              >
+                <X size={15} />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Input area */}
       <div className="flex items-end gap-2 p-3">
         {/* Quick replies toggle */}
@@ -185,12 +304,21 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
           <Paperclip size={16} />
         </button>
 
+        {/* Emoji — popover liquid-glass; insere na posição do cursor */}
+        <EmojiPickerButton onSelect={insertEmoji} onOpenChange={handleEmojiOpenChange} />
+
         {/* Textarea */}
         <textarea
           ref={inputRef}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            rememberCaret();
+          }}
           onKeyDown={handleKeyDown}
+          onKeyUp={rememberCaret}
+          onClick={rememberCaret}
+          onSelect={rememberCaret}
           placeholder="Digite uma mensagem..."
           rows={1}
           className="flex-1 resize-none text-sm text-text-primary placeholder:text-text-muted focus:outline-none transition-colors duration-150 max-h-24 min-h-[36px]"
@@ -209,6 +337,8 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
               '0 0 0 3px color-mix(in srgb, var(--accent-500) 15%, transparent)';
           }}
           onBlur={(e) => {
+            // Guarda o cursor antes de o foco ir para o picker de emoji.
+            rememberCaret();
             (e.target as HTMLTextAreaElement).style.border =
               '1px solid var(--border-default)';
             (e.target as HTMLTextAreaElement).style.boxShadow = 'none';

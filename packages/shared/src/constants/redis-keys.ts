@@ -55,6 +55,12 @@ export const RedisKeys = {
   contactGlobalLegacy: (phone: string) =>
     `contact:${phone}`,
 
+  // Cache da foto de perfil (BFF exclusivo): guarda JSON `{ url, ts }` resolvido via
+  // Evolution `fetchProfilePictureUrl`. `url === ''` marca "sem foto" (evita re-hit
+  // constante). O proxy `/conversations/:jid/avatar` revalida e faz stream dos bytes.
+  avatar: (inst: string, phone: string) =>
+    `avatar:${inst}:${phone}`,
+
   // ---- BFF exclusivo ----
 
   eventStream: (inst: string) =>
