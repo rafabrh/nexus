@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { cn, formatTime } from '@/lib/utils';
+import { renderRichText, stripFormatting } from '@/lib/rich-text';
 import {
   FileText,
   Headphones,
@@ -42,7 +43,7 @@ const MEDIA_PLACEHOLDERS = [
 
 /** Trecho curto para a barra de resposta e o bloco citado. */
 function previewOf(m: Message): string {
-  if (m.content && !MEDIA_PLACEHOLDERS.includes(m.content)) return m.content;
+  if (m.content && !MEDIA_PLACEHOLDERS.includes(m.content)) return stripFormatting(m.content);
   switch (m.mediaType) {
     case 'image':
       return 'Foto';
@@ -167,7 +168,7 @@ function QuotedBlock({
           {quoted.fromMe ? 'Você' : 'Contato'}
         </span>
         <span className="block text-xs truncate" style={{ color: previewColor }}>
-          {quoted.preview}
+          {stripFormatting(quoted.preview)}
         </span>
       </span>
     </button>
@@ -288,7 +289,7 @@ export function MessageBubble({ message, jid, onJumpTo, highlighted = false }: M
 
         {showText && (
           <p className="whitespace-pre-wrap break-words leading-relaxed">
-            {message.content}
+            {renderRichText(message.content)}
           </p>
         )}
 
