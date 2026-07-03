@@ -91,6 +91,44 @@ describe('WebhookService is the hub (forward + realtime)', () => {
   });
 });
 
+describe('WebhookService BFF-gate do controle de IA', () => {
+  it('does NOT forward an inbound message to N8N when the AI is OFF for the conversation', async () => {
+    const d = makeDeps(knownTenant({ n8nWebhookUrl: 'https://n8n/w/shk' }));
+    // Conversa com a IA desligada: humanControlUntil no futuro (OFF permanente).
+    d.redis.get = vi.fn(async (key: string) =>
+      String(key).endsWith(':humanControlUntil') ? '4102444800000' : null,
+    );
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(msgUpsert({ id: 'M9' }));
+
+    // Barrado na origem — o N8N nem recebe a mensagem, então nao responde.
+    expect(d.forwarder.forward).not.toHaveBeenCalled();
+    // Mas o painel continua registrando tudo (historico + realtime).
+    expect(d.redis.rpush).toHaveBeenCalled();
+    expect(d.publisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'message.received', instancia: 'shk' }),
+    );
+  });
+
+  it('still forwards to N8N when the AI-OFF pause has already expired', async () => {
+    const d = makeDeps(knownTenant({ n8nWebhookUrl: 'https://n8n/w/shk' }));
+    d.redis.get = vi.fn(async (key: string) =>
+      String(key).endsWith(':humanControlUntil') ? String(Date.now() - 1000) : null,
+    );
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(msgUpsert({ id: 'M9' }));
+
+    expect(d.forwarder.forward).toHaveBeenCalledWith(
+      'shk',
+      'https://n8n/w/shk',
+      'M9',
+      expect.any(Object),
+    );
+  });
+});
+
 describe('WebhookService handles send.message (AI reply via API)', () => {
   it('persists + publishes the AI reply but does NOT forward it back to N8N', async () => {
     const d = makeDeps(knownTenant({ n8nWebhookUrl: 'https://n8n/w/shk' }));

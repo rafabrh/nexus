@@ -4,6 +4,7 @@ import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { RedisKeys } from '@nexus/shared';
 import { EventPublisher } from '../realtime/event.publisher';
 import { resolvePersonalJid } from '../core/whatsapp/jid.util';
+import { isAiOff } from '../core/whatsapp/ai-off.util';
 import { ConversationIndexService } from '../conversation/conversation-index.service';
 import { TenantRepository } from '../admin/tenant.repository';
 import { N8nForwarderService } from './n8n-forwarder.service';
@@ -55,12 +56,26 @@ export class WebhookService {
     // `presence.update` (digitando/online) é efêmero e de alto volume — sinal de
     // UI, não de fluxo; nunca reencaminha pro N8N (evita flood).
     if (event !== 'send.message' && event !== 'presence.update') {
-      void this.forwarder.forward(
-        instanceName,
-        tenant.n8nWebhookUrl ?? null,
-        this.extractMsgId(payload),
-        payload,
-      );
+      // BFF-gate do controle de IA: quando a conversa está com a IA desligada, o
+      // BFF NÃO reencaminha a mensagem pro N8N — o desligamento é enforçado aqui,
+      // na origem. O gate interno do fluxo N8N se provou inconfiável (lê o
+      // `humanControlUntil` correto e responde assim mesmo), então o hub barra.
+      // Só mensagens entram na checagem; demais eventos (connection, contacts)
+      // seguem sempre. O painel continua gravando/publicando a mensagem normal.
+      const aiOff =
+        event === 'messages.upsert' && (await this.isInboundAiOff(instanceName, payload));
+      if (aiOff) {
+        this.logger.log(
+          `n8n.forward-gated instancia=${instanceName} reason=ai-off (human takeover)`,
+        );
+      } else {
+        void this.forwarder.forward(
+          instanceName,
+          tenant.n8nWebhookUrl ?? null,
+          this.extractMsgId(payload),
+          payload,
+        );
+      }
     }
 
     switch (event) {
@@ -519,15 +534,43 @@ export class WebhookService {
    * do reencaminhamento ao N8N. `data` pode ser um objeto ou um array de eventos.
    * Retorna null quando o evento nao carrega uma mensagem (ex.: connection.update).
    */
-  private extractMsgId(payload: Record<string, unknown>): string | null {
+  /**
+   * Extrai o `key` da primeira mensagem do payload da Evolution. `data` pode ser
+   * um objeto único ou um array de eventos. Retorna null quando o evento nao
+   * carrega uma mensagem (ex.: connection.update).
+   */
+  private firstMessageKey(payload: Record<string, unknown>): Record<string, unknown> | null {
     const data = payload.data as
       | Record<string, unknown>
       | Record<string, unknown>[]
       | undefined;
     const first = Array.isArray(data) ? data[0] : data;
-    const key = (first as Record<string, unknown> | undefined)?.key as
-      | Record<string, unknown>
-      | undefined;
-    return typeof key?.id === 'string' ? key.id : null;
+    const key = (first as Record<string, unknown> | undefined)?.key;
+    return key && typeof key === 'object' ? (key as Record<string, unknown>) : null;
+  }
+
+  private extractMsgId(payload: Record<string, unknown>): string | null {
+    const id = this.firstMessageKey(payload)?.id;
+    return typeof id === 'string' ? id : null;
+  }
+
+  /**
+   * BFF-gate: true quando a conversa da mensagem recebida está com a IA
+   * desligada — nesse caso o BFF nao reencaminha o payload pro N8N. Resolve o
+   * mesmo JID canonico que o painel usa e checa `humanControlUntil` (canonica +
+   * cru @lid), idêntico ao `AiControlService.getState`.
+   */
+  private async isInboundAiOff(
+    instanceName: string,
+    payload: Record<string, unknown>,
+  ): Promise<boolean> {
+    const key = this.firstMessageKey(payload);
+    if (!key) return false;
+    const resolved = resolvePersonalJid(
+      key.remoteJid as string | undefined,
+      key.remoteJidAlt as string | undefined,
+    );
+    if (!resolved) return false;
+    return isAiOff(this.redis, instanceName, resolved.jid);
   }
 }
