@@ -205,10 +205,23 @@ export class ConversationRepository {
     const ackMap = await this.redis.hgetall(RedisKeys.ackStatus(instancia, jid));
 
     const messages: Message[] = [];
+    // Dedup por WAMID: uma mensagem enviada pelo painel é gravada 2x no
+    // chathistory — uma no envio (ConversationService) e outra quando a Evolution
+    // ecoa o próprio envio de volta (webhook `send.message`/`messages.upsert`
+    // fromMe=true). Ambas carregam o MESMO id de mensagem do WhatsApp; sem dedup
+    // a bolha (texto, áudio, imagem) aparece repetida na visão do operador,
+    // embora o destinatário receba só uma. Entradas sem id real (legadas, fallback
+    // `msg-i`) nunca colidem → preservadas.
+    const seenIds = new Set<string>();
     for (let i = 0; i < raw.length; i++) {
       try {
         const parsed = JSON.parse(raw[i]);
         const media = parsed.media as { kind?: string; id?: string } | undefined;
+        const realId = (typeof parsed.id === 'string' && parsed.id) || media?.id || null;
+        if (realId) {
+          if (seenIds.has(realId)) continue; // eco do próprio envio — ignora a cópia
+          seenIds.add(realId);
+        }
         const ts =
           typeof parsed.data?.timestamp === 'number'
             ? new Date(parsed.data.timestamp).toISOString()
@@ -221,7 +234,7 @@ export class ConversationRepository {
                 fromMe: parsed.quoted.fromMe === true,
               }
             : undefined;
-        const id = (typeof parsed.id === 'string' && parsed.id) || media?.id || `msg-${i}`;
+        const id = realId || `msg-${i}`;
         const isOutgoing = parsed.type === 'ai';
         const status = isOutgoing
           ? (ackMap[id] as Message['status'] | undefined)

@@ -156,6 +156,77 @@ describe('WebhookService handles send.message (AI reply via API)', () => {
   });
 });
 
+describe('WebhookService deduplica o eco do proprio envio', () => {
+  const sendEcho = (key: Record<string, unknown>, message: Record<string, unknown>) => ({
+    event: 'send.message',
+    instance: 'shk',
+    data: { key: { remoteJid: '5511999@s.whatsapp.net', fromMe: true, ...key }, message },
+  });
+
+  it('NAO regrava uma mensagem de saida cujo WAMID ja esta no historico (eco)', async () => {
+    const d = makeDeps(knownTenant());
+    // Envio ja persistido (pelo painel ou por um eco anterior): id 'AI1' presente.
+    d.redis.lrange = vi.fn(async () => [
+      JSON.stringify({ type: 'ai', data: { content: 'resposta da IA' }, id: 'AI1' }),
+    ]);
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(sendEcho({ id: 'AI1' }, { conversation: 'resposta da IA' }));
+
+    // Eco: nao duplica no historico...
+    expect(d.redis.rpush).not.toHaveBeenCalled();
+    // ...mas o realtime/indice seguem (idempotentes).
+    expect(d.publisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'message.received', instancia: 'shk' }),
+    );
+  });
+
+  it('grava a mensagem de saida quando o WAMID ainda nao esta no historico (envio novo)', async () => {
+    const d = makeDeps(knownTenant());
+    d.redis.lrange = vi.fn(async () => [
+      JSON.stringify({ type: 'human', data: { content: 'oi' }, id: 'X1' }),
+    ]);
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(sendEcho({ id: 'AI2' }, { conversation: 'nova resposta' }));
+
+    expect(d.redis.rpush).toHaveBeenCalled();
+  });
+
+  it('deduplica midia de saida pelo media.id (o painel guarda o WAMID em media.id)', async () => {
+    const d = makeDeps(knownTenant());
+    // Painel gravou a imagem com o WAMID so em media.id (sem id no topo).
+    d.redis.lrange = vi.fn(async () => [
+      JSON.stringify({
+        type: 'ai',
+        data: { content: '' },
+        media: { kind: 'image', id: 'IMG1', fromMe: true },
+      }),
+    ]);
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(
+      sendEcho({ id: 'IMG1' }, { imageMessage: { caption: 'foto', mimetype: 'image/jpeg' } }),
+    );
+
+    // O eco da imagem casa com o media.id gravado pelo painel → nao duplica.
+    expect(d.redis.rpush).not.toHaveBeenCalled();
+  });
+
+  it('grava normalmente a mensagem RECEBIDA do cliente (fromMe=false nao entra no dedup)', async () => {
+    const d = makeDeps(knownTenant());
+    // Mesmo que o historico tenha algo, uma msg do cliente sempre grava.
+    d.redis.lrange = vi.fn(async () => [
+      JSON.stringify({ type: 'human', data: { content: 'oi' }, id: 'C1' }),
+    ]);
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(msgUpsert({ id: 'C2' }));
+
+    expect(d.redis.rpush).toHaveBeenCalled();
+  });
+});
+
 describe('WebhookService unread counter', () => {
   it('increments unread on an inbound client message (fromMe=false)', async () => {
     const d = makeDeps(knownTenant());

@@ -18,6 +18,13 @@ const HOT_KEYWORDS = [
 /** Stages S3+ are considered advanced enough to contribute to isHot */
 const HOT_STAGES = new Set(['S3', 'S4', 'S5', 'S6']);
 
+/**
+ * Quantas entradas recentes do chathistory varrer ao checar se um envio já foi
+ * persistido (dedup do eco). O eco da Evolution chega poucos instantes após o
+ * envio, então o WAMID estará entre as últimas mensagens — a janela é folgada.
+ */
+const ECHO_SCAN_WINDOW = 50;
+
 @Injectable()
 export class WebhookService {
   private readonly logger = new Logger(WebhookService.name);
@@ -193,7 +200,19 @@ export class WebhookService {
         ? { media: { kind: media.kind, id: keyId, fromMe, mimetype: media.mimetype } }
         : {}),
     });
-    await this.redis.rpush(histKey, entry);
+    // Eco do próprio envio: quando NÓS enviamos (fromMe), a Evolution devolve a
+    // mensagem de volta (`send.message` e/ou `messages.upsert` fromMe=true) e um
+    // mesmo envio pode chegar em mais de um evento. O envio do operador pelo
+    // painel JÁ foi gravado pelo ConversationService; regravar aqui duplicaria a
+    // bolha na visão do operador (o destinatário recebe só uma). Como o WAMID
+    // (key.id) é único e estável, não regravamos quando ele já está no histórico
+    // recente. A resposta da IA (N8N), que o painel não grava, tem id inédito →
+    // é persistida normalmente. O restante (índice, realtime, cache) segue.
+    const alreadyStored =
+      fromMe && keyId ? await this.isMessageAlreadyStored(histKey, keyId) : false;
+    if (!alreadyStored) {
+      await this.redis.rpush(histKey, entry);
+    }
 
     // Contador de nao-lidas: so conta mensagem RECEBIDA do cliente (fromMe=false).
     // A resposta da IA e o envio do operador (fromMe=true) nao geram badge. Zerado
@@ -251,6 +270,29 @@ export class WebhookService {
     this.logger.log(
       `webhook.message-processed instance=${instanceName} jid=${jid} fromMe=${fromMe} type=${mediaType}`,
     );
+  }
+
+  /**
+   * True quando uma mensagem de saída com este WAMID já está no chathistory
+   * recente — evita persistir o eco do próprio envio (o painel grava no envio; a
+   * Evolution pode devolver a mesma mensagem em `send.message` e/ou
+   * `messages.upsert`). Varre só as últimas entradas (o eco chega logo após o
+   * envio). Confere o id no topo e em `media.id` (mídia enviada pelo painel guarda
+   * o WAMID só em `media.id`).
+   */
+  private async isMessageAlreadyStored(histKey: string, msgId: string): Promise<boolean> {
+    const recent = await this.redis.lrange(histKey, -ECHO_SCAN_WINDOW, -1);
+    for (const item of recent) {
+      try {
+        const parsed = JSON.parse(item);
+        const media = parsed.media as { id?: string } | undefined;
+        const id = (typeof parsed.id === 'string' && parsed.id) || media?.id || null;
+        if (id === msgId) return true;
+      } catch {
+        /* entrada malformada — ignora */
+      }
+    }
+    return false;
   }
 
   /**
