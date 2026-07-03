@@ -200,17 +200,24 @@ export class WebhookService {
         ? { media: { kind: media.kind, id: keyId, fromMe, mimetype: media.mimetype } }
         : {}),
     });
-    // Eco do próprio envio: quando NÓS enviamos (fromMe), a Evolution devolve a
-    // mensagem de volta (`send.message` e/ou `messages.upsert` fromMe=true) e um
-    // mesmo envio pode chegar em mais de um evento. O envio do operador pelo
-    // painel JÁ foi gravado pelo ConversationService; regravar aqui duplicaria a
-    // bolha na visão do operador (o destinatário recebe só uma). Como o WAMID
-    // (key.id) é único e estável, não regravamos quando ele já está no histórico
-    // recente. A resposta da IA (N8N), que o painel não grava, tem id inédito →
-    // é persistida normalmente. O restante (índice, realtime, cache) segue.
-    const alreadyStored =
-      fromMe && keyId ? await this.isMessageAlreadyStored(histKey, keyId) : false;
-    if (!alreadyStored) {
+    // Eco do próprio envio. O painel grava a bolha no ENVIO; a Evolution devolve
+    // a mesma mensagem de volta (`send.message` e/ou `messages.upsert` fromMe=true)
+    // e um mesmo envio pode chegar em mais de um evento. Regravar aqui duplicaria a
+    // bolha na visão do operador (o destinatário recebe só uma). Três casos:
+    //  1) MESMO WAMID repetido (send.message + messages.upsert) → barrado por id.
+    //  2) mídia visual (imagem/vídeo/doc) do painel: a bolha otimista foi gravada
+    //     SEM `id` no topo (só `media.id`), e o `sendMedia` devolve um id que NEM
+    //     SEMPRE bate com o WAMID do eco (o áudio bate; a mídia visual não). Como o
+    //     id não casa, reconciliamos pela mídia otimista pendente do mesmo tipo,
+    //     substituindo-a pelo eco (que traz o WAMID real, usado pelo proxy).
+    //  3) resposta da IA (N8N) ou envio de outro device: sem otimista → grava.
+    // O restante (índice, realtime, cache) segue em qualquer caso.
+    if (fromMe && keyId && (await this.isMessageAlreadyStored(histKey, keyId))) {
+      /* eco repetido do mesmo WAMID — nada a persistir */
+    } else if (fromMe && media && keyId) {
+      const reconciled = await this.reconcileOutgoingMedia(histKey, media.kind, entry);
+      if (!reconciled) await this.redis.rpush(histKey, entry);
+    } else {
       await this.redis.rpush(histKey, entry);
     }
 
@@ -288,6 +295,41 @@ export class WebhookService {
         const media = parsed.media as { id?: string } | undefined;
         const id = (typeof parsed.id === 'string' && parsed.id) || media?.id || null;
         if (id === msgId) return true;
+      } catch {
+        /* entrada malformada — ignora */
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Reconcilia o eco de uma mídia de SAÍDA (imagem/vídeo/documento) com a bolha
+   * otimista que o painel gravou no envio. Essa bolha (ConversationService.
+   * sendMediaMessage) NÃO tem `id` no topo — só `media.id`, que para mídia visual
+   * pode divergir do WAMID do eco (o `sendMedia` devolve um id que nem sempre bate
+   * com o do eco; o áudio bate e por isso não passa por aqui — sua bolha otimista
+   * grava o `id` no topo e casa pela dedup por WAMID). Localiza a otimista pendente
+   * mais antiga do mesmo tipo (saída, mesma mídia, SEM `id` no topo) e a SUBSTITUI
+   * pelo eco (que traz o WAMID real). Assim não nasce uma 2ª bolha, sem depender de
+   * o id do envio bater com o do eco. `lrem` por valor é atômico e imune a mudança
+   * de posição na lista. Retorna true se reconciliou.
+   */
+  private async reconcileOutgoingMedia(
+    histKey: string,
+    kind: string,
+    echoEntry: string,
+  ): Promise<boolean> {
+    const recent = await this.redis.lrange(histKey, -ECHO_SCAN_WINDOW, -1);
+    for (const raw of recent) {
+      try {
+        const parsed = JSON.parse(raw);
+        const hasTopId = typeof parsed.id === 'string' && parsed.id.length > 0;
+        const media = parsed.media as { kind?: string } | undefined;
+        if (parsed.type === 'ai' && !hasTopId && media && media.kind === kind) {
+          await this.redis.lrem(histKey, 1, raw);
+          await this.redis.rpush(histKey, echoEntry);
+          return true;
+        }
       } catch {
         /* entrada malformada — ignora */
       }

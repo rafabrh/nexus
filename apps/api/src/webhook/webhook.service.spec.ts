@@ -10,6 +10,7 @@ function makeDeps(tenantGet: () => Promise<unknown>) {
     get: vi.fn(async () => null),
     del: vi.fn(async () => 1),
     lrange: vi.fn(async () => []),
+    lrem: vi.fn(async () => 1),
     incr: vi.fn(async () => 1),
     // CAS atômico do ACK (ACK_CAS_LUA): 1 = avançou. Testes que precisam simular
     // "não avançou" (fora de ordem) sobrescrevem para retornar 0.
@@ -224,6 +225,76 @@ describe('WebhookService deduplica o eco do proprio envio', () => {
     await svc.processEvolutionEvent(msgUpsert({ id: 'C2' }));
 
     expect(d.redis.rpush).toHaveBeenCalled();
+  });
+});
+
+describe('WebhookService reconcilia o eco de midia visual (id do sendMedia diverge do WAMID)', () => {
+  // Imagem sem legenda chega SEM a propriedade caption (não como string vazia);
+  // extractContent devolve '[imagem]' nesse caso (não '', que abortaria cedo).
+  const imgEcho = (id: string, caption?: string) => ({
+    event: 'send.message',
+    instance: 'shk',
+    data: {
+      key: { remoteJid: '5511999@s.whatsapp.net', fromMe: true, id },
+      message: {
+        imageMessage: { ...(caption ? { caption } : {}), mimetype: 'image/jpeg' },
+      },
+    },
+  });
+
+  it('substitui a bolha otimista do painel (sem id no topo) pelo eco, sem duplicar', async () => {
+    const d = makeDeps(knownTenant());
+    // Otimista do painel: imagem SEM id no topo; media.id = id local do sendMedia,
+    // que NÃO bate com o WAMID do eco.
+    d.redis.lrange = vi.fn(async () => [
+      JSON.stringify({
+        type: 'ai',
+        data: { content: '' },
+        media: { kind: 'image', id: 'MSG_LOCAL', fromMe: true },
+      }),
+    ]);
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(imgEcho('WAMID_REAL'));
+
+    // Remove a otimista (lrem) e grava o eco (rpush) — 1 bolha, com o WAMID real.
+    expect(d.redis.lrem).toHaveBeenCalledTimes(1);
+    expect(d.redis.rpush).toHaveBeenCalledTimes(1);
+    const stored = JSON.parse((d.redis.rpush as any).mock.calls[0][1]);
+    expect(stored.id).toBe('WAMID_REAL');
+    expect(stored.media.id).toBe('WAMID_REAL');
+  });
+
+  it('nao regrava um segundo eco de imagem com o mesmo WAMID (send.message + upsert)', async () => {
+    const d = makeDeps(knownTenant());
+    // Bolha já reconciliada: tem o WAMID no topo.
+    d.redis.lrange = vi.fn(async () => [
+      JSON.stringify({
+        type: 'ai',
+        data: { content: '' },
+        id: 'WAMID_REAL',
+        media: { kind: 'image', id: 'WAMID_REAL', fromMe: true },
+      }),
+    ]);
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(imgEcho('WAMID_REAL'));
+
+    expect(d.redis.lrem).not.toHaveBeenCalled();
+    expect(d.redis.rpush).not.toHaveBeenCalled();
+  });
+
+  it('grava o eco de imagem quando nao ha bolha otimista pendente (IA / outro device)', async () => {
+    const d = makeDeps(knownTenant());
+    d.redis.lrange = vi.fn(async () => [
+      JSON.stringify({ type: 'human', data: { content: 'oi' }, id: 'C1' }),
+    ]);
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(imgEcho('WAMID_NEW', 'foto'));
+
+    expect(d.redis.lrem).not.toHaveBeenCalled();
+    expect(d.redis.rpush).toHaveBeenCalledTimes(1);
   });
 });
 
