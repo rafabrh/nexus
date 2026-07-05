@@ -15,7 +15,6 @@ export function ThemeToggle() {
       options={[
         { label: 'Claro', value: 'light' },
         { label: 'Escuro', value: 'dark' },
-        { label: 'Sistema', value: 'system' },
       ]}
     />
   );

@@ -31,7 +31,7 @@ export const useSettingsStore = create<SettingsState>()(
       displayName: '',
       soundEnabled: false,
       refreshIntervalMs: 45_000,
-      theme: 'system',
+      theme: 'dark',
       setDisplayName: (displayName) => set({ displayName }),
       setSoundEnabled: (soundEnabled) => set({ soundEnabled }),
       setRefreshIntervalMs: (refreshIntervalMs) => set({ refreshIntervalMs }),
@@ -39,14 +39,14 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'nexus-settings',
-      version: 2,
-      // v2 reintroduz o tri-estado (Claro/Escuro/Sistema). Sanitiza qualquer
-      // valor persistido inválido para 'system' (segue o SO).
+      version: 3,
+      // Só existem Claro/Escuro. Qualquer valor legado (inclusive 'system')
+      // é sanitizado para 'dark'.
       migrate: (persisted) => {
         const state = (persisted ?? {}) as Partial<SettingsState>;
         const t = state.theme as string | undefined;
-        if (t !== 'light' && t !== 'dark' && t !== 'system') {
-          state.theme = 'system';
+        if (t !== 'light' && t !== 'dark') {
+          state.theme = 'dark';
         }
         return state as SettingsState;
       },
