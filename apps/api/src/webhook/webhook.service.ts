@@ -5,6 +5,7 @@ import { RedisKeys, PhoneMask } from '@nexus/shared';
 import { EventPublisher } from '../realtime/event.publisher';
 import { resolvePersonalJid } from '../core/whatsapp/jid.util';
 import { isAiOff } from '../core/whatsapp/ai-off.util';
+import { ACK_CAS_LUA, mapEvolutionAck, type AckStatus } from '../core/whatsapp/ack-status.util';
 import { ConversationIndexService } from '../conversation/conversation-index.service';
 import { TenantRepository } from '../admin/tenant.repository';
 import { N8nForwarderService } from './n8n-forwarder.service';
@@ -664,56 +665,14 @@ export class WebhookService {
   }
 
   /**
-   * CAS atômico do status de ACK (read-compare-write num único passo no Redis). Só
-   * grava quando o novo status é um AVANÇO no ranking (sent<delivered<read<played);
-   * o ranking vive dentro do script para não haver janela entre HGET e HSET. Sem
-   * isto, dois `messages.update` concorrentes do mesmo msgId poderiam intercalar e
-   * REBAIXAR o status (ex.: `read` sobrescrito por um `delivered` atrasado).
-   * Retorna 1 se avançou, 0 caso contrário.
+   * Extrai o status de ACK do payload `messages.update` (campo `status` no topo ou
+   * dentro de `update`) e mapeia para o enum do painel via util compartilhado.
    */
-  private static readonly ACK_CAS_LUA = `
-local ranks = { sent = 1, delivered = 2, read = 3, played = 4 }
-local cur = redis.call('HGET', KEYS[1], ARGV[1])
-local curRank = 0
-if cur and ranks[cur] then curRank = ranks[cur] end
-local newRank = ranks[ARGV[2]] or 0
-if newRank <= curRank then return 0 end
-redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
-return 1
-`;
-
-  /**
-   * Mapeia o status de ACK da Evolution/Baileys (numérico WAMessageStatus ou string)
-   * para o enum do painel. 2=servidor, 3=entregue, 4=lido, 5=reproduzido.
-   */
-  private mapAckStatus(
-    data: Record<string, unknown>,
-  ): 'sent' | 'delivered' | 'read' | 'played' | null {
+  private mapAckStatus(data: Record<string, unknown>): AckStatus | null {
     const raw =
       (data.status as unknown) ??
       ((data.update as Record<string, unknown> | undefined)?.status as unknown);
-    if (raw == null) return null;
-    // Numérico do WAMessageStatus — direto (number) ou como string de dígitos ("3"),
-    // que algumas versões da Evolution enviam. 2=servidor..5=reproduzido.
-    const num =
-      typeof raw === 'number'
-        ? raw
-        : typeof raw === 'string' && /^\d+$/.test(raw.trim())
-          ? parseInt(raw.trim(), 10)
-          : null;
-    if (num != null) {
-      if (num >= 5) return 'played';
-      if (num === 4) return 'read';
-      if (num === 3) return 'delivered';
-      if (num === 2) return 'sent';
-      return null;
-    }
-    const s = String(raw).toUpperCase();
-    if (s.includes('PLAYED')) return 'played';
-    if (s.includes('READ')) return 'read';
-    if (s.includes('DELIVERY') || s === 'DELIVERED') return 'delivered';
-    if (s.includes('SERVER') || s === 'SENT') return 'sent';
-    return null;
+    return mapEvolutionAck(raw);
   }
 
   /**
@@ -725,11 +684,11 @@ return 1
     inst: string,
     jid: string,
     msgId: string,
-    status: 'sent' | 'delivered' | 'read' | 'played',
+    status: AckStatus,
   ): Promise<boolean> {
     const hkey = RedisKeys.ackStatus(inst, jid);
     const advanced = await this.redis.eval(
-      WebhookService.ACK_CAS_LUA,
+      ACK_CAS_LUA,
       1,
       hkey,
       msgId,

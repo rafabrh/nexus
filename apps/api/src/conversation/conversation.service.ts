@@ -13,6 +13,7 @@ import { ConversationProjectionService } from './conversation-projection.service
 import { EvolutionClient } from '../whatsapp/evolution.client';
 import { EventPublisher } from '../realtime/event.publisher';
 import { controlJids } from '../core/whatsapp/control-jids.util';
+import { ACK_CAS_LUA, highestAck } from '../core/whatsapp/ack-status.util';
 
 /** Sufixos de host do CDN oficial WhatsApp/Meta que servem foto de perfil. */
 const AVATAR_HOST_SUFFIXES = ['.whatsapp.net', '.fbcdn.net'] as const;
@@ -174,7 +175,74 @@ export class ConversationService {
   }
 
   async getMessages(instancia: string, jid: string, limit: number): Promise<Message[]> {
+    // Semeia os tiques (ACK) a partir da Evolution ANTES de ler — assim os tiques
+    // aparecem já na abertura, mesmo para mensagens antigas e mesmo que o webhook
+    // `messages.update` não tenha chegado. O webhook segue atualizando ao vivo.
+    await this.seedAckStatusFromEvolution(instancia, jid);
     return this.repo.getMessages(instancia, jid, limit);
+  }
+
+  /**
+   * Backfill dos tiques: puxa as mensagens da conversa no store da Evolution
+   * (`findMessages`), extrai o ACK mais avançado de cada mensagem de SAÍDA
+   * (`MessageUpdate`, que vem fora de ordem) e o grava no hash de ACK via CAS (nunca
+   * rebaixa). O webhook `messages.update` é a fonte AO VIVO; este é o backfill de
+   * abertura — necessário porque o webhook só emite em MUDANÇAS de status pós-envio,
+   * então mensagens já entregues/lidas antes de a assinatura existir nunca teriam
+   * tique sem isto. Throttled por conversa (marcador TTL) para não bater na Evolution
+   * a cada refetch. Degrada em silêncio: se a Evolution falhar, as mensagens ainda
+   * carregam (só sem tiques nesta rodada).
+   */
+  private async seedAckStatusFromEvolution(instancia: string, jid: string): Promise<void> {
+    try {
+      const marker = RedisKeys.ackSeededAt(instancia, jid);
+      const fresh = await this.redis.set(marker, '1', 'EX', 45, 'NX');
+      if (fresh !== 'OK') return; // semeado há pouco — evita hammer na Evolution
+
+      const res = (await this.evolution.findMessages(instancia, jid)) as
+        | Record<string, unknown>
+        | unknown[]
+        | null;
+      const records = this.extractMessageRecords(res);
+      if (records.length === 0) return;
+
+      const hkey = RedisKeys.ackStatus(instancia, jid);
+      for (const rec of records) {
+        const key = rec.key as Record<string, unknown> | undefined;
+        if (!key || key.fromMe !== true) continue; // tique só em mensagem de saída
+        const msgId = typeof key.id === 'string' ? key.id : null;
+        if (!msgId) continue;
+
+        const updates = rec.MessageUpdate;
+        if (!Array.isArray(updates) || updates.length === 0) continue;
+        const status = highestAck(
+          updates.map((u) => (u as Record<string, unknown>)?.status),
+        );
+        if (!status) continue;
+
+        await this.redis.eval(ACK_CAS_LUA, 1, hkey, msgId, status);
+      }
+    } catch (err) {
+      // Backfill é best-effort — nunca deve derrubar o carregamento das mensagens.
+      this.logger.warn(
+        `ack.seed-failed instancia=${instancia} jid=${jid}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /** Normaliza os formatos de resposta possíveis do `findMessages` da Evolution. */
+  private extractMessageRecords(res: unknown): Array<Record<string, unknown>> {
+    const container = res as Record<string, unknown> | null;
+    const candidate =
+      (container?.messages as Record<string, unknown> | undefined)?.records ??
+      container?.messages ??
+      container?.records ??
+      res;
+    return Array.isArray(candidate)
+      ? (candidate.filter(
+          (m) => m && typeof m === 'object',
+        ) as Array<Record<string, unknown>>)
+      : [];
   }
 
   /**
