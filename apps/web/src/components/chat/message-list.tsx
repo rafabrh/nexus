@@ -90,10 +90,28 @@ export function MessageList({ jid }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Rastreia jid + nº de mensagens do último scroll para distinguir "abrir conversa"
+  // de "nova mensagem" de "patch de status (tique)".
+  const scrollState = useRef<{ jid: string; len: number }>({ jid: '', len: 0 });
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (!messages || messages.length === 0) return;
+    const prev = scrollState.current;
+    const isNewConversation = prev.jid !== jid;
+    const grew = prev.jid === jid && messages.length > prev.len;
+    scrollState.current = { jid, len: messages.length };
+
+    if (isNewConversation) {
+      // Abrir conversa: já posiciona no fim (última mensagem), SEM a rolagem lenta
+      // do topo até embaixo.
+      bottomRef.current?.scrollIntoView({ behavior: 'auto' });
+    } else if (grew) {
+      // Nova mensagem na conversa aberta: acompanha suave.
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+    // Mesmo jid e mesma contagem (ex.: patch de status/tique, refetch idêntico):
+    // não mexe no scroll — não arranca o operador que rolou pra ler o histórico.
+  }, [messages, jid]);
 
   useEffect(() => {
     return () => {
