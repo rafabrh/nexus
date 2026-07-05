@@ -205,6 +205,7 @@ export class EvolutionClient {
         base64: false,
         events: [
           'messages.upsert',
+          'messages.update',
           'connection.update',
           'contacts.update',
           'contacts.upsert',
