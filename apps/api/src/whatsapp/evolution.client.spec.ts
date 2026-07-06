@@ -38,3 +38,54 @@ describe('EvolutionClient.probeState', () => {
     expect(await c.probeState('x')).toEqual({ status: 'unknown' });
   });
 });
+
+/**
+ * sendContact/sendLocation montam o body no shape que a Evolution v2 espera. O
+ * ponto sensível do contato é o `wuid`: precisa ser SÓ os dígitos do telefone
+ * (a Evolution recusa o vCard se vier com máscara). Estes testes travam o
+ * endpoint e o corpo — o risco que sinalizamos ao introduzir os endpoints.
+ */
+describe('EvolutionClient.sendContact', () => {
+  it('posta em /message/sendContact com wuid só de dígitos', async () => {
+    const c = client();
+    const req = vi.spyOn(c as unknown as { request: () => Promise<unknown> }, 'request').mockResolvedValue({});
+    await c.sendContact('inst', '5511@s.whatsapp.net', {
+      fullName: 'João Silva',
+      phoneNumber: '+55 (11) 99999-9999',
+      organization: 'ACME',
+      email: 'j@acme.com',
+    });
+    expect(req).toHaveBeenCalledWith('POST', '/message/sendContact/inst', {
+      number: '5511@s.whatsapp.net',
+      contact: [
+        {
+          fullName: 'João Silva',
+          wuid: '5511999999999',
+          phoneNumber: '+55 (11) 99999-9999',
+          organization: 'ACME',
+          email: 'j@acme.com',
+        },
+      ],
+    });
+  });
+});
+
+describe('EvolutionClient.sendLocation', () => {
+  it('posta em /message/sendLocation com as coordenadas e rótulos', async () => {
+    const c = client();
+    const req = vi.spyOn(c as unknown as { request: () => Promise<unknown> }, 'request').mockResolvedValue({});
+    await c.sendLocation('inst', '5511@s.whatsapp.net', {
+      latitude: -23.5505,
+      longitude: -46.6333,
+      name: 'Escritório',
+      address: 'Av. Paulista, 1000',
+    });
+    expect(req).toHaveBeenCalledWith('POST', '/message/sendLocation/inst', {
+      number: '5511@s.whatsapp.net',
+      name: 'Escritório',
+      address: 'Av. Paulista, 1000',
+      latitude: -23.5505,
+      longitude: -46.6333,
+    });
+  });
+});

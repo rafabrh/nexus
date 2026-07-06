@@ -113,7 +113,10 @@ html[data-theme='light'] {
   --border-active: #007AFF;
   --success: #34C759; --warning: #FF9500; --error: #FF3B30; --info: #007AFF;
   --ai-on: #34C759; --ai-paused: #FF9500; --ai-off: #8E8E93; --ai-thinking: #8B5CF6;
-  --bubble-them: #E9E9EB;
+  /* Bolha recebida: branca para sobressair no fundo do chat (bg-base #E8E8EB),
+     como no iMessage/WhatsApp. A área é pequena, então NÃO reintroduz o glare de
+     tela cheia que motivou a suavização — só devolve a forma do balão. */
+  --bubble-them: #FFFFFF;
   --stage-s0:#8E8E93; --stage-s1:#32ADE6; --stage-s2:#5856D6; --stage-s3:#FF9500;
   --stage-s4:#FF3B30; --stage-s5:#34C759; --stage-s6:#00C7BE;
   /* Vidro mais translúcido (0.55 → 0.48): vira lâmina de vidro em vez de chapa

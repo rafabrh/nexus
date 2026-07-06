@@ -23,6 +23,10 @@ interface CameraCaptureProps {
 export function CameraCapture({ open, onOpenChange, jid }: CameraCaptureProps) {
   const streamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  // Fica true só enquanto o modal está aberto. Serve de guarda contra a corrida
+  // "fechou durante a aquisição da permissão": sem isso, a stream que chega
+  // depois do cleanup ficaria ligada para sempre (câmera acesa à toa).
+  const activeRef = useRef(false);
   const [photo, setPhoto] = useState<string | null>(null); // dataURL congelado
   const sendMedia = useSendMedia(jid);
 
@@ -44,14 +48,23 @@ export function CameraCapture({ open, onOpenChange, jid }: CameraCaptureProps) {
         video: { facingMode: 'user' },
         audio: false,
       });
+      // Modal fechou enquanto a permissão era resolvida: descarta a stream na
+      // hora para não deixar a câmera ligada (o cleanup já rodou antes dela existir).
+      if (!activeRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play().catch(() => {});
       }
     } catch {
-      notify.error('Não foi possível acessar a câmera. Verifique a permissão.');
-      onOpenChange(false);
+      // Não incomoda com erro se o usuário já fechou o modal.
+      if (activeRef.current) {
+        notify.error('Não foi possível acessar a câmera. Verifique a permissão.');
+        onOpenChange(false);
+      }
     }
   }, [onOpenChange]);
 
@@ -69,9 +82,13 @@ export function CameraCapture({ open, onOpenChange, jid }: CameraCaptureProps) {
   // Liga/desliga a câmera conforme o modal abre/fecha; sempre limpa os tracks.
   useEffect(() => {
     if (!open) return;
+    activeRef.current = true;
     setPhoto(null);
     void startCamera();
-    return () => stopStream();
+    return () => {
+      activeRef.current = false;
+      stopStream();
+    };
   }, [open, startCamera, stopStream]);
 
   const capture = () => {
