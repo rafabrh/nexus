@@ -200,6 +200,58 @@ export class EvolutionClient {
     );
   }
 
+  /**
+   * Envia um cartão de contato (vCard) via Evolution. O WhatsApp exige o `wuid`
+   * (WhatsApp User ID) — que aqui derivamos do próprio telefone, só dígitos, pois
+   * é o mesmo identificador usado pela Evolution. `organization`/`email` são
+   * opcionais e só entram no vCard se vierem preenchidos.
+   */
+  async sendContact(
+    instancia: string,
+    jid: string,
+    contact: { fullName: string; phoneNumber: string; organization?: string; email?: string },
+  ): Promise<Record<string, unknown>> {
+    const wuid = contact.phoneNumber.replace(/\D/g, '');
+    return this.request<Record<string, unknown>>(
+      'POST',
+      `/message/sendContact/${instancia}`,
+      {
+        number: jid,
+        contact: [
+          {
+            fullName: contact.fullName,
+            wuid,
+            phoneNumber: contact.phoneNumber,
+            organization: contact.organization,
+            email: contact.email,
+          },
+        ],
+      },
+    );
+  }
+
+  /**
+   * Envia uma localização (pin no mapa) via Evolution. `name`/`address` são
+   * rótulos opcionais exibidos sobre o mapa; `latitude`/`longitude` são o pino.
+   */
+  async sendLocation(
+    instancia: string,
+    jid: string,
+    loc: { latitude: number; longitude: number; name?: string; address?: string },
+  ): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>(
+      'POST',
+      `/message/sendLocation/${instancia}`,
+      {
+        number: jid,
+        name: loc.name,
+        address: loc.address,
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+      },
+    );
+  }
+
   async findChats(instanceName: string): Promise<unknown> {
     return this.request('POST', `/chat/findChats/${instanceName}`, {});
   }

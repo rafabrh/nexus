@@ -672,4 +672,70 @@ export class ConversationService {
     this.logger.log(`Audio sent + persisted for ${instancia}/${jid}`);
     return { message: 'Áudio enviado' };
   }
+
+  /**
+   * Envia um cartão de contato (vCard) via Evolution e grava no histórico uma
+   * linha textual legível — a bolha mostra só texto, sem precisar de um novo
+   * tipo de render. Envio do operador = human takeover: pausa a IA por 30min,
+   * como texto/mídia/áudio.
+   */
+  async sendContactMessage(
+    instancia: string,
+    jid: string,
+    dto: { fullName: string; phoneNumber: string; organization?: string; email?: string },
+  ): Promise<{ message: string }> {
+    const res = await this.evolution.sendContact(instancia, jid, dto);
+
+    const key = (res?.key ?? {}) as Record<string, unknown>;
+    const msgId = typeof key.id === 'string' ? key.id : null;
+    const phone = jid.replace('@s.whatsapp.net', '');
+    const histKey = RedisKeys.chatHistory(instancia, phone);
+    const entry = JSON.stringify({
+      type: 'ai',
+      data: { content: `📇 Contato: ${dto.fullName} — ${dto.phoneNumber}`, timestamp: Date.now() },
+      ...(msgId ? { id: msgId } : {}),
+    });
+    await this.redis.rpush(histKey, entry);
+
+    await this.pauseAiForHumanTakeover(instancia, jid, 30 * 60 * 1000);
+    await this.index.addJid(instancia, jid);
+    await this.projection.project(instancia, jid);
+
+    this.logger.log(`Contact sent + persisted for ${instancia}/${jid}`);
+    return { message: 'Contato enviado' };
+  }
+
+  /**
+   * Envia uma localização (pin no mapa) via Evolution e grava no histórico uma
+   * linha textual legível — mesma estratégia do contato: só texto na bolha.
+   * Envio do operador = human takeover: pausa a IA por 30min.
+   */
+  async sendLocationMessage(
+    instancia: string,
+    jid: string,
+    dto: { latitude: number; longitude: number; name?: string; address?: string },
+  ): Promise<{ message: string }> {
+    const res = await this.evolution.sendLocation(instancia, jid, dto);
+
+    const key = (res?.key ?? {}) as Record<string, unknown>;
+    const msgId = typeof key.id === 'string' ? key.id : null;
+    const phone = jid.replace('@s.whatsapp.net', '');
+    const histKey = RedisKeys.chatHistory(instancia, phone);
+    // Rótulo opcional (nome/endereço) enriquece a bolha quando vier preenchido.
+    const label = [dto.name, dto.address].filter(Boolean).join(' — ');
+    const content = label ? `📍 Localização: ${label}` : '📍 Localização enviada';
+    const entry = JSON.stringify({
+      type: 'ai',
+      data: { content, timestamp: Date.now() },
+      ...(msgId ? { id: msgId } : {}),
+    });
+    await this.redis.rpush(histKey, entry);
+
+    await this.pauseAiForHumanTakeover(instancia, jid, 30 * 60 * 1000);
+    await this.index.addJid(instancia, jid);
+    await this.projection.project(instancia, jid);
+
+    this.logger.log(`Location sent + persisted for ${instancia}/${jid}`);
+    return { message: 'Localização enviada' };
+  }
 }
