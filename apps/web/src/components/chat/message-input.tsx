@@ -2,14 +2,15 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Zap, AlertTriangle, Paperclip, X, Mic, Trash2 } from 'lucide-react';
+import { Send, Zap, AlertTriangle, X, Mic, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useSendMessage, useSendMedia, useSendAudio } from '@/hooks/use-messages';
+import { useSendMessage, useSendAudio } from '@/hooks/use-messages';
 import { useQuickReplies } from '@/hooks/use-quick-replies';
 import { useVoiceRecorder } from '@/hooks/use-voice-recorder';
 import { useConversationStore } from '@/stores/conversation.store';
 import { notify } from '@/lib/notify';
 import { EmojiPickerButton } from './emoji-picker';
+import { AttachmentMenu } from './attachment-menu';
 import type { AiState, QuickReply } from '@nexus/shared';
 
 interface MessageInputProps {
@@ -27,8 +28,6 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
   const clearComposerInsert = useConversationStore((s) => s.clearComposerInsert);
   const replyingTo = useConversationStore((s) => s.replyingTo);
   const clearReplyingTo = useConversationStore((s) => s.clearReplyingTo);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const sendMedia = useSendMedia(jid);
   const sendAudio = useSendAudio(jid);
   const recorder = useVoiceRecorder();
 
@@ -95,43 +94,6 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
       const { start, end } = caretRef.current;
       el.setSelectionRange(start, end);
     });
-  };
-
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = ''; // permite reenviar o mesmo arquivo
-    if (!file) return;
-    if (file.size > 16 * 1024 * 1024) {
-      notify.error('Arquivo muito grande (máx 16MB)');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
-      const mediatype = file.type.startsWith('image/')
-        ? 'image'
-        : file.type.startsWith('video/')
-          ? 'video'
-          : 'document';
-      sendMedia.mutate(
-        {
-          mediatype,
-          media: base64,
-          fileName: file.name,
-          mimetype: file.type,
-          caption: text.trim() || undefined,
-        },
-        {
-          onSuccess: () => {
-            setText('');
-            notify.success('Mídia enviada');
-          },
-          onError: () => notify.error('Erro ao enviar mídia'),
-        },
-      );
-    };
-    reader.readAsDataURL(file);
   };
 
   // Fill (never send) the composer when a quick reply is clicked elsewhere
@@ -361,23 +323,14 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
           <Zap size={16} />
         </button>
 
-        {/* Anexar mídia */}
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt"
-          className="hidden"
-          onChange={handleFile}
+        {/* Anexar — carrossel estilo WhatsApp (Câmera, Imagem, Documento, Contato,
+            Localização). A legenda do composer vira caption da mídia e é limpa
+            ao enviar, preservando o comportamento anterior. */}
+        <AttachmentMenu
+          jid={jid}
+          getCaption={() => text.trim() || undefined}
+          onMediaSent={() => setText('')}
         />
-        <button
-          onClick={() => fileRef.current?.click()}
-          disabled={sendMedia.isPending}
-          className="flex-shrink-0 w-8 h-8 rounded-input flex items-center justify-center text-text-muted hover:text-text-secondary hover:bg-bg-hover transition-colors duration-150 disabled:opacity-50"
-          aria-label="Anexar arquivo"
-          title="Anexar imagem, vídeo ou documento"
-        >
-          <Paperclip size={16} />
-        </button>
 
         {/* Emoji — popover liquid-glass; insere na posição do cursor */}
         <EmojiPickerButton onSelect={insertEmoji} onOpenChange={handleEmojiOpenChange} />

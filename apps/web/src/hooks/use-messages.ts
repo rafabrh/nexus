@@ -79,6 +79,60 @@ export function useSendMedia(jid: string) {
   });
 }
 
+export interface SendContactPayload {
+  fullName: string;
+  /** Somente dígitos (parte local do jid, sem @s.whatsapp.net). */
+  phoneNumber: string;
+  organization?: string;
+  email?: string;
+}
+
+/**
+ * Envia um cartão de contato (vCard) para a conversa. Espelha `useSendMedia`:
+ * mesma invalidação de ['messages',jid] e ['conversations'] no onSettled para a
+ * bolha aparecer assim que a Evolution ecoar a mensagem.
+ */
+export function useSendContact(jid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: SendContactPayload) =>
+      api(`/api/v1/conversations/${encodeURIComponent(jid)}/send-contact`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['messages', jid] });
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+}
+
+export interface SendLocationPayload {
+  latitude: number;
+  longitude: number;
+  name?: string;
+  address?: string;
+}
+
+/**
+ * Envia uma localização (pin do mapa) para a conversa. Mesma estratégia de
+ * invalidação do `useSendMedia`.
+ */
+export function useSendLocation(jid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: SendLocationPayload) =>
+      api(`/api/v1/conversations/${encodeURIComponent(jid)}/send-location`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['messages', jid] });
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+}
+
 export interface SendAudioPayload {
   audio: string; // base64 sem o prefixo data:
   mimetype?: string;
