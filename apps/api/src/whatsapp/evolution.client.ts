@@ -127,10 +127,22 @@ export class EvolutionClient {
     }
   }
 
-  async findMessages(instanceName: string, remoteJid: string, limit: number): Promise<unknown> {
+  /**
+   * Mensagens de UMA conversa, direto do store da Evolution. Cada registro traz o
+   * array `MessageUpdate` com o histórico de ACK (SERVER_ACK/DELIVERY_ACK/READ/
+   * PLAYED) — usado tanto no sync inicial quanto para semear os tiques ao abrir a
+   * conversa. Na Evolution v2 o tamanho da página é controlado por `offset` (não
+   * `limit`). `count` = quantas mensagens retornar.
+   */
+  async findMessages(
+    instanceName: string,
+    remoteJid: string,
+    count = 60,
+  ): Promise<unknown> {
     return this.request('POST', `/chat/findMessages/${instanceName}`, {
       where: { key: { remoteJid } },
-      limit,
+      page: 1,
+      offset: count,
     });
   }
 
@@ -205,6 +217,7 @@ export class EvolutionClient {
         base64: false,
         events: [
           'messages.upsert',
+          'messages.update',
           'connection.update',
           'contacts.update',
           'contacts.upsert',

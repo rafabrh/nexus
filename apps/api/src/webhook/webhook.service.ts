@@ -5,6 +5,7 @@ import { RedisKeys, PhoneMask } from '@nexus/shared';
 import { EventPublisher } from '../realtime/event.publisher';
 import { resolvePersonalJid } from '../core/whatsapp/jid.util';
 import { isAiOff } from '../core/whatsapp/ai-off.util';
+import { ACK_CAS_LUA, mapEvolutionAck, type AckStatus } from '../core/whatsapp/ack-status.util';
 import { ConversationIndexService } from '../conversation/conversation-index.service';
 import { TenantRepository } from '../admin/tenant.repository';
 import { N8nForwarderService } from './n8n-forwarder.service';
@@ -200,17 +201,24 @@ export class WebhookService {
         ? { media: { kind: media.kind, id: keyId, fromMe, mimetype: media.mimetype } }
         : {}),
     });
-    // Eco do próprio envio: quando NÓS enviamos (fromMe), a Evolution devolve a
-    // mensagem de volta (`send.message` e/ou `messages.upsert` fromMe=true) e um
-    // mesmo envio pode chegar em mais de um evento. O envio do operador pelo
-    // painel JÁ foi gravado pelo ConversationService; regravar aqui duplicaria a
-    // bolha na visão do operador (o destinatário recebe só uma). Como o WAMID
-    // (key.id) é único e estável, não regravamos quando ele já está no histórico
-    // recente. A resposta da IA (N8N), que o painel não grava, tem id inédito →
-    // é persistida normalmente. O restante (índice, realtime, cache) segue.
-    const alreadyStored =
-      fromMe && keyId ? await this.isMessageAlreadyStored(histKey, keyId) : false;
-    if (!alreadyStored) {
+    // Eco do próprio envio. O painel grava a bolha no ENVIO; a Evolution devolve
+    // a mesma mensagem de volta (`send.message` e/ou `messages.upsert` fromMe=true)
+    // e um mesmo envio pode chegar em mais de um evento. Regravar aqui duplicaria a
+    // bolha na visão do operador (o destinatário recebe só uma). Três casos:
+    //  1) MESMO WAMID repetido (send.message + messages.upsert) → barrado por id.
+    //  2) mídia visual (imagem/vídeo/doc) do painel: a bolha otimista foi gravada
+    //     SEM `id` no topo (só `media.id`), e o `sendMedia` devolve um id que NEM
+    //     SEMPRE bate com o WAMID do eco (o áudio bate; a mídia visual não). Como o
+    //     id não casa, reconciliamos pela mídia otimista pendente do mesmo tipo,
+    //     substituindo-a pelo eco (que traz o WAMID real, usado pelo proxy).
+    //  3) resposta da IA (N8N) ou envio de outro device: sem otimista → grava.
+    // O restante (índice, realtime, cache) segue em qualquer caso.
+    if (fromMe && keyId && (await this.isMessageAlreadyStored(histKey, keyId))) {
+      /* eco repetido do mesmo WAMID — nada a persistir */
+    } else if (fromMe && media && keyId) {
+      const reconciled = await this.reconcileOutgoingMedia(histKey, media.kind, entry);
+      if (!reconciled) await this.redis.rpush(histKey, entry);
+    } else {
       await this.redis.rpush(histKey, entry);
     }
 
@@ -288,6 +296,41 @@ export class WebhookService {
         const media = parsed.media as { id?: string } | undefined;
         const id = (typeof parsed.id === 'string' && parsed.id) || media?.id || null;
         if (id === msgId) return true;
+      } catch {
+        /* entrada malformada — ignora */
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Reconcilia o eco de uma mídia de SAÍDA (imagem/vídeo/documento) com a bolha
+   * otimista que o painel gravou no envio. Essa bolha (ConversationService.
+   * sendMediaMessage) NÃO tem `id` no topo — só `media.id`, que para mídia visual
+   * pode divergir do WAMID do eco (o `sendMedia` devolve um id que nem sempre bate
+   * com o do eco; o áudio bate e por isso não passa por aqui — sua bolha otimista
+   * grava o `id` no topo e casa pela dedup por WAMID). Localiza a otimista pendente
+   * mais antiga do mesmo tipo (saída, mesma mídia, SEM `id` no topo) e a SUBSTITUI
+   * pelo eco (que traz o WAMID real). Assim não nasce uma 2ª bolha, sem depender de
+   * o id do envio bater com o do eco. `lrem` por valor é atômico e imune a mudança
+   * de posição na lista. Retorna true se reconciliou.
+   */
+  private async reconcileOutgoingMedia(
+    histKey: string,
+    kind: string,
+    echoEntry: string,
+  ): Promise<boolean> {
+    const recent = await this.redis.lrange(histKey, -ECHO_SCAN_WINDOW, -1);
+    for (const raw of recent) {
+      try {
+        const parsed = JSON.parse(raw);
+        const hasTopId = typeof parsed.id === 'string' && parsed.id.length > 0;
+        const media = parsed.media as { kind?: string } | undefined;
+        if (parsed.type === 'ai' && !hasTopId && media && media.kind === kind) {
+          await this.redis.lrem(histKey, 1, raw);
+          await this.redis.rpush(histKey, echoEntry);
+          return true;
+        }
       } catch {
         /* entrada malformada — ignora */
       }
@@ -622,56 +665,14 @@ export class WebhookService {
   }
 
   /**
-   * CAS atômico do status de ACK (read-compare-write num único passo no Redis). Só
-   * grava quando o novo status é um AVANÇO no ranking (sent<delivered<read<played);
-   * o ranking vive dentro do script para não haver janela entre HGET e HSET. Sem
-   * isto, dois `messages.update` concorrentes do mesmo msgId poderiam intercalar e
-   * REBAIXAR o status (ex.: `read` sobrescrito por um `delivered` atrasado).
-   * Retorna 1 se avançou, 0 caso contrário.
+   * Extrai o status de ACK do payload `messages.update` (campo `status` no topo ou
+   * dentro de `update`) e mapeia para o enum do painel via util compartilhado.
    */
-  private static readonly ACK_CAS_LUA = `
-local ranks = { sent = 1, delivered = 2, read = 3, played = 4 }
-local cur = redis.call('HGET', KEYS[1], ARGV[1])
-local curRank = 0
-if cur and ranks[cur] then curRank = ranks[cur] end
-local newRank = ranks[ARGV[2]] or 0
-if newRank <= curRank then return 0 end
-redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
-return 1
-`;
-
-  /**
-   * Mapeia o status de ACK da Evolution/Baileys (numérico WAMessageStatus ou string)
-   * para o enum do painel. 2=servidor, 3=entregue, 4=lido, 5=reproduzido.
-   */
-  private mapAckStatus(
-    data: Record<string, unknown>,
-  ): 'sent' | 'delivered' | 'read' | 'played' | null {
+  private mapAckStatus(data: Record<string, unknown>): AckStatus | null {
     const raw =
       (data.status as unknown) ??
       ((data.update as Record<string, unknown> | undefined)?.status as unknown);
-    if (raw == null) return null;
-    // Numérico do WAMessageStatus — direto (number) ou como string de dígitos ("3"),
-    // que algumas versões da Evolution enviam. 2=servidor..5=reproduzido.
-    const num =
-      typeof raw === 'number'
-        ? raw
-        : typeof raw === 'string' && /^\d+$/.test(raw.trim())
-          ? parseInt(raw.trim(), 10)
-          : null;
-    if (num != null) {
-      if (num >= 5) return 'played';
-      if (num === 4) return 'read';
-      if (num === 3) return 'delivered';
-      if (num === 2) return 'sent';
-      return null;
-    }
-    const s = String(raw).toUpperCase();
-    if (s.includes('PLAYED')) return 'played';
-    if (s.includes('READ')) return 'read';
-    if (s.includes('DELIVERY') || s === 'DELIVERED') return 'delivered';
-    if (s.includes('SERVER') || s === 'SENT') return 'sent';
-    return null;
+    return mapEvolutionAck(raw);
   }
 
   /**
@@ -683,11 +684,11 @@ return 1
     inst: string,
     jid: string,
     msgId: string,
-    status: 'sent' | 'delivered' | 'read' | 'played',
+    status: AckStatus,
   ): Promise<boolean> {
     const hkey = RedisKeys.ackStatus(inst, jid);
     const advanced = await this.redis.eval(
-      WebhookService.ACK_CAS_LUA,
+      ACK_CAS_LUA,
       1,
       hkey,
       msgId,

@@ -178,12 +178,19 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
         {/* Toggle detail panel — Liquid Glass button: translucent glass fill,
             specular top edge + soft shadow, with the icon lifted above the
             button's own sheen. Tints to accent when the panel is open. */}
+        {/* NOTA: este botão NÃO usa `mirror` nem `backdrop-filter` próprio de
+            propósito. Ele já assenta sobre o header de vidro (`.glass`), então um
+            blur próprio é redundante — e empilhar `backdrop-filter` + `isolation`
+            (do `.mirror`) num alvo de 32px força uma camada de composição cuja
+            região de hit-test o Chromium desalinha da pintura (o clique/hover só
+            pegava "deslocado para o lado"). O visual de vidro é mantido via
+            background translúcido + borda + sheen no box-shadow. */}
         <button
           type="button"
           onClick={toggleDetailPanel}
           aria-label={detailPanelOpen ? 'Fechar painel de detalhes' : 'Abrir painel de detalhes'}
           title={detailPanelOpen ? 'Fechar Detalhes' : 'Abrir Detalhes'}
-          className="mirror relative z-10 flex items-center justify-center transition-[transform,filter,box-shadow] duration-150 active:scale-95 focus-ring"
+          className="relative z-10 flex items-center justify-center transition-[transform,filter,box-shadow] duration-150 active:scale-95 focus-ring"
           style={{
             width: 32,
             height: 32,
@@ -198,8 +205,6 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
                 : 'var(--glass-border)'
             }`,
             boxShadow: 'inset 0 1px 0 var(--mirror-edge), var(--shadow-control)',
-            backdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
-            WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(1.1)',
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.filter = 'brightness(1.07)';
@@ -212,7 +217,7 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
               'inset 0 1px 0 var(--mirror-edge), var(--shadow-control)';
           }}
         >
-          <span className="pointer-events-none relative z-10 inline-flex">
+          <span className="pointer-events-none inline-flex">
             {detailPanelOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
           </span>
         </button>

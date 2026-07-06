@@ -39,12 +39,13 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'nexus-settings',
-      version: 1,
-      // v0 tinha a opção 'system' (resolvida como escuro). Migra o valor
-      // persistido para 'dark' agora que só existem Claro/Escuro.
-      migrate: (persisted, version) => {
-        const state = persisted as Partial<SettingsState> | undefined;
-        if (version < 1 && state && (state.theme as string) === 'system') {
+      version: 3,
+      // Só existem Claro/Escuro. Qualquer valor legado (inclusive 'system')
+      // é sanitizado para 'dark'.
+      migrate: (persisted) => {
+        const state = (persisted ?? {}) as Partial<SettingsState>;
+        const t = state.theme as string | undefined;
+        if (t !== 'light' && t !== 'dark') {
           state.theme = 'dark';
         }
         return state as SettingsState;

@@ -68,6 +68,12 @@ export const RedisKeys = {
   ackStatus: (inst: string, jid: string) =>
     `chat:${inst}:${jid}:ack`,
 
+  // Marcador de throttle (SET NX, TTL curto) do backfill de ACK a partir da
+  // Evolution: enquanto existir, `getMessages` NÃO refaz o findMessages para
+  // semear o hash de ACK — limita as chamadas à Evolution ao abrir a conversa.
+  ackSeededAt: (inst: string, jid: string) =>
+    `chat:${inst}:${jid}:ackseed`,
+
   // ---- BFF exclusivo ----
 
   eventStream: (inst: string) =>
