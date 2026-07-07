@@ -92,7 +92,7 @@ export function KanbanBoard() {
           <div className="h-5 w-36 skeleton mb-1" />
           <div className="h-3 w-52 skeleton" />
         </div>
-        <div className="kanban-scroll flex gap-3 overflow-x-auto p-5 flex-1 min-h-0">
+        <div className="kanban-scroll flex gap-3 overflow-x-auto p-3 md:p-5 flex-1 min-h-0">
           {Array.from({ length: 7 }).map((_, i) => (
             <ColumnSkeleton key={i} />
           ))}
@@ -129,8 +129,9 @@ export function KanbanBoard() {
 
       {/* Board scroll container — columns fill the available height */}
       <div
-        className="kanban-scroll flex gap-3 overflow-x-auto p-5 flex-1 min-h-0 items-stretch"
-        style={{ scrollSnapType: 'x proximity', scrollPadding: '20px' }}
+        className="kanban-scroll flex gap-3 overflow-x-auto p-3 md:p-5 flex-1 min-h-0 items-stretch"
+        // momentum touch no mobile — a .kanban-scroll só cobre a barra, não o inertial scroll do iOS
+        style={{ scrollSnapType: 'x proximity', scrollPadding: '20px', WebkitOverflowScrolling: 'touch' }}
       >
         {stages.map((stage) => {
           const stageConvs = convByStage[stage.key];

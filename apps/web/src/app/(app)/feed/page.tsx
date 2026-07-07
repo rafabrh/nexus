@@ -14,7 +14,7 @@ export default function FeedPage() {
   return (
     <LenisProvider>
       <motion.div
-        className="p-6 max-w-3xl mx-auto"
+        className="p-4 md:p-6 max-w-3xl mx-auto"
         variants={pageTransition}
         initial="initial"
         animate="animate"

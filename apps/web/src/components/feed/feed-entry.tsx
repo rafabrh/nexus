@@ -186,7 +186,7 @@ export function FeedEntry({ event }: FeedEntryProps) {
 
       {/* Message content grid */}
       {(clientMsg || aiMsg) && (
-        <div className="grid grid-cols-2 gap-2 mt-2 pl-1">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2 pl-1">
           {clientMsg && (
             <div
               style={{
