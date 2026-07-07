@@ -274,10 +274,11 @@ export function AttachmentMenu({
                     borderRadius: 16,
                   }}
                 >
-                  {/* flex-wrap: quando o max-w do popover aperta (telas ~320px),
-                      os tiles quebram para uma segunda linha em vez de vazar.
-                      No desktop cabem todos numa linha, então o layout é idêntico. */}
-                  <div className="flex flex-wrap items-stretch justify-center gap-1 p-2.5">
+                  {/* Tiles menores no mobile (círculo 44px, tile 54px) fazem os 5
+                      caberem numa linha só até ~320px, sem o wrap 4+1 desajeitado.
+                      flex-wrap fica como rede de segurança em telas ultra-estreitas.
+                      No desktop os valores md: restauram o layout original. */}
+                  <div className="flex flex-wrap items-stretch justify-center gap-0.5 md:gap-1 p-2 md:p-2.5">
                     {ACTIONS.map((action, i) => {
                       const Icon = action.icon;
                       return (
@@ -296,10 +297,10 @@ export function AttachmentMenu({
                           onFocus={() => setFocusIndex(i)}
                           whileHover={reduce ? undefined : { y: -2 }}
                           whileTap={reduce ? undefined : { scale: 0.92 }}
-                          className="group flex w-[62px] flex-col items-center gap-1.5 rounded-xl px-1 py-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent"
+                          className="group flex w-[54px] md:w-[62px] flex-col items-center gap-1.5 rounded-xl px-1 py-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent"
                         >
                           <span
-                            className="flex h-12 w-12 items-center justify-center rounded-full text-white shadow-sm transition-transform duration-150 group-active:scale-95"
+                            className="flex h-11 w-11 md:h-12 md:w-12 items-center justify-center rounded-full text-white shadow-sm transition-transform duration-150 group-active:scale-95"
                             style={{
                               background: action.color,
                               boxShadow:

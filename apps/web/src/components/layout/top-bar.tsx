@@ -107,7 +107,7 @@ function NotificationsMenu() {
         ref={bellRef}
         onClick={() => setOpen((v) => !v)}
         aria-label="Notificacoes"
-        className="relative w-8 h-8 rounded-input bg-bg-elevated border border-border flex items-center justify-center hover:bg-bg-hover transition-colors duration-150 focus-ring"
+        className="relative w-10 h-10 md:w-8 md:h-8 rounded-input bg-bg-elevated border border-border flex items-center justify-center hover:bg-bg-hover transition-colors duration-150 focus-ring"
         style={{ boxShadow: 'inset 0 1px 0 var(--mirror-edge)' }}
       >
         <Bell size={14} className="text-text-secondary" />
@@ -245,7 +245,7 @@ function UserMenu() {
       <button
         onClick={() => setOpen((v) => !v)}
         aria-label="Menu do usuario"
-        className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white transition-transform duration-150 hover:scale-105 focus-ring"
+        className="w-10 h-10 md:w-8 md:h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white transition-transform duration-150 hover:scale-105 focus-ring"
         style={{ background: 'var(--accent-500)' }}
       >
         {initial}
@@ -341,7 +341,7 @@ export function TopBar() {
         onClick={() => setDrawerOpen(true)}
         aria-label="Abrir menu"
         aria-expanded={drawerOpen}
-        className="md:hidden flex-shrink-0 ml-3 w-8 h-8 rounded-input flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors duration-150 focus-ring"
+        className="md:hidden flex-shrink-0 ml-2 w-10 h-10 rounded-input flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors duration-150 focus-ring"
       >
         <Menu size={18} />
       </button>
