@@ -264,7 +264,14 @@ export function Sidebar() {
 
   return (
     <aside
-      className="glass fixed top-12 left-0 bottom-0 w-80 flex flex-col z-40"
+      className={cn(
+        // Mobile single-pane: a lista ocupa a tela toda (w-full). No desktop
+        // volta a ser a coluna de 320px ao lado do chat (md:w-80).
+        'glass fixed top-12 left-0 bottom-0 w-full md:w-80 flex-col z-40',
+        // Com conversa selecionada, no mobile a lista some para o chat assumir
+        // a tela; no desktop ela permanece sempre visível (md:flex).
+        selectedJid ? 'hidden md:flex' : 'flex',
+      )}
       style={{
         borderRight: '1px solid var(--separator)',
         borderLeft: 'none',

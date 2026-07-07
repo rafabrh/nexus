@@ -245,7 +245,7 @@ export function DetailPanel({ jid }: DetailPanelProps) {
           initial="initial"
           animate="animate"
           exit="exit"
-          className="vibrancy-panel fixed top-12 right-0 bottom-0 w-[380px] z-40 flex flex-col overflow-y-auto"
+          className="vibrancy-panel fixed top-12 right-0 bottom-0 w-full md:w-[380px] z-40 flex flex-col overflow-y-auto"
           style={{
             borderLeft: '1px solid var(--separator)',
           }}
@@ -259,10 +259,10 @@ export function DetailPanel({ jid }: DetailPanelProps) {
             <button
               onClick={() => setDetailPanelOpen(false)}
               aria-label="Fechar painel de detalhes"
-              className="flex items-center justify-center text-text-muted hover:text-text-secondary transition-colors duration-150 focus-ring"
+              // Alvo de toque 44px no mobile (sheet full-screen); volta a 28px no
+              // desktop (md:w-7 md:h-7) para não crescer na coluna de 380px.
+              className="flex items-center justify-center w-11 h-11 md:w-7 md:h-7 text-text-muted hover:text-text-secondary transition-colors duration-150 focus-ring"
               style={{
-                width: 28,
-                height: 28,
                 borderRadius: 'var(--radius-input)',
               }}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}

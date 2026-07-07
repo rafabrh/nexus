@@ -256,7 +256,10 @@ export function AttachmentMenu({
                   e.preventDefault();
                   requestAnimationFrame(() => tilesRef.current[0]?.focus());
                 }}
-                className="glass-popup z-[var(--z-dropdown)] overflow-hidden"
+                // max-w impede o carrossel de estourar em telas estreitas (~320px):
+                // limita o popover à largura da viewport menos uma folga (12px de
+                // cada lado). No desktop a viewport é larga, então nada muda.
+                className="glass-popup z-[var(--z-dropdown)] overflow-hidden max-w-[calc(100vw-24px)]"
               >
                 <motion.div
                   role="menu"
@@ -271,7 +274,10 @@ export function AttachmentMenu({
                     borderRadius: 16,
                   }}
                 >
-                  <div className="flex items-stretch gap-1 p-2.5">
+                  {/* flex-wrap: quando o max-w do popover aperta (telas ~320px),
+                      os tiles quebram para uma segunda linha em vez de vazar.
+                      No desktop cabem todos numa linha, então o layout é idêntico. */}
+                  <div className="flex flex-wrap items-stretch justify-center gap-1 p-2.5">
                     {ACTIONS.map((action, i) => {
                       const Icon = action.icon;
                       return (

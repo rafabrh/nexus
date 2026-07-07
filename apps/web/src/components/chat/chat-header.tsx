@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bot, Flame, PanelRightOpen, PanelRightClose } from 'lucide-react';
+import { ArrowLeft, Bot, Flame, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { useUiStore } from '@/stores/ui.store';
+import { useConversationStore } from '@/stores/conversation.store';
 import { usePresenceStore } from '@/stores/presence.store';
 import { stageColorToken } from '@/lib/stage-colors';
 import type { ConversationListItem, AiState } from '@nexus/shared';
@@ -62,6 +63,8 @@ interface ChatHeaderProps {
 
 export function ChatHeader({ conversation }: ChatHeaderProps) {
   const { detailPanelOpen, toggleDetailPanel } = useUiStore();
+  // Single-pane no mobile: limpar a seleção devolve a lista à tela cheia.
+  const setSelectedJid = useConversationStore((s) => s.setSelectedJid);
   const ai = getAiLabel(conversation.aiState);
 
   // Presença efêmera (digitando/gravando/online). "digitando/gravando" expira em
@@ -92,6 +95,19 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
       {/* Left — contact info. Lifted above the header's specular sheen so the
           reflection sits behind the content, not over the text. */}
       <div className="relative z-10 flex items-center gap-3">
+        {/* Voltar — só no mobile (single-pane). Devolve a lista de conversas à
+            tela cheia limpando o selectedJid. Alvo de toque 44px (w-11 h-11);
+            o -ml-1.5 recupera parte do px-4 do header para o alinhamento ótico. */}
+        <button
+          type="button"
+          onClick={() => setSelectedJid(null)}
+          aria-label="Voltar"
+          title="Voltar"
+          className="md:hidden -ml-1.5 flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-input text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors duration-150 focus-ring"
+        >
+          <ArrowLeft size={20} />
+        </button>
+
         {/* Avatar 34px — foto do WhatsApp via proxy autenticado (por jid), fallback nas iniciais */}
         <Avatar
           name={conversation.contactName}

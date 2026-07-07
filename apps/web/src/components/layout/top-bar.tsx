@@ -19,6 +19,7 @@ import {
   Clock,
   Trash2,
   X,
+  Menu,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import gsap from 'gsap';
@@ -33,6 +34,7 @@ import {
   type NotificationKind,
 } from '@/stores/notifications.store';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { MobileNavDrawer } from '@/components/layout/mobile-nav-drawer';
 import { api } from '@/lib/api';
 import { decodeJwt } from '@/lib/jwt';
 
@@ -126,7 +128,7 @@ function NotificationsMenu() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.97 }}
             transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-            className="glass-popup absolute right-0 mt-2 w-80 rounded-2xl overflow-hidden z-50"
+            className="glass-popup absolute right-0 mt-2 w-80 max-w-[calc(100vw-24px)] rounded-2xl overflow-hidden z-50"
             style={{ boxShadow: 'var(--shadow-panel)' }}
           >
             {/* Header */}
@@ -256,7 +258,7 @@ function UserMenu() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.97 }}
             transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-            className="glass-popup absolute right-0 mt-2 w-56 rounded-2xl overflow-hidden z-50"
+            className="glass-popup absolute right-0 mt-2 w-56 max-w-[calc(100vw-24px)] rounded-2xl overflow-hidden z-50"
             style={{
               boxShadow: 'var(--shadow-panel)',
             }}
@@ -324,6 +326,9 @@ export function TopBar() {
   const pathname = usePathname();
   const connected = useRealtimeStore((s) => s.connected);
 
+  // Estado LOCAL da gaveta mobile — sem store nova; só a TopBar precisa saber.
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
   return (
     <header
       className="vibrancy-bar fixed top-0 left-0 right-0 z-50 h-12 flex items-center"
@@ -331,8 +336,19 @@ export function TopBar() {
         borderBottom: '1px solid var(--separator)',
       }}
     >
-      {/* Logo zone — 320px */}
-      <div className="w-80 flex-shrink-0 flex items-center gap-2 px-5">
+      {/* Hambúrguer — só no mobile; abre a gaveta de navegação. */}
+      <button
+        onClick={() => setDrawerOpen(true)}
+        aria-label="Abrir menu"
+        aria-expanded={drawerOpen}
+        className="md:hidden flex-shrink-0 ml-3 w-8 h-8 rounded-input flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors duration-150 focus-ring"
+      >
+        <Menu size={18} />
+      </button>
+
+      {/* Logo zone — 320px no desktop; no mobile encolhe (w-auto) para não
+          reservar espaço morto ao lado do hambúrguer. */}
+      <div className="w-auto md:w-80 flex-shrink-0 flex items-center gap-2 px-3 md:px-5">
         <Bot size={20} className="text-primary-400" />
         <span className="text-md font-semibold text-text-primary tracking-tight">
           NEXUS
@@ -342,8 +358,9 @@ export function TopBar() {
 
       {/* Tabs — center. Active tab sits on a polished glass "mirror" pill that
           slides between tabs (shared layoutId), giving the bar a segmented-
-          control feel without losing the accent identity. */}
-      <nav className="flex-1 flex items-center justify-center gap-1">
+          control feel without losing the accent identity.
+          Escondidas no mobile — migram para a MobileNavDrawer. */}
+      <nav className="hidden md:flex flex-1 items-center justify-center gap-1">
         {NAV_TABS.map((tab) => {
           const active = pathname === tab.href;
           return (
@@ -376,11 +393,13 @@ export function TopBar() {
         })}
       </nav>
 
-      {/* Actions — right */}
-      <div className="flex-shrink-0 flex items-center gap-3 px-5">
-        {/* Connection status */}
+      {/* Actions — right. ml-auto mantém tudo à direita no mobile, onde a <nav>
+          flex-1 (que empurrava as ações) fica escondida. */}
+      <div className="flex-shrink-0 flex items-center gap-3 px-3 md:px-5 ml-auto md:ml-0">
+        {/* Connection status — no mobile mostra só o ícone (o texto some). */}
         <Link
           href="/connect"
+          aria-label={connected ? 'Conexão online' : 'Conexão offline'}
           className={cn(
             'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium',
             connected
@@ -394,7 +413,7 @@ export function TopBar() {
           }}
         >
           {connected ? <Wifi size={14} /> : <WifiOff size={14} />}
-          {connected ? 'Online' : 'Offline'}
+          <span className="hidden md:inline">{connected ? 'Online' : 'Offline'}</span>
         </Link>
 
         {/* Notifications — bell menu */}
@@ -403,6 +422,9 @@ export function TopBar() {
         {/* User menu — account + logout */}
         <UserMenu />
       </div>
+
+      {/* Gaveta de navegação mobile (só existe < md) */}
+      <MobileNavDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
     </header>
   );
 }
