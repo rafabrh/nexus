@@ -17,8 +17,15 @@ import {
   RotateCcw,
   Pencil,
   Check,
+  GripVertical,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import {
+  motion,
+  AnimatePresence,
+  Reorder,
+  useDragControls,
+  type DragControls,
+} from 'framer-motion';
 import { notify } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 import { Avatar } from '@/components/ui/avatar';
@@ -28,6 +35,11 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { useUiStore } from '@/stores/ui.store';
 import { useConversationStore } from '@/stores/conversation.store';
+import {
+  useDetailSectionsStore,
+  normalizeOrder,
+  type DetailSectionId,
+} from '@/stores/detail-sections.store';
 import {
   useConversationDetail,
   useAiControl,
@@ -61,29 +73,47 @@ function Section({
   icon: Icon,
   children,
   defaultOpen = true,
+  dragControls,
 }: {
   title: string;
   icon: React.ElementType;
   children: React.ReactNode;
   defaultOpen?: boolean;
+  /** Quando presente, o cabeçalho vira "pega" de arraste (seção reordenável). */
+  dragControls?: DragControls;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const draggable = !!dragControls;
   return (
     <div style={{ borderBottom: '1px solid var(--separator)' }} className="last:border-b-0">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-text-secondary transition-colors duration-150"
-        style={{ borderRadius: 0 }}
+        // Press-and-hold no cabeçalho inicia o arraste (só nas seções
+        // reordenáveis). touch-action:none deixa o pointer capturar o gesto no
+        // toque; um clique simples (sem mover) continua abrindo/fechando a seção.
+        onPointerDown={draggable ? (e) => dragControls!.start(e) : undefined}
+        className={cn(
+          'group w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-text-primary transition-colors duration-150',
+          draggable && 'cursor-grab active:cursor-grabbing',
+        )}
+        style={{ borderRadius: 0, touchAction: draggable ? 'none' : undefined }}
         onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
         onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
       >
-        <Icon size={14} className="text-text-muted" />
+        {draggable && (
+          <GripVertical
+            size={14}
+            className="flex-shrink-0 text-text-muted opacity-40 group-hover:opacity-90 transition-opacity"
+            aria-hidden
+          />
+        )}
+        <Icon size={14} className="text-text-secondary flex-shrink-0" />
         <span className="flex-1 text-left">{title}</span>
         <motion.div
           animate={{ rotate: open ? 180 : 0 }}
           transition={{ type: 'spring', stiffness: 300, damping: 24 }}
         >
-          <ChevronDown size={14} />
+          <ChevronDown size={14} className="text-text-muted" />
         </motion.div>
       </button>
       <AnimatePresence initial={false}>
@@ -103,8 +133,54 @@ function Section({
   );
 }
 
+// Metadados estáticos das seções reordenáveis (título/ícone/estado inicial). O
+// CONTEÚDO de cada uma é montado no corpo do DetailPanel (depende de `detail` e
+// dos handlers), então é passado por prop, não fica aqui.
+const REORDERABLE_META: Record<
+  DetailSectionId,
+  { title: string; icon: React.ElementType; defaultOpen?: boolean }
+> = {
+  funnel: { title: 'Etapa do Funil', icon: Layers },
+  tags: { title: 'Tags', icon: Tag },
+  notes: { title: 'Notas', icon: StickyNote },
+  quick: { title: 'Respostas Rapidas', icon: Zap, defaultOpen: false },
+  reminders: { title: 'Lembretes', icon: Clock, defaultOpen: false },
+};
+
+/**
+ * Envolve uma seção reordenável num Reorder.Item cujo arraste só começa pela
+ * "pega" do cabeçalho (dragListener=false + dragControls). Assim, mexer nos
+ * inputs internos (tag, nota, resposta) nunca dispara o arraste sem querer.
+ */
+function ReorderableSection({
+  id,
+  content,
+}: {
+  id: DetailSectionId;
+  content: React.ReactNode;
+}) {
+  const controls = useDragControls();
+  const meta = REORDERABLE_META[id];
+  return (
+    <Reorder.Item value={id} dragListener={false} dragControls={controls} as="div">
+      <Section
+        title={meta.title}
+        icon={meta.icon}
+        defaultOpen={meta.defaultOpen}
+        dragControls={controls}
+      >
+        {content}
+      </Section>
+    </Reorder.Item>
+  );
+}
+
 export function DetailPanel({ jid }: DetailPanelProps) {
   const { detailPanelOpen, setDetailPanelOpen } = useUiStore();
+  // Ordem persistida das seções reordenáveis (Etapa do Funil pra baixo).
+  // normalizeOrder blinda contra localStorage antigo/corrompido.
+  const sectionOrder = normalizeOrder(useDetailSectionsStore((s) => s.order));
+  const setSectionOrder = useDetailSectionsStore((s) => s.setOrder);
   const insertIntoComposer = useConversationStore((s) => s.insertIntoComposer);
   const { data: detail } = useConversationDetail(jid);
   const { data: aiControl } = useAiControl(jid);
@@ -457,8 +533,20 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                 </div>
               </Section>
 
-              {/* Funnel Stage */}
-              <Section title="Etapa do Funil" icon={Layers}>
+              {/* Seções reordenáveis (Etapa do Funil pra baixo). Arraste pela
+                  "pega" do cabeçalho para escolher a ordem; a preferência é
+                  salva por navegador. Lead e Controle IA (acima) ficam fixos. */}
+              <Reorder.Group
+                axis="y"
+                values={sectionOrder}
+                onReorder={setSectionOrder}
+                as="div"
+              >
+                {sectionOrder.map((id) => {
+                  let content: React.ReactNode = null;
+                  switch (id) {
+                    case 'funnel':
+                      content = (
                 <div
                   className="glass-stack space-y-1 p-2"
                   style={{ borderRadius: 'var(--radius-panel)' }}
@@ -503,10 +591,11 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                     );
                   })}
                 </div>
-              </Section>
-
-              {/* Tags */}
-              <Section title="Tags" icon={Tag}>
+                      );
+                      break;
+                    case 'tags':
+                      content = (
+                        <>
                 <div className="flex flex-wrap gap-1 mb-2">
                   {detail.tags.length === 0 && (
                     <span className="text-xs text-text-muted">Sem tags</span>
@@ -547,10 +636,12 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                     </Button>
                   </motion.div>
                 </div>
-              </Section>
-
-              {/* Notes */}
-              <Section title="Notas" icon={StickyNote}>
+                        </>
+                      );
+                      break;
+                    case 'notes':
+                      content = (
+                        <>
                 <div className="space-y-1.5 mb-2 max-h-32 overflow-y-auto">
                   {(!detail.notes || detail.notes.length === 0) && (
                     <span className="text-xs text-text-muted">Sem notas</span>
@@ -595,10 +686,12 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                     </Button>
                   </motion.div>
                 </div>
-              </Section>
-
-              {/* Quick Replies — create/list/delete */}
-              <Section title="Respostas Rapidas" icon={Zap} defaultOpen={false}>
+                        </>
+                      );
+                      break;
+                    case 'quick':
+                      content = (
+                        <>
                 <div className="space-y-1.5 mb-2 max-h-40 overflow-y-auto">
                   {(!quickReplies || quickReplies.length === 0) && (
                     <span className="text-xs text-text-muted">Nenhuma resposta rapida</span>
@@ -674,10 +767,12 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                     </motion.div>
                   </div>
                 </div>
-              </Section>
-
-              {/* Reminders */}
-              <Section title="Lembretes" icon={Clock} defaultOpen={false}>
+                        </>
+                      );
+                      break;
+                    case 'reminders':
+                      content = (
+                        <>
                 <div className="space-y-1.5 mb-2 max-h-32 overflow-y-auto">
                   {jidReminders.length === 0 && (
                     <span className="text-xs text-text-muted">Sem lembretes</span>
@@ -730,7 +825,13 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                     </motion.div>
                   </div>
                 </div>
-              </Section>
+                        </>
+                      );
+                      break;
+                  }
+                  return <ReorderableSection key={id} id={id} content={content} />;
+                })}
+              </Reorder.Group>
             </>
           )}
         </motion.aside>
