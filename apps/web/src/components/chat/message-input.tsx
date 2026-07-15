@@ -154,10 +154,18 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
     if (replyingTo) inputRef.current?.focus();
   }, [replyingTo]);
 
+  // Envio direto: clicar numa resposta rápida dispara a mensagem na hora, sem
+  // preencher o composer nem esperar edição/confirmação. Não cita nada e não
+  // mexe no texto que o operador já tenha digitado.
   const handleQuickReply = (qr: QuickReply) => {
-    setText(qr.content);
+    if (sendMessage.isPending) return;
     setShowQuickReplies(false);
-    inputRef.current?.focus();
+    sendMessage.mutate(
+      { text: qr.content, quotedId: undefined, quoted: null },
+      {
+        onError: () => notify.error('Erro ao enviar mensagem'),
+      },
+    );
   };
 
   return (
@@ -185,7 +193,9 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
             <button
               key={qr.id}
               onClick={() => handleQuickReply(qr)}
-              className="w-full text-left px-4 py-2 hover:bg-bg-hover transition-colors duration-150"
+              disabled={sendMessage.isPending}
+              title="Enviar direto"
+              className="w-full text-left px-4 py-2 hover:bg-bg-hover transition-colors duration-150 disabled:opacity-50"
             >
               <div className="text-xs font-medium text-text-primary">
                 {qr.name}
