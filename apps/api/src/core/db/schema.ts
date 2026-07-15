@@ -1,6 +1,7 @@
 import {
   pgTable,
   text,
+  integer,
   timestamp,
   boolean,
   jsonb,
@@ -82,6 +83,34 @@ export const quickReplies = pgTable(
   }),
 );
 
+// ---- Funnel stages (dono: painel; colunas do Kanban por-tenant) ----
+// `key` é estável e único por-tenant (slug), NÃO o rótulo: renomear muda só
+// `label`; `conversations.stage` e o Redis `followup_step` seguem apontando pro
+// `key`, sem reescrever N conversas. Tenants existentes são semeados com os 7
+// defaults (keys S0..S6 PRESERVADOS — o N8N do Shkgroup lê/escreve S0..S6).
+export const funnelStages = pgTable(
+  'funnel_stages',
+  {
+    id: text('id').primaryKey(), // uuid
+    instancia: text('instancia')
+      .notNull()
+      .references(() => tenants.instancia, { onDelete: 'cascade' }),
+    key: text('key').notNull(),
+    label: text('label').notNull(),
+    color: text('color').notNull(),
+    // `order` é palavra reservada no Postgres — o Drizzle emite aspas ("order")
+    // automaticamente por o nome da coluna ser exatamente `order`.
+    order: integer('order').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byTenant: index('ix_funnel_stage_tenant').on(t.instancia),
+    // Unicidade do slug por-tenant: alvo do onConflict do seed idempotente e
+    // garantia de que dois estágios do mesmo tenant nunca colidem de key.
+    uqKeyPerTenant: uniqueIndex('uq_funnel_stage_key').on(t.instancia, t.key),
+  }),
+);
+
 // ---- Conversations (projeção durável do estado operacional do Redis/N8N) ----
 // Campos sensíveis ao tempo (aiState via humanControlUntil) são armazenados como
 // INPUT bruto e recomputados na LEITURA — assim a projeção não fica stale quando
@@ -119,4 +148,5 @@ export type TenantRow = typeof tenants.$inferSelect;
 export type TenantUserRow = typeof tenantUsers.$inferSelect;
 export type ReminderRow = typeof reminders.$inferSelect;
 export type QuickReplyRow = typeof quickReplies.$inferSelect;
+export type FunnelStageRow = typeof funnelStages.$inferSelect;
 export type ConversationRow = typeof conversations.$inferSelect;

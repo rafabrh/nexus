@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException, Logger, Inject } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Inject } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../core/redis/redis.module';
+import { FunnelStagesService } from '../funnel/funnel-stages.service';
 import { RedisKeys, jidFromPhone, PhoneMask } from '@nexus/shared';
 import type {
   ConversationListItem,
@@ -80,6 +81,7 @@ export class ConversationService {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly index: ConversationIndexService,
     private readonly projection: ConversationProjectionService,
+    private readonly funnelStages: FunnelStagesService,
   ) {}
 
   async listConversations(
@@ -498,6 +500,17 @@ export class ConversationService {
    * Update the funnel stage (followup_step) for a conversation.
    */
   async updateStage(instancia: string, jid: string, stage: string): Promise<{ message: string; stage: string }> {
+    // O funil é dinâmico por-tenant: o `stage` precisa ser o `key` de um estágio
+    // real de `funnel_stages` daquele tenant. Rejeita (400) um key inexistente —
+    // sem isto, um arraste/connector poderia gravar um followup_step órfão que
+    // nenhuma coluna renderiza. Mantém o contrato do Redis (grava o key abaixo).
+    const validStage = await this.funnelStages.keyExists(instancia, stage);
+    if (!validStage) {
+      throw new BadRequestException(
+        `Estágio "${stage}" não existe para este tenant`,
+      );
+    }
+
     // Defense-in-depth: a bare phone (e.g. from a Sheets-keyed caller) is
     // normalized to the canonical JID so the followup_step key and the emitted
     // event jid match what N8N and the panel use.

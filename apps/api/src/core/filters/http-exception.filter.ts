@@ -28,11 +28,27 @@ export class HttpExceptionFilter implements ExceptionFilter {
         ? exceptionResponse
         : (exceptionResponse as Record<string, unknown>).message ?? exception.message;
 
+    // Preserva os campos EXTRAS do payload de uma HttpException-objeto (ex.: `count`
+    // no 409 de "excluir coluna com cards") — `statusCode`/`error`/`message` já viram
+    // status/title/detail e não são reespalhados.
+    const extra =
+      typeof exceptionResponse === 'object' && exceptionResponse !== null
+        ? Object.fromEntries(
+            Object.entries(exceptionResponse as Record<string, unknown>).filter(
+              ([k]) => !['statusCode', 'error', 'message'].includes(k),
+            ),
+          )
+        : {};
+
     const problemDetails = {
       type: `https://httpstatuses.com/${status}`,
       title: this.getTitle(status),
       status,
       detail,
+      // Espelha `detail` como `message` para clientes que leem `body.message`
+      // (o ApiError do web); `detail` permanece para consumidores RFC 7807.
+      message: detail,
+      ...extra,
       instance: request.url,
       timestamp: new Date().toISOString(),
     };

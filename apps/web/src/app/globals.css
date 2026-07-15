@@ -709,3 +709,35 @@ body {
   background-image: linear-gradient(180deg, var(--mirror-sheen-top), transparent 60%);
   box-shadow: inset 0 1px 0 var(--mirror-edge), var(--shadow-control);
 }
+
+/* Alvo de toque de 44px sem crescer o slot visual: um ::after transparente
+   expande a área clicável. Usado no botão ⋯ da coluna do Kanban (slot 20px, mas
+   44px de toque no mobile). No desktop o mouse não precisa disso. */
+.tap-44 {
+  position: relative;
+}
+.tap-44::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+@media (min-width: 768px) {
+  .tap-44::after { width: 100%; height: 100%; }
+}
+
+/* Kanban "+ Nova coluna" affordance (fantasma). Repouso: borda tracejada neutra.
+   Hover: leve tint com o accent + borda/ícone acentuados (o círculo interno herda
+   a mesma cor via currentColor). */
+.add-column-ghost:hover {
+  background: color-mix(in srgb, var(--accent-500) 4%, var(--bg-surface));
+  border-color: var(--accent-500);
+  color: var(--accent-500);
+}
+.add-column-ghost:hover > span:first-of-type {
+  border-color: var(--accent-500);
+  color: var(--accent-500);
+}

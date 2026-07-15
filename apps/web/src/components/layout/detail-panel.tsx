@@ -59,7 +59,8 @@ import {
   useDeleteQuickReply,
 } from '@/hooks/use-quick-replies';
 import { useReminders, useCreateReminder } from '@/hooks/use-reminders';
-import { FunnelStage, type AiState, type FunnelStageKey } from '@nexus/shared';
+import { useFunnelStages } from '@/hooks/use-funnel-stages';
+import { type AiState, type FunnelStageKey } from '@nexus/shared';
 import { timeAgo } from '@/lib/utils';
 import { slideInRight, staggerItem } from '@/lib/motion-variants';
 import { stageColorToken } from '@/lib/stage-colors';
@@ -197,6 +198,7 @@ export function DetailPanel({ jid }: DetailPanelProps) {
   const deleteQuickReply = useDeleteQuickReply();
   const { data: reminders } = useReminders('pending');
   const createReminder = useCreateReminder();
+  const { data: funnelStages } = useFunnelStages();
 
   const [noteText, setNoteText] = useState('');
   const [tagText, setTagText] = useState('');
@@ -218,7 +220,9 @@ export function DetailPanel({ jid }: DetailPanelProps) {
     });
   };
 
-  const stages = FunnelStage.all();
+  // Estágios dinâmicos por-tenant (mesma fonte do Kanban). Fallback: lista vazia
+  // enquanto carrega (o skeleton do painel já cobre o estado sem `detail`).
+  const stages = funnelStages ?? [];
   const jidReminders = reminders?.filter((r) => r.jid === jid) ?? [];
 
   // ON = reativa; OFF = desliga por 24h (comando `off`).
@@ -551,12 +555,18 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                   className="glass-stack space-y-1 p-2"
                   style={{ borderRadius: 'var(--radius-panel)' }}
                 >
+                  {stages.length === 0 && (
+                    <span className="text-xs text-text-muted px-2 py-1.5">
+                      Nenhuma etapa
+                    </span>
+                  )}
                   {stages.map((s) => {
                     const isCurrent = s.key === detail.stage;
-                    const stageToken = stageColorToken(s.key);
+                    // Cor vem do estágio (hex do backend); token como fallback.
+                    const stageToken = s.color || stageColorToken(s.key);
                     return (
                       <button
-                        key={s.key}
+                        key={s.id}
                         onClick={() => {
                           if (!isCurrent) {
                             updateStage.mutate(s.key as FunnelStageKey, {
