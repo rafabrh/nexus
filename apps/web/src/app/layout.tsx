@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { GeistSans } from 'geist/font/sans';
 import { GeistMono } from 'geist/font/mono';
 import { Inter } from 'next/font/google';
@@ -11,6 +11,14 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'sw
 export const metadata: Metadata = {
   title: 'NEXUS Panel',
   description: 'Painel de controle do agente NEXUS',
+};
+
+// viewport-fit=cover + device-width: garante que o app ocupe a tela toda no
+// mobile (respeitando safe-areas de notch) e evita o zoom-out inicial do iOS.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({

@@ -63,24 +63,26 @@ export default function ConversationsPage() {
   );
 
   return (
-    <div className="flex h-[calc(100vh-48px)]">
+    <div className="flex h-[calc(100dvh-48px)]">
       {/* Sidebar — 320px */}
       <Sidebar />
 
       {/* Chat area — full width. O painel de detalhes FLUTUA por cima (à direita);
           a lista de mensagens estende-se atrás dele, então os balões azuis refletem
-          pelo vidro. Só o header e o input recuam (mr-380) pra o toggle e o botão
-          de enviar não ficarem sob o painel. */}
-      <div className="relative flex-1 ml-80 flex flex-col">
+          pelo vidro. Só o header e o input recuam (md:mr-380) pra o toggle e o botão
+          de enviar não ficarem sob o painel — apenas no desktop. No mobile (single-
+          pane) o chat é full-width: sem margem esquerda (md:ml-80) e o painel de
+          detalhes vira um sheet full-screen por cima. */}
+      <div className="relative flex-1 md:ml-80 flex flex-col">
         <ChatAmbience />
         <div className="relative z-[1] flex flex-col flex-1 min-h-0">
           {selectedConversation ? (
             <>
-              <div className={cn('transition-all duration-200', detailPanelOpen && 'mr-[380px]')}>
+              <div className={cn('transition-all duration-200', detailPanelOpen && 'md:mr-[380px]')}>
                 <ChatHeader conversation={selectedConversation} />
               </div>
               <MessageList jid={selectedJid!} />
-              <div className={cn('transition-all duration-200', detailPanelOpen && 'mr-[380px]')}>
+              <div className={cn('transition-all duration-200', detailPanelOpen && 'md:mr-[380px]')}>
                 <MessageInput
                   jid={selectedJid!}
                   aiState={selectedConversation.aiState}

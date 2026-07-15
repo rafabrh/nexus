@@ -54,13 +54,13 @@ export default function AdminPage() {
 
   return (
     <motion.div
-      className="p-6 max-w-5xl mx-auto"
+      className="p-4 md:p-6 max-w-5xl mx-auto"
       variants={pageTransition}
       initial="initial"
       animate="animate"
       transition={pageTransitionConfig}
     >
-      <div className="mb-6 flex items-end justify-between gap-4">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div className="flex items-center gap-2.5">
           <ShieldCheck size={22} className="text-primary-400" />
           <div>

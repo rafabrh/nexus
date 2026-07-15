@@ -1,14 +1,17 @@
-import { IsIn } from 'class-validator';
+import { IsString, IsNotEmpty, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-
-const VALID_STAGES = ['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6'] as const;
 
 export class UpdateStageRequestDto {
   @ApiProperty({
-    description: 'Novo stage do funil (S0-S6)',
+    // O funil agora é dinâmico por-tenant: o `stage` é o `key` de um estágio de
+    // `funnel_stages` daquele tenant (não mais o enum fixo S0..S6). A validação
+    // de que o key REALMENTE existe para o tenant acontece em runtime no
+    // ConversationService.updateStage (404/400), não como enum estático aqui.
+    description: 'Key do estágio do funil (estágio do tenant; ex.: S3, proposta-enviada)',
     example: 'S3',
-    enum: VALID_STAGES,
   })
-  @IsIn(VALID_STAGES, { message: 'Stage deve ser S0, S1, S2, S3, S4, S5 ou S6' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(80)
   stage!: string;
 }

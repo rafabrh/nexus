@@ -131,7 +131,7 @@ export default function SettingsPage() {
 
   return (
     <motion.div
-      className="p-6 max-w-3xl mx-auto"
+      className="p-4 md:p-6 max-w-3xl mx-auto"
       variants={pageTransition}
       initial="initial"
       animate="animate"
@@ -257,7 +257,7 @@ export default function SettingsPage() {
 
         {/* CONTA */}
         <Section icon={User} title="Conta" desc="Sessão atual.">
-          <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
             <div>
               <div className="text-xs text-text-muted">E-mail</div>
               <div className="text-text-primary truncate">{claims.sub ?? '—'}</div>

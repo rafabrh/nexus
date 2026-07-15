@@ -79,13 +79,22 @@
    ============================================================ */
 html[data-theme='light'] {
   color-scheme: light;
-  --bg-base: #ECECEC;
-  --bg-surface: #FFFFFF;
-  --bg-elevated: #FFFFFF;
+  /* Off-white em vez de branco puro: tira o glare que "força a vista".
+     A base é a parede mais ampla — puxada levemente p/ baixo (cool off-white)
+     p/ acalmar o fundo e dar profundidade sob as superfícies. */
+  --bg-base: #E8E8EB;
+  /* Painéis não são mais placa branca 100%: off-white delicado (Apple #F5F5F7).
+     Menos glare, mantendo texto #1A1A1A com contraste altíssimo. */
+  --bg-surface: #F5F5F7;
+  /* Elevado fica um tom acima da surface p/ preservar a hierarquia de camadas
+     (popovers/modais "flutuam" um pouco mais claros que os painéis). */
+  --bg-elevated: #FBFBFD;
   --bg-hover: rgba(0,0,0,0.04);
   --bg-active: rgba(0,0,0,0.08);
   --window: #FFFFFF;
-  --vibrancy-bg: rgba(246,246,246,0.55);
+  /* Vibrancy vira camada de vidro, não placa: menos opacidade deixa o conteúdo
+     atrás vazar (com o blur/saturate) — mais "espelho", menos parede branca. */
+  --vibrancy-bg: rgba(246,246,246,0.46);
   --vibrancy-fallback: #F6F6F6;
   --accent-500: #007AFF;
   --accent-600: #0066D6;
@@ -95,17 +104,25 @@ html[data-theme='light'] {
   --text-muted: rgba(0,0,0,0.26);
   --text-inverse: #FFFFFF;
   --separator: #D9D9D9;
-  --control-fill: #FFFFFF;
+  /* Controles (inputs/botões) saem do branco 100% p/ o mesmo off-white do
+     elevado — recuam o glare mas seguem claros o bastante p/ destacar da surface. */
+  --control-fill: #FBFBFD;
   --control-shadow: rgba(0,0,0,0.08);
   --border-default: rgba(0,0,0,0.10);
   --border-hover: rgba(0,0,0,0.16);
   --border-active: #007AFF;
   --success: #34C759; --warning: #FF9500; --error: #FF3B30; --info: #007AFF;
   --ai-on: #34C759; --ai-paused: #FF9500; --ai-off: #8E8E93; --ai-thinking: #8B5CF6;
-  --bubble-them: #E9E9EB;
+  /* Bolha recebida: branca para sobressair no fundo do chat (bg-base #E8E8EB),
+     como no iMessage/WhatsApp. A área é pequena, então NÃO reintroduz o glare de
+     tela cheia que motivou a suavização — só devolve a forma do balão. */
+  --bubble-them: #FFFFFF;
   --stage-s0:#8E8E93; --stage-s1:#32ADE6; --stage-s2:#5856D6; --stage-s3:#FF9500;
   --stage-s4:#FF3B30; --stage-s5:#34C759; --stage-s6:#00C7BE;
-  --glass-bg: rgba(255,255,255,0.55);
+  /* Vidro mais translúcido (0.55 → 0.48): vira lâmina de vidro em vez de chapa
+     branca. Mantido acima de ~0.45 p/ popovers/menus seguirem legíveis sobre
+     qualquer conteúdo (com blur/saturate). */
+  --glass-bg: rgba(255,255,255,0.48);
   --glass-border: rgba(0,0,0,0.10);
   --shadow-control: 0 1px 3px rgba(0,0,0,0.10);
   --shadow-panel: 0 12px 48px rgba(0,0,0,0.18);
@@ -113,11 +130,12 @@ html[data-theme='light'] {
   --mirror-sheen-top: rgba(255,255,255,0.65);
   --mirror-edge: rgba(255,255,255,0.95);
   --mirror-sweep: rgba(255,255,255,0.5);
-  /* Chat ambience — on light surfaces the cursor "reflection" is a glossy white
-     bloom (the same light-reflection language as dark, translated up against the
-     light base), grounded by a subtle shadow vignette for depth. */
-  --chat-spot: rgba(255,255,255,0.95);
-  --chat-vignette: rgba(0,0,0,0.09);
+  /* Chat ambience — o "reflexo" que segue o cursor era branco 0.95: ofuscava e
+     virava um holofote. Suavizado p/ um brilho de vidro discreto (0.5), que
+     acompanha o cursor sem cansar a vista. A vinheta na base ganha um pouco mais
+     de corpo p/ dar profundidade tonal aconchegante à leitura. */
+  --chat-spot: rgba(255,255,255,0.5);
+  --chat-vignette: rgba(0,0,0,0.11);
 }
 
 /* ============================================================
@@ -659,8 +677,11 @@ body {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, var(--mirror-sheen-top) 0%, transparent 16%),
-    radial-gradient(130% 95% at 50% 125%, var(--chat-vignette), transparent 62%);
+    /* Sheen especular no topo — faixa de luz suave, "polished glass" macOS. */
+    linear-gradient(180deg, var(--mirror-sheen-top) 0%, transparent 18%),
+    /* Vinheta tonal subindo da base — profundidade macOS aconchegante, sem
+       desenhos, só gradiente que assenta o fundo p/ leitura. */
+    radial-gradient(140% 100% at 50% 128%, var(--chat-vignette), transparent 60%);
 }
 .chat-ambience::after {
   content: '';
@@ -687,4 +708,36 @@ body {
 .conv-glass:hover {
   background-image: linear-gradient(180deg, var(--mirror-sheen-top), transparent 60%);
   box-shadow: inset 0 1px 0 var(--mirror-edge), var(--shadow-control);
+}
+
+/* Alvo de toque de 44px sem crescer o slot visual: um ::after transparente
+   expande a área clicável. Usado no botão ⋯ da coluna do Kanban (slot 20px, mas
+   44px de toque no mobile). No desktop o mouse não precisa disso. */
+.tap-44 {
+  position: relative;
+}
+.tap-44::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+@media (min-width: 768px) {
+  .tap-44::after { width: 100%; height: 100%; }
+}
+
+/* Kanban "+ Nova coluna" affordance (fantasma). Repouso: borda tracejada neutra.
+   Hover: leve tint com o accent + borda/ícone acentuados (o círculo interno herda
+   a mesma cor via currentColor). */
+.add-column-ghost:hover {
+  background: color-mix(in srgb, var(--accent-500) 4%, var(--bg-surface));
+  border-color: var(--accent-500);
+  color: var(--accent-500);
+}
+.add-column-ghost:hover > span:first-of-type {
+  border-color: var(--accent-500);
+  color: var(--accent-500);
 }

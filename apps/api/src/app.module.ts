@@ -22,6 +22,7 @@ import { TenantModule } from './admin/tenant.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { RemindersModule } from './reminders/reminders.module';
 import { QuickRepliesModule } from './quick-replies/quick-replies.module';
+import { FunnelModule } from './funnel/funnel.module';
 import { validate } from './core/config/app.config';
 
 @Module({
@@ -56,6 +57,7 @@ import { validate } from './core/config/app.config';
     OnboardingModule,
     RemindersModule,
     QuickRepliesModule,
+    FunnelModule,
   ],
   providers: [
     // Global rate limiting. Without this guard the @Throttle decorators (e.g.

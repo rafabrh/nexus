@@ -18,6 +18,7 @@ import { QuickRepliesController } from '../../quick-replies/quick-replies.contro
 import { RemindersController } from '../../reminders/reminders.controller';
 import { WhatsAppController } from '../../whatsapp/whatsapp.controller';
 import { AdminController } from '../../admin/admin.controller';
+import { FunnelController } from '../../funnel/funnel.controller';
 
 const reflector = new Reflector();
 
@@ -84,6 +85,7 @@ describe('@Public coverage — protected routes never leak auth', () => {
     ['reminders', RemindersController],
     ['whatsapp', WhatsAppController],
     ['admin', AdminController],
+    ['funnel', FunnelController],
   ];
 
   for (const [name, controller] of protectedControllers) {

@@ -15,7 +15,7 @@ describe('ConversationService', () => {
       exec: vi.fn(async () => items.flatMap(() => [[null, null], [null, null], [null, null]])),
     };
     const redis = { pipeline: () => pipeline } as any;
-    const svc = new ConversationService({} as any, {} as any, {} as any, redis, {} as any, projection);
+    const svc = new ConversationService({} as any, {} as any, {} as any, redis, {} as any, projection, {} as any);
 
     const result = await svc.listConversations('shk', { stage: 'S0' });
     expect(projection.list).toHaveBeenCalledWith('shk', { stage: 'S0' });
@@ -34,7 +34,7 @@ describe('ConversationService', () => {
       ]),
     };
     const redis = { pipeline: () => pipeline } as any;
-    const svc = new ConversationService({} as any, {} as any, {} as any, redis, {} as any, projection);
+    const svc = new ConversationService({} as any, {} as any, {} as any, redis, {} as any, projection, {} as any);
 
     const result = await svc.listConversations('shk', {});
 
@@ -58,7 +58,7 @@ describe('ConversationService', () => {
       ]),
     };
     const redis = { pipeline: () => pipeline } as any;
-    const svc = new ConversationService({} as any, {} as any, {} as any, redis, {} as any, projection);
+    const svc = new ConversationService({} as any, {} as any, {} as any, redis, {} as any, projection, {} as any);
 
     const result = await svc.listConversations('shk', {});
     expect(result[0].contactName).toBe('Maria Antiga');
@@ -68,7 +68,7 @@ describe('ConversationService', () => {
     const redis = { del: vi.fn(async () => 1) } as any;
     const publisher = { publish: vi.fn(async () => undefined) } as any;
     const projection = { list: vi.fn(), project: vi.fn() } as any;
-    const svc = new ConversationService({} as any, {} as any, publisher, redis, {} as any, projection);
+    const svc = new ConversationService({} as any, {} as any, publisher, redis, {} as any, projection, {} as any);
 
     await svc.markRead('shk', '5511@s.whatsapp.net');
 
@@ -88,7 +88,7 @@ describe('ConversationService', () => {
       set: vi.fn(async () => 'OK'),
     } as any;
     const projection = { project: vi.fn(async () => undefined), list: vi.fn() } as any;
-    const svc = new ConversationService({} as any, {} as any, {} as any, redis, {} as any, projection);
+    const svc = new ConversationService({} as any, {} as any, {} as any, redis, {} as any, projection, {} as any);
 
     await svc.saveContactName('shk', '5511@s.whatsapp.net', 'João Cliente');
 
@@ -104,7 +104,7 @@ describe('ConversationService', () => {
       set: vi.fn(async () => 'OK'),
     } as any;
     const projection = { project: vi.fn(async () => undefined), list: vi.fn() } as any;
-    const svc = new ConversationService({} as any, {} as any, {} as any, redis, {} as any, projection);
+    const svc = new ConversationService({} as any, {} as any, {} as any, redis, {} as any, projection, {} as any);
 
     await svc.saveContactName('shk', '5511@s.whatsapp.net', '   ');
 
@@ -124,7 +124,7 @@ describe('ConversationService', () => {
     const evolution = { sendTextMessage: vi.fn(async () => undefined) } as any;
     const index = { addJid: vi.fn(async () => undefined), listJids: vi.fn() } as any;
     const projection = { list: vi.fn(), project: vi.fn(async () => undefined) } as any;
-    const svc = new ConversationService({} as any, evolution, {} as any, redis, index, projection);
+    const svc = new ConversationService({} as any, evolution, {} as any, redis, index, projection, {} as any);
 
     await svc.sendMessage('shk', '5511@s.whatsapp.net', 'oi');
 
@@ -152,7 +152,7 @@ describe('ConversationService', () => {
     const evolution = { sendTextMessage: vi.fn(async () => undefined) } as any;
     const index = { addJid: vi.fn(async () => undefined), listJids: vi.fn() } as any;
     const projection = { list: vi.fn(), project: vi.fn(async () => undefined) } as any;
-    const svc = new ConversationService({} as any, evolution, {} as any, redis, index, projection);
+    const svc = new ConversationService({} as any, evolution, {} as any, redis, index, projection, {} as any);
 
     await svc.sendMessage('shk', '5511@s.whatsapp.net', 'oi');
 
@@ -173,7 +173,7 @@ describe('ConversationService', () => {
     const evolution = { sendTextMessage: vi.fn(async () => undefined) } as any;
     const index = { addJid: vi.fn(async () => undefined), listJids: vi.fn() } as any;
     const projection = { list: vi.fn(), project: vi.fn(async () => undefined) } as any;
-    const svc = new ConversationService({} as any, evolution, {} as any, redis, index, projection);
+    const svc = new ConversationService({} as any, evolution, {} as any, redis, index, projection, {} as any);
 
     await svc.sendMessage('shk', '5511@s.whatsapp.net', 'oi');
 
@@ -194,7 +194,10 @@ describe('ConversationService', () => {
     const index = { addJid: vi.fn(async () => undefined) } as any;
     const publisher = { publish: vi.fn(async () => undefined) } as any;
     const projection = { list: vi.fn(), project: vi.fn(async () => undefined) } as any;
-    const svc = new ConversationService({} as any, {} as any, publisher, redis, index, projection);
+    // updateStage agora valida o key contra funnel_stages do tenant (funil
+    // dinâmico). Stub retorna true para o caminho feliz deste teste de Redis.
+    const funnelStages = { keyExists: vi.fn(async () => true) } as any;
+    const svc = new ConversationService({} as any, {} as any, publisher, redis, index, projection, funnelStages);
 
     await svc.updateStage('shk', '5511952480228', 'S3');
 
@@ -205,5 +208,27 @@ describe('ConversationService', () => {
     expect(publisher.publish).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'funnel.changed', jid: '5511952480228@s.whatsapp.net', payload: { stage: 'S3' } }),
     );
+  });
+
+  it('rejects updateStage (400) when the key is not a stage of the tenant (dynamic funnel)', async () => {
+    // O funil é dinâmico por-tenant: um key que não existe em funnel_stages do
+    // tenant deve ser rejeitado ANTES de tocar o Redis — senão gravaria um
+    // followup_step órfão que nenhuma coluna renderiza.
+    const { BadRequestException } = await import('@nestjs/common');
+    const redis = { set: vi.fn(async () => 'OK') } as any;
+    const index = { addJid: vi.fn(async () => undefined) } as any;
+    const publisher = { publish: vi.fn(async () => undefined) } as any;
+    const projection = { list: vi.fn(), project: vi.fn(async () => undefined) } as any;
+    const funnelStages = { keyExists: vi.fn(async () => false) } as any;
+    const svc = new ConversationService({} as any, {} as any, publisher, redis, index, projection, funnelStages);
+
+    await expect(svc.updateStage('shk', '5511952480228', 'inexistente')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    // Nada é gravado nem publicado quando o key é inválido.
+    expect(redis.set).not.toHaveBeenCalled();
+    expect(index.addJid).not.toHaveBeenCalled();
+    expect(publisher.publish).not.toHaveBeenCalled();
+    expect(funnelStages.keyExists).toHaveBeenCalledWith('shk', 'inexistente');
   });
 });

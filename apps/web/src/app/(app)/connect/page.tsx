@@ -141,7 +141,7 @@ export default function ConnectPage() {
 
   return (
     <div
-      className="relative min-h-screen flex items-center justify-center p-4 overflow-hidden"
+      className="relative min-h-[100dvh] flex items-center justify-center p-4 overflow-hidden"
       style={{ background: 'var(--bg-base)' }}
     >
       {/* Ambient backdrop so the glass sheet has light to refract (macOS depth) */}

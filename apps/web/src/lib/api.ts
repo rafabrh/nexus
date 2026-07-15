@@ -1,5 +1,32 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
+/**
+ * Erro de API com o status HTTP e o corpo parseado (quando é JSON). Permite à UI
+ * distinguir casos como o 409 de "excluir coluna com cards" e usar a `message`
+ * pronta do servidor no toast, sem regex sobre a string do Error. Callers antigos
+ * que só olham `err.message` continuam funcionando (herda de Error).
+ */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly body: unknown;
+  constructor(status: number, body: unknown, fallback: string) {
+    // Prefere a `message` do corpo (texto pronto do backend) como message do Error.
+    const serverMessage =
+      body && typeof body === 'object' && typeof (body as { message?: unknown }).message === 'string'
+        ? (body as { message: string }).message
+        : fallback;
+    super(serverMessage);
+    this.name = 'ApiError';
+    this.status = status;
+    this.body = body;
+  }
+}
+
+/** Type guard para estreitar um erro capturado em `ApiError`. */
+export function isApiError(e: unknown): e is ApiError {
+  return e instanceof ApiError;
+}
+
 let accessToken: string | null = null;
 let refreshPromise: Promise<string | null> | null = null;
 
@@ -96,8 +123,17 @@ export async function api<T = unknown>(
   }
 
   if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`API ${res.status}: ${body}`);
+    const raw = await res.text().catch(() => '');
+    // Tenta parsear como JSON (erros do BFF vêm com { message, statusCode, ... });
+    // se não for JSON, guarda o texto cru. A message do Error mantém o formato
+    // antigo `API <status>: <body>` como fallback para logs.
+    let parsed: unknown = raw;
+    try {
+      parsed = raw ? JSON.parse(raw) : raw;
+    } catch {
+      /* corpo não-JSON: mantém o texto cru */
+    }
+    throw new ApiError(res.status, parsed, `API ${res.status}: ${raw}`);
   }
 
   if (res.status === 204) return undefined as T;

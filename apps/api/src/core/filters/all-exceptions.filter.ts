@@ -30,6 +30,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
           ? exceptionResponse
           : (exceptionResponse as Record<string, unknown>).message ?? exception.message;
 
+      // Mesmo contrato do HttpExceptionFilter: preserva campos extras (ex.: `count`)
+      // e espelha `message`←`detail` para o ApiError do web.
+      const extra =
+        typeof exceptionResponse === 'object' && exceptionResponse !== null
+          ? Object.fromEntries(
+              Object.entries(exceptionResponse as Record<string, unknown>).filter(
+                ([k]) => !['statusCode', 'error', 'message'].includes(k),
+              ),
+            )
+          : {};
+
       reply
         .status(httpStatus)
         .header('content-type', 'application/problem+json')
@@ -38,6 +49,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
           title: 'Error',
           status: httpStatus,
           detail,
+          message: detail,
+          ...extra,
           instance: request.url,
           timestamp: new Date().toISOString(),
         });

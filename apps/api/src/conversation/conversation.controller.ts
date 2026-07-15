@@ -32,6 +32,8 @@ import { ToggleHotRequestDto } from './dto/toggle-hot-request.dto';
 import { SaveContactRequestDto } from './dto/save-contact-request.dto';
 import { SendMediaRequestDto } from './dto/send-media-request.dto';
 import { SendAudioRequestDto } from './dto/send-audio-request.dto';
+import { SendContactRequestDto } from './dto/send-contact-request.dto';
+import { SendLocationRequestDto } from './dto/send-location-request.dto';
 
 @Controller('conversations')
 @UseGuards(JwtAuthGuard)
@@ -223,5 +225,25 @@ export class ConversationController {
     @Body() dto: SendAudioRequestDto,
   ) {
     return this.service.sendAudioMessage(instancia, jid, dto.audio, dto.mimetype);
+  }
+
+  @Post(':jid/send-contact')
+  @ApiOperation({ summary: 'Envia um cartão de contato (vCard) via Evolution' })
+  async sendContact(
+    @Tenant() instancia: string,
+    @Param('jid') jid: string,
+    @Body() dto: SendContactRequestDto,
+  ) {
+    return this.service.sendContactMessage(instancia, jid, dto);
+  }
+
+  @Post(':jid/send-location')
+  @ApiOperation({ summary: 'Envia uma localização (pin no mapa) via Evolution' })
+  async sendLocation(
+    @Tenant() instancia: string,
+    @Param('jid') jid: string,
+    @Body() dto: SendLocationRequestDto,
+  ) {
+    return this.service.sendLocationMessage(instancia, jid, dto);
   }
 }

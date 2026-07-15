@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException, Logger, Inject } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Inject } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../core/redis/redis.module';
+import { FunnelStagesService } from '../funnel/funnel-stages.service';
 import { RedisKeys, jidFromPhone, PhoneMask } from '@nexus/shared';
 import type {
   ConversationListItem,
@@ -80,6 +81,7 @@ export class ConversationService {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly index: ConversationIndexService,
     private readonly projection: ConversationProjectionService,
+    private readonly funnelStages: FunnelStagesService,
   ) {}
 
   async listConversations(
@@ -498,6 +500,17 @@ export class ConversationService {
    * Update the funnel stage (followup_step) for a conversation.
    */
   async updateStage(instancia: string, jid: string, stage: string): Promise<{ message: string; stage: string }> {
+    // O funil é dinâmico por-tenant: o `stage` precisa ser o `key` de um estágio
+    // real de `funnel_stages` daquele tenant. Rejeita (400) um key inexistente —
+    // sem isto, um arraste/connector poderia gravar um followup_step órfão que
+    // nenhuma coluna renderiza. Mantém o contrato do Redis (grava o key abaixo).
+    const validStage = await this.funnelStages.keyExists(instancia, stage);
+    if (!validStage) {
+      throw new BadRequestException(
+        `Estágio "${stage}" não existe para este tenant`,
+      );
+    }
+
     // Defense-in-depth: a bare phone (e.g. from a Sheets-keyed caller) is
     // normalized to the canonical JID so the followup_step key and the emitted
     // event jid match what N8N and the panel use.
@@ -671,5 +684,71 @@ export class ConversationService {
 
     this.logger.log(`Audio sent + persisted for ${instancia}/${jid}`);
     return { message: 'Áudio enviado' };
+  }
+
+  /**
+   * Envia um cartão de contato (vCard) via Evolution e grava no histórico uma
+   * linha textual legível — a bolha mostra só texto, sem precisar de um novo
+   * tipo de render. Envio do operador = human takeover: pausa a IA por 30min,
+   * como texto/mídia/áudio.
+   */
+  async sendContactMessage(
+    instancia: string,
+    jid: string,
+    dto: { fullName: string; phoneNumber: string; organization?: string; email?: string },
+  ): Promise<{ message: string }> {
+    const res = await this.evolution.sendContact(instancia, jid, dto);
+
+    const key = (res?.key ?? {}) as Record<string, unknown>;
+    const msgId = typeof key.id === 'string' ? key.id : null;
+    const phone = jid.replace('@s.whatsapp.net', '');
+    const histKey = RedisKeys.chatHistory(instancia, phone);
+    const entry = JSON.stringify({
+      type: 'ai',
+      data: { content: `📇 Contato: ${dto.fullName} — ${dto.phoneNumber}`, timestamp: Date.now() },
+      ...(msgId ? { id: msgId } : {}),
+    });
+    await this.redis.rpush(histKey, entry);
+
+    await this.pauseAiForHumanTakeover(instancia, jid, 30 * 60 * 1000);
+    await this.index.addJid(instancia, jid);
+    await this.projection.project(instancia, jid);
+
+    this.logger.log(`Contact sent + persisted for ${instancia}/${jid}`);
+    return { message: 'Contato enviado' };
+  }
+
+  /**
+   * Envia uma localização (pin no mapa) via Evolution e grava no histórico uma
+   * linha textual legível — mesma estratégia do contato: só texto na bolha.
+   * Envio do operador = human takeover: pausa a IA por 30min.
+   */
+  async sendLocationMessage(
+    instancia: string,
+    jid: string,
+    dto: { latitude: number; longitude: number; name?: string; address?: string },
+  ): Promise<{ message: string }> {
+    const res = await this.evolution.sendLocation(instancia, jid, dto);
+
+    const key = (res?.key ?? {}) as Record<string, unknown>;
+    const msgId = typeof key.id === 'string' ? key.id : null;
+    const phone = jid.replace('@s.whatsapp.net', '');
+    const histKey = RedisKeys.chatHistory(instancia, phone);
+    // Rótulo opcional (nome/endereço) enriquece a bolha quando vier preenchido.
+    const label = [dto.name, dto.address].filter(Boolean).join(' — ');
+    const content = label ? `📍 Localização: ${label}` : '📍 Localização enviada';
+    const entry = JSON.stringify({
+      type: 'ai',
+      data: { content, timestamp: Date.now() },
+      ...(msgId ? { id: msgId } : {}),
+    });
+    await this.redis.rpush(histKey, entry);
+
+    await this.pauseAiForHumanTakeover(instancia, jid, 30 * 60 * 1000);
+    await this.index.addJid(instancia, jid);
+    await this.projection.project(instancia, jid);
+
+    this.logger.log(`Location sent + persisted for ${instancia}/${jid}`);
+    return { message: 'Localização enviada' };
   }
 }

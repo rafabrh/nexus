@@ -125,7 +125,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <AuthGuard>
           <SocketManager />
           <TopBar />
-          <main className="pt-12 min-h-screen bg-bg-base">
+          {/* min-h-[100dvh]: usa a altura dinâmica do viewport para o conteúdo não
+              "pular" quando a barra de URL do mobile some/aparece. pt-12 casa com
+              a TopBar h-12. */}
+          <main className="pt-12 min-h-[100dvh] bg-bg-base">
             {children}
           </main>
           <ToastProvider />

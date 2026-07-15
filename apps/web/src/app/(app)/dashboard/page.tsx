@@ -23,7 +23,7 @@ export default function DashboardPage() {
   return (
     <LenisProvider>
       <motion.div
-        className="p-6 max-w-[1400px] mx-auto"
+        className="p-4 md:p-6 max-w-[1400px] mx-auto"
         variants={pageTransition}
         initial="initial"
         animate="animate"
