@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { createReadStream, createWriteStream } from 'fs';
@@ -14,6 +14,7 @@ const MEDIA_ID_RE = /^[0-9a-f-]{36}$/;
 @Injectable()
 export class DiskMediaStorage implements MediaStorage {
   private readonly root: string;
+  private readonly logger = new Logger(DiskMediaStorage.name);
 
   constructor(private readonly config: ConfigService) {
     this.root = this.config.get<string>('MEDIA_ROOT', '/data/media');
@@ -45,7 +46,17 @@ export class DiskMediaStorage implements MediaStorage {
     const dir = this.dir(instancia);
     await mkdir(dir, { recursive: true });
     const dest = this.filePath(instancia, id);
-    await pipeline(stream, createWriteStream(dest));
+    try {
+      await pipeline(stream, createWriteStream(dest));
+    } catch (err) {
+      // Remove arquivo parcial em falha de pipeline (best-effort) para evitar órfãos
+      try {
+        await unlink(dest);
+      } catch {
+        // ignora: arquivo pode não ter sido criado ainda
+      }
+      throw err;
+    }
     const { size } = await fsStat(dest);
     return { id, mimetype: meta.mimetype, size, filename: meta.filename };
   }
@@ -70,7 +81,12 @@ export class DiskMediaStorage implements MediaStorage {
   async delete(instancia: string, mediaId: string): Promise<void> {
     this.validateInstancia(instancia);
     this.validateMediaId(mediaId);
-    await unlink(this.filePath(instancia, mediaId));
+    try {
+      await unlink(this.filePath(instancia, mediaId));
+    } catch (err: any) {
+      // best-effort: arquivo já ausente não deve bloquear remoção da quick-reply
+      this.logger.debug(`delete best-effort ignorou erro para ${instancia}/${mediaId}: ${err?.code ?? err}`);
+    }
   }
 
   async exists(instancia: string, mediaId: string): Promise<boolean> {

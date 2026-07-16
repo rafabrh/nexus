@@ -48,9 +48,33 @@ describe('DiskMediaStorage', () => {
     expect(await storage.exists('inst1', result.id)).toBe(false);
   });
 
-  it('rejeita mediaId com path traversal', async () => {
+  it('rejeita mediaId com path traversal (async)', async () => {
     await expect(storage.exists('inst1', '../../etc/passwd')).rejects.toThrow();
     await expect(storage.delete('inst1', '../../etc/passwd')).rejects.toThrow();
     await expect(storage.stat('inst1', '../../etc/passwd')).rejects.toThrow();
+  });
+
+  it('rejeita instancia maliciosa no put (vetor de escrita — mais perigoso)', async () => {
+    const stream = Readable.from(['data']);
+    await expect(storage.put('../../etc', stream, { mimetype: 'image/png', filename: 'x.png' })).rejects.toThrow();
+  });
+
+  it('rejeita instancia maliciosa no put com variante de traversal', async () => {
+    const stream = Readable.from(['data']);
+    await expect(storage.put('../outside', stream, { mimetype: 'image/png', filename: 'x.png' })).rejects.toThrow();
+  });
+
+  it('createReadStream lanca com mediaId de traversal', () => {
+    // createReadStream é síncrono — valida imediatamente antes de abrir o fd
+    expect(() => storage.createReadStream('inst1', '../../etc/passwd')).toThrow();
+  });
+
+  it('createReadStream lanca com instancia maliciosa', () => {
+    expect(() => storage.createReadStream('../../etc', 'a'.repeat(36))).toThrow();
+  });
+
+  it('delete de mediaId inexistente nao lanca (best-effort)', async () => {
+    const fakeId = '00000000-0000-0000-0000-000000000000';
+    await expect(storage.delete('inst1', fakeId)).resolves.toBeUndefined();
   });
 });
