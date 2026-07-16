@@ -74,4 +74,17 @@ export class OnboardingController {
   async retrySync(@Tenant() instancia: string): Promise<SyncResponseDto> {
     return this.service.startSync(instancia);
   }
+
+  @Post('repair-contacts')
+  @Roles('admin')
+  @HttpCode(200)
+  @Throttle({ default: { ttl: 3600000, limit: 3 } })
+  @ApiOperation({
+    summary: 'Corrigir contatos que ficaram com o nome do dono ("Você")',
+  })
+  async repairContacts(
+    @Tenant() instancia: string,
+  ): Promise<{ ownerName: string | null; scanned: number; cleaned: number }> {
+    return this.service.repairContactNames(instancia);
+  }
 }

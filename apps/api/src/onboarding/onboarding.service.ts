@@ -224,6 +224,21 @@ export class OnboardingService {
     }
   }
 
+  /**
+   * Corrige contatos que ficaram exibindo o nome do dono ("Você") por causa do
+   * bug do eco `fromMe`. Delega a limpeza + re-sync ao SyncService. Não altera o
+   * syncStatus (não é o sync inicial) e é seguro rodar quantas vezes precisar.
+   */
+  async repairContactNames(
+    instancia: string,
+  ): Promise<{ ownerName: string | null; scanned: number; cleaned: number }> {
+    const result = await this.sync.remediateContactNames(instancia);
+    this.logger.log(
+      `contacts.repair instancia=${instancia} scanned=${result.scanned} cleaned=${result.cleaned}`,
+    );
+    return result;
+  }
+
   private async updateTenantRegistry(
     instancia: string,
     connectionState?: string,
