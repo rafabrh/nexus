@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   X,
   User,
@@ -226,6 +226,13 @@ export function DetailPanel({ jid }: DetailPanelProps) {
     } | null
   >(null);
   const qrFileRef = useRef<HTMLInputElement>(null);
+  // Revoga a object URL do preview sempre que a mídia muda (troca sem salvar) ou
+  // o painel desmonta com anexo pendente — evita reter blobs de vídeo na memória.
+  useEffect(() => {
+    return () => {
+      if (qrMedia) URL.revokeObjectURL(qrMedia.preview);
+    };
+  }, [qrMedia]);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const saveContact = useSaveContact(jid);
@@ -326,8 +333,7 @@ export function DetailPanel({ jid }: DetailPanelProps) {
         onSuccess: () => {
           setQrName('');
           setQrContent('');
-          if (qrMedia) URL.revokeObjectURL(qrMedia.preview);
-          setQrMedia(null);
+          setQrMedia(null); // o useEffect de cleanup revoga o preview
           notify.success('Resposta rápida salva');
         },
         onError: () => notify.error('Erro ao salvar resposta'),
@@ -903,6 +909,7 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                         <video
                           src={qrMedia.preview}
                           muted
+                          playsInline
                           className="w-10 h-10 rounded object-cover flex-shrink-0"
                           style={{ border: '1px solid var(--separator)' }}
                         />
@@ -919,10 +926,7 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                       </span>
                       <button
                         type="button"
-                        onClick={() => {
-                          URL.revokeObjectURL(qrMedia.preview);
-                          setQrMedia(null);
-                        }}
+                        onClick={() => setQrMedia(null)} // o useEffect de cleanup revoga o preview
                         className="text-text-muted hover:text-error transition-colors flex-shrink-0"
                         aria-label="Remover mídia"
                       >
