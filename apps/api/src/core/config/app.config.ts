@@ -136,6 +136,24 @@ export class AppConfig {
   @IsOptional()
   @IsString()
   GOOGLE_SERVICE_ACCOUNT_JSON?: string;
+
+  // ---- Media (quick-reply attachments) ----
+  // Diretório raiz onde imagens/vídeos de respostas rápidas são armazenados em disco.
+  @IsOptional()
+  @IsString()
+  MEDIA_ROOT: string = '/data/media';
+
+  // Tamanho máximo (bytes) aceito por upload de mídia de resposta rápida (default 64 MB).
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  QR_MEDIA_MAX_BYTES: number = 67108864;
+
+  // Segredo para assinar URLs de mídia. Opcional; em produção deve ser configurado.
+  @IsOptional()
+  @IsString()
+  MEDIA_SIGN_SECRET?: string;
 }
 
 export function validate(config: Record<string, unknown>): AppConfig {
