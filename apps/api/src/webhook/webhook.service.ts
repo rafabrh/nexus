@@ -257,8 +257,11 @@ export class WebhookService {
     }
 
     // Update contact name if available (merge — preserva name/foto já gravados).
+    // SÓ em mensagem RECEBIDA (fromMe=false): num eco do próprio envio o
+    // `data.pushName` é o nome do DONO da instância ("SHK Group"/"Você"), nunca
+    // o do contato — gravá-lo aqui poluiria o registro e faria o nome oscilar.
     const pushName = typeof data.pushName === 'string' ? data.pushName : null;
-    if (pushName) {
+    if (pushName && !fromMe) {
       await this.upsertContact(instanceName, phone, { pushName });
     }
 

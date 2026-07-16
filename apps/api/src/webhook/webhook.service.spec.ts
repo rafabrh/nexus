@@ -325,6 +325,49 @@ describe('WebhookService unread counter', () => {
   });
 });
 
+describe('WebhookService contact name (pushName)', () => {
+  const contactKey = 'contact:shk:5511999';
+
+  it('grava o pushName do contato numa mensagem RECEBIDA (fromMe=false)', async () => {
+    const d = makeDeps(knownTenant());
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent({
+      event: 'messages.upsert',
+      instance: 'shk',
+      data: {
+        key: { remoteJid: '5511999@s.whatsapp.net', fromMe: false },
+        message: { conversation: 'oi' },
+        pushName: 'Cliente Real',
+      },
+    });
+
+    const wrote = d.redis.set.mock.calls.find((c: unknown[]) => c[0] === contactKey);
+    expect(wrote).toBeTruthy();
+    expect(wrote![1]).toContain('Cliente Real');
+  });
+
+  it('NAO grava o pushName do DONO no contato numa mensagem ENVIADA (fromMe=true)', async () => {
+    const d = makeDeps(knownTenant());
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    // Eco do proprio envio: a Evolution devolve o pushName do dono ("SHK Group").
+    // Ele jamais pode ir para o registro do CONTATO (senao o nome oscila).
+    await svc.processEvolutionEvent({
+      event: 'messages.upsert',
+      instance: 'shk',
+      data: {
+        key: { remoteJid: '5511999@s.whatsapp.net', id: 'OUT1', fromMe: true },
+        message: { conversation: 'resposta' },
+        pushName: 'SHK Group',
+      },
+    });
+
+    const wrote = d.redis.set.mock.calls.find((c: unknown[]) => c[0] === contactKey);
+    expect(wrote).toBeUndefined();
+  });
+});
+
 describe('WebhookService presence.update (typing/online)', () => {
   it('publishes presence.update and does NOT forward it to N8N', async () => {
     const d = makeDeps(knownTenant({ n8nWebhookUrl: 'https://n8n/w/shk' }));
