@@ -43,8 +43,7 @@ export class QuickRepliesController {
       dto.name,
       dto.content,
       dto.shortcut,
-      dto.image,
-      dto.imageMimetype,
+      dto.media,
     );
   }
 

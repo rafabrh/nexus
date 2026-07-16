@@ -1,5 +1,17 @@
-import { IsString, IsOptional, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  MaxLength,
+  IsIn,
+  IsInt,
+  Min,
+  Matches,
+  ValidateNested,
+  ValidateIf,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { MediaRefDto } from './create-quick-reply.dto';
 
 export class UpdateQuickReplyDto {
   @ApiPropertyOptional({ description: 'Nome do template', maxLength: 100 })
@@ -21,16 +33,14 @@ export class UpdateQuickReplyDto {
   shortcut?: string;
 
   @ApiPropertyOptional({
-    description: 'Imagem do template em base64 (sem prefixo data:). String vazia remove a imagem.',
+    description: 'Referencia de midia. null remove a midia existente. Omitir nao altera.',
+    nullable: true,
   })
   @IsOptional()
-  @IsString()
-  @MaxLength(1_400_000)
-  image?: string;
-
-  @ApiPropertyOptional({ description: 'Mimetype da imagem', example: 'image/jpeg' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(120)
-  imageMimetype?: string;
+  @ValidateIf((o) => o.media !== null)
+  @ValidateNested()
+  @Type(() => MediaRefDto)
+  media?: MediaRefDto | null;
 }
+
+export { MediaRefDto };
