@@ -77,11 +77,13 @@ export const quickReplies = pgTable(
     name: text('name').notNull(),
     content: text('content').notNull(),
     shortcut: text('shortcut'),
-    // Imagem opcional do template (base64 puro, sem prefixo data:) + mimetype.
-    // Persistida no Postgres para durar entre logins/rebuilds sem depender de
-    // volume de disco. Uma imagem por resposta; enviada como caption=content.
-    image: text('image'),
-    imageMimetype: text('image_mimetype'),
+    // Referência de mídia opcional (imagem ou vídeo armazenado em disco).
+    // O arquivo físico fica no volume gerenciado pelo MediaStorage (DiskMediaStorage).
+    mediaId: text('media_id'),
+    mediaType: text('media_type'),       // 'image' | 'video'
+    mediaMimetype: text('media_mimetype'),
+    mediaFilename: text('media_filename'),
+    mediaSize: integer('media_size'),
   },
   (t) => ({
     byTenant: index('ix_quickreply_tenant').on(t.instancia),
