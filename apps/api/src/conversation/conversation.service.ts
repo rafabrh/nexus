@@ -1,7 +1,10 @@
 import { Injectable, NotFoundException, BadRequestException, Logger, Inject } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { FunnelStagesService } from '../funnel/funnel-stages.service';
+import { QuickRepliesService } from '../quick-replies/quick-replies.service';
+import { signMedia } from '../media/media-signature.util';
 import { RedisKeys, jidFromPhone, PhoneMask } from '@nexus/shared';
 import type {
   ConversationListItem,
@@ -82,6 +85,8 @@ export class ConversationService {
     private readonly index: ConversationIndexService,
     private readonly projection: ConversationProjectionService,
     private readonly funnelStages: FunnelStagesService,
+    private readonly quickReplies?: QuickRepliesService,
+    private readonly config?: ConfigService,
   ) {}
 
   async listConversations(
@@ -750,5 +755,57 @@ export class ConversationService {
 
     this.logger.log(`Location sent + persisted for ${instancia}/${jid}`);
     return { message: 'Localização enviada' };
+  }
+
+  /**
+   * Envia uma resposta rápida pelo id: busca o QR do tenant, e se tiver mídia
+   * gera uma URL assinada (válida 5min) para a Evolution buscar o arquivo em
+   * disco — nunca envia base64. Vídeos acima de 16 MB são enviados como
+   * documento para evitar rejeição da Evolution. Sem mídia, envia como texto.
+   */
+  async sendQuickReply(
+    instancia: string,
+    jid: string,
+    qrId: string,
+  ): Promise<{ message: string }> {
+    if (!this.quickReplies) {
+      throw new Error('QuickRepliesService not injected');
+    }
+    const row = await this.quickReplies.getOwned(instancia, qrId);
+
+    // Monta o bloco de mídia a partir das colunas da linha (mesmo shape do toDto).
+    const media =
+      row.mediaId && row.mediaType && row.mediaMimetype
+        ? {
+            id: row.mediaId,
+            type: row.mediaType as 'image' | 'video',
+            mimetype: row.mediaMimetype,
+            filename: row.mediaFilename ?? '',
+            size: row.mediaSize ?? 0,
+          }
+        : null;
+
+    if (!media) {
+      // Sem mídia — envia como texto reutilizando o método existente.
+      return this.sendMessage(instancia, jid, row.content ?? '');
+    }
+
+    const secret = this.config!.getOrThrow<string>('MEDIA_SIGN_SECRET');
+    const base = this.config!.get<string>('APP_BASE_URL', 'http://localhost:4000');
+    const { exp, sig } = signMedia(instancia, media.id, 300, secret);
+    const url = `${base}/api/v1/public/qr-media/${media.id}?inst=${encodeURIComponent(instancia)}&exp=${exp}&sig=${sig}`;
+
+    const over16 = media.size > 16 * 1024 * 1024;
+    const mediatype = media.type === 'video' && over16 ? 'document' : media.type;
+
+    await this.sendMediaMessage(instancia, jid, {
+      mediatype,
+      media: url,
+      caption: row.content ?? undefined,
+      mimetype: media.mimetype,
+      fileName: media.filename,
+    });
+
+    return { message: 'Resposta rápida enviada' };
   }
 }

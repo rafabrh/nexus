@@ -246,4 +246,15 @@ export class ConversationController {
   ) {
     return this.service.sendLocationMessage(instancia, jid, dto);
   }
+
+  @Post(':jid/send-quick-reply/:qrId')
+  @UseInterceptors(IdempotencyInterceptor)
+  @ApiOperation({ summary: 'Envia uma resposta rápida (texto ou mídia assinada) via Evolution' })
+  async sendQuickReply(
+    @Tenant() instancia: string,
+    @Param('jid') jid: string,
+    @Param('qrId') qrId: string,
+  ) {
+    return this.service.sendQuickReply(instancia, jid, qrId);
+  }
 }
