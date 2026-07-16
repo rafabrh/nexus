@@ -4,8 +4,9 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Zap, AlertTriangle, X, Mic, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useSendMessage, useSendAudio, useSendMedia } from '@/hooks/use-messages';
-import { useQuickReplies } from '@/hooks/use-quick-replies';
+import { useSendMessage, useSendAudio } from '@/hooks/use-messages';
+import { useQuickReplies, useSendQuickReply } from '@/hooks/use-quick-replies';
+import { QuickReplyThumb } from '@/components/ui/quick-reply-thumb';
 import { useVoiceRecorder } from '@/hooks/use-voice-recorder';
 import { useConversationStore } from '@/stores/conversation.store';
 import { notify } from '@/lib/notify';
@@ -29,7 +30,7 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
   const replyingTo = useConversationStore((s) => s.replyingTo);
   const clearReplyingTo = useConversationStore((s) => s.clearReplyingTo);
   const sendAudio = useSendAudio(jid);
-  const sendMedia = useSendMedia(jid);
+  const sendQuickReply = useSendQuickReply(jid);
   const recorder = useVoiceRecorder();
 
   const startRecording = async () => {
@@ -156,30 +157,14 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
   }, [replyingTo]);
 
   // Envio direto: clicar numa resposta rápida dispara a mensagem na hora, sem
-  // preencher o composer nem esperar edição/confirmação. Não cita nada e não
-  // mexe no texto que o operador já tenha digitado. Se o template tem imagem,
-  // envia a imagem com o texto como legenda (caption); senão, só o texto.
+  // preencher o composer nem esperar edição/confirmação. O servidor resolve texto
+  // vs mídia (e vídeo > 16 MB vira documento), então a UI só passa o id.
   const handleQuickReply = (qr: QuickReply) => {
-    if (sendMessage.isPending || sendMedia.isPending) return;
+    if (sendQuickReply.isPending) return;
     setShowQuickReplies(false);
-    if (qr.image) {
-      sendMedia.mutate(
-        {
-          mediatype: 'image',
-          media: qr.image,
-          mimetype: qr.imageMimetype,
-          caption: qr.content || undefined,
-        },
-        { onError: () => notify.error('Erro ao enviar imagem') },
-      );
-      return;
-    }
-    sendMessage.mutate(
-      { text: qr.content, quotedId: undefined, quoted: null },
-      {
-        onError: () => notify.error('Erro ao enviar mensagem'),
-      },
-    );
+    sendQuickReply.mutate(qr.id, {
+      onError: () => notify.error('Erro ao enviar resposta'),
+    });
   };
 
   return (
@@ -207,17 +192,12 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
             <button
               key={qr.id}
               onClick={() => handleQuickReply(qr)}
-              disabled={sendMessage.isPending || sendMedia.isPending}
-              title={qr.image ? 'Enviar imagem + texto direto' : 'Enviar direto'}
+              disabled={sendQuickReply.isPending}
+              title={qr.media ? 'Enviar mídia + texto direto' : 'Enviar direto'}
               className="w-full text-left px-4 py-2 hover:bg-bg-hover transition-colors duration-150 disabled:opacity-50 flex items-start gap-2"
             >
-              {qr.image && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={`data:${qr.imageMimetype ?? 'image/jpeg'};base64,${qr.image}`}
-                  alt=""
-                  className="w-8 h-8 rounded object-cover flex-shrink-0"
-                />
+              {qr.media && (
+                <QuickReplyThumb mediaId={qr.media.id} type={qr.media.type} size={32} />
               )}
               <div className="min-w-0 flex-1">
                 <div className="text-xs font-medium text-text-primary">
