@@ -2,7 +2,7 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { createReadStream, createWriteStream } from 'fs';
-import { mkdir, stat as fsStat, unlink, access } from 'fs/promises';
+import { mkdir, stat as fsStat, unlink, access, readdir } from 'fs/promises';
 import { join } from 'path';
 import { pipeline } from 'stream/promises';
 import type { Readable } from 'stream';
@@ -97,6 +97,36 @@ export class DiskMediaStorage implements MediaStorage {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  async listTenants(): Promise<string[]> {
+    try {
+      const entries = await readdir(this.root, { withFileTypes: true });
+      return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    } catch {
+      return [];
+    }
+  }
+
+  async listMediaIds(instancia: string): Promise<{ id: string; mtimeMs: number }[]> {
+    const dir = this.dir(instancia);
+    try {
+      const entries = await readdir(dir, { withFileTypes: true });
+      const results: { id: string; mtimeMs: number }[] = [];
+      for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        if (!MEDIA_ID_RE.test(entry.name)) continue;
+        try {
+          const s = await fsStat(join(dir, entry.name));
+          results.push({ id: entry.name, mtimeMs: s.mtimeMs });
+        } catch {
+          // arquivo desapareceu entre readdir e stat — ignora
+        }
+      }
+      return results;
+    } catch {
+      return [];
     }
   }
 }

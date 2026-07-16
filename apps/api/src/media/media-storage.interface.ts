@@ -15,4 +15,8 @@ export interface MediaStorage {
   stat(instancia: string, mediaId: string): Promise<{ size: number } | null>;
   delete(instancia: string, mediaId: string): Promise<void>;
   exists(instancia: string, mediaId: string): Promise<boolean>;
+  /** Lista tenants (subdiretórios) presentes sob MEDIA_ROOT. */
+  listTenants(): Promise<string[]>;
+  /** Lista os mediaIds presentes em {instancia}/quick-replies/ com seus mtimes. */
+  listMediaIds(instancia: string): Promise<{ id: string; mtimeMs: number }[]>;
 }
