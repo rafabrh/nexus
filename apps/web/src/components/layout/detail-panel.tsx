@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import {
   X,
   User,
+  Image as ImageIcon,
   Bot,
   Layers,
   Tag,
@@ -206,6 +207,12 @@ export function DetailPanel({ jid }: DetailPanelProps) {
   const [reminderMinutes, setReminderMinutes] = useState('30');
   const [qrName, setQrName] = useState('');
   const [qrContent, setQrContent] = useState('');
+  // Imagem opcional do template: base64 puro (sem prefixo data:) + mimetype +
+  // uma data-URL só para o preview. Reaproveita o envio de mídia da Evolution.
+  const [qrImage, setQrImage] = useState<
+    { base64: string; mimetype: string; preview: string } | null
+  >(null);
+  const qrFileRef = useRef<HTMLInputElement>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const saveContact = useSaveContact(jid);
@@ -252,14 +259,45 @@ export function DetailPanel({ jid }: DetailPanelProps) {
     });
   };
 
+  // Lê o arquivo escolhido como base64. Trava em ~1 MB (o binário é guardado no
+  // Postgres junto do template; base64 incha ~33%, então o DTO aceita ~1,4 M chars).
+  const handleQrImagePick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permite re-selecionar o mesmo arquivo
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      notify.error('Selecione um arquivo de imagem');
+      return;
+    }
+    if (file.size > 1_000_000) {
+      notify.error('Imagem muito grande (máx. 1 MB)');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+      setQrImage({ base64, mimetype: file.type, preview: dataUrl });
+    };
+    reader.onerror = () => notify.error('Erro ao ler a imagem');
+    reader.readAsDataURL(file);
+  };
+
   const handleAddQuickReply = () => {
     if (!qrName.trim() || !qrContent.trim()) return;
     createQuickReply.mutate(
-      { name: qrName.trim(), content: qrContent.trim() },
+      {
+        name: qrName.trim(),
+        content: qrContent.trim(),
+        ...(qrImage
+          ? { image: qrImage.base64, imageMimetype: qrImage.mimetype }
+          : {}),
+      },
       {
         onSuccess: () => {
           setQrName('');
           setQrContent('');
+          setQrImage(null);
           notify.success('Resposta rápida salva');
         },
         onError: () => notify.error('Erro ao salvar resposta'),
@@ -731,10 +769,24 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                               notify.success('Resposta inserida no chat');
                             }}
                             title="Clique para preencher o chat (voce edita e envia)"
-                            className="flex-1 min-w-0 text-left cursor-pointer"
+                            className="flex-1 min-w-0 text-left cursor-pointer flex items-start gap-2"
                           >
-                            <div className="font-medium text-text-primary">{qr.name}</div>
-                            <div className="text-text-muted mt-0.5">{qr.content}</div>
+                            {qr.image && (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={`data:${qr.imageMimetype ?? 'image/jpeg'};base64,${qr.image}`}
+                                alt=""
+                                className="w-9 h-9 rounded object-cover flex-shrink-0"
+                                style={{ border: '1px solid var(--separator)' }}
+                              />
+                            )}
+                            <div className="min-w-0">
+                              <div className="font-medium text-text-primary flex items-center gap-1">
+                                {qr.name}
+                                {qr.image && <ImageIcon size={11} className="text-text-muted flex-shrink-0" />}
+                              </div>
+                              <div className="text-text-muted mt-0.5 truncate">{qr.content}</div>
+                            </div>
                           </button>
                           <button
                             onClick={() => deleteQuickReply.mutate(qr.id, { onSuccess: () => notify.success('Resposta removida') })}
@@ -765,6 +817,25 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                       onKeyDown={(e) => e.key === 'Enter' && handleAddQuickReply()}
                       className="h-7 text-xs"
                     />
+                    {/* Anexar imagem ao template (opcional) */}
+                    <input
+                      ref={qrFileRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleQrImagePick}
+                    />
+                    <motion.div whileTap={{ scale: 0.97 }}>
+                      <Button
+                        size="xs"
+                        variant={qrImage ? 'primary' : 'secondary'}
+                        onClick={() => qrFileRef.current?.click()}
+                        title="Anexar imagem ao template"
+                        aria-label="Anexar imagem"
+                      >
+                        <ImageIcon size={12} />
+                      </Button>
+                    </motion.div>
                     <motion.div whileTap={{ scale: 0.97 }}>
                       <Button
                         size="xs"
@@ -776,6 +847,32 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                       </Button>
                     </motion.div>
                   </div>
+
+                  {/* Preview da imagem anexada, com opção de remover antes de salvar */}
+                  {qrImage && (
+                    <div
+                      className="flex items-center gap-2 p-1.5 rounded"
+                      style={{ background: 'var(--glass-bg)', border: '1px solid var(--separator)' }}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={qrImage.preview}
+                        alt=""
+                        className="w-10 h-10 rounded object-cover flex-shrink-0"
+                      />
+                      <span className="text-xs text-text-muted flex-1 truncate">
+                        Imagem anexada ao template
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setQrImage(null)}
+                        className="text-text-muted hover:text-error transition-colors flex-shrink-0"
+                        aria-label="Remover imagem"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  )}
                 </div>
                         </>
                       );

@@ -12,7 +12,13 @@ export function useQuickReplies() {
 export function useCreateQuickReply() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { name: string; content: string; shortcut?: string }) =>
+    mutationFn: (body: {
+      name: string;
+      content: string;
+      shortcut?: string;
+      image?: string;
+      imageMimetype?: string;
+    }) =>
       api<QuickReply>('/api/v1/quick-replies', {
         method: 'POST',
         body: JSON.stringify(body),
@@ -34,6 +40,8 @@ export function useUpdateQuickReply() {
       name?: string;
       content?: string;
       shortcut?: string;
+      image?: string;
+      imageMimetype?: string;
     }) =>
       api<QuickReply>(`/api/v1/quick-replies/${id}`, {
         method: 'PATCH',

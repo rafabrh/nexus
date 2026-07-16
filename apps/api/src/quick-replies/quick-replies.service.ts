@@ -18,6 +18,8 @@ export class QuickRepliesService {
       name: row.name,
       content: row.content,
       shortcut: row.shortcut ?? undefined,
+      image: row.image ?? undefined,
+      imageMimetype: row.imageMimetype ?? undefined,
     };
   }
 
@@ -35,11 +37,23 @@ export class QuickRepliesService {
     name: string,
     content: string,
     shortcut?: string,
+    image?: string,
+    imageMimetype?: string,
   ): Promise<QuickReply> {
     const id = randomUUID();
+    // Imagem só é gravada se vier com mimetype (par indissociável no envio).
+    const hasImage = !!image && !!imageMimetype;
     const [row] = await this.db
       .insert(quickReplies)
-      .values({ id, instancia, name, content, shortcut: shortcut ?? null })
+      .values({
+        id,
+        instancia,
+        name,
+        content,
+        shortcut: shortcut ?? null,
+        image: hasImage ? image! : null,
+        imageMimetype: hasImage ? imageMimetype! : null,
+      })
       .returning();
     this.logger.log(`Quick reply created: ${id} for ${instancia}`);
     return this.toDto(row);
@@ -48,12 +62,29 @@ export class QuickRepliesService {
   async update(
     instancia: string,
     id: string,
-    updates: { name?: string; content?: string; shortcut?: string },
+    updates: {
+      name?: string;
+      content?: string;
+      shortcut?: string;
+      image?: string;
+      imageMimetype?: string;
+    },
   ): Promise<QuickReply> {
     const set: Partial<QuickReplyRow> = {};
     if (updates.name !== undefined) set.name = updates.name;
     if (updates.content !== undefined) set.content = updates.content;
     if (updates.shortcut !== undefined) set.shortcut = updates.shortcut;
+    // Imagem: string vazia limpa (imagem + mimetype = null); base64 com mimetype
+    // grava o par; qualquer valor incompleto é ignorado.
+    if (updates.image !== undefined) {
+      if (updates.image === '') {
+        set.image = null;
+        set.imageMimetype = null;
+      } else if (updates.imageMimetype) {
+        set.image = updates.image;
+        set.imageMimetype = updates.imageMimetype;
+      }
+    }
 
     const [row] = await this.db
       .update(quickReplies)

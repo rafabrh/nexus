@@ -19,4 +19,18 @@ export class UpdateQuickReplyDto {
   @IsString()
   @MaxLength(50)
   shortcut?: string;
+
+  @ApiPropertyOptional({
+    description: 'Imagem do template em base64 (sem prefixo data:). String vazia remove a imagem.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1_400_000)
+  image?: string;
+
+  @ApiPropertyOptional({ description: 'Mimetype da imagem', example: 'image/jpeg' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  imageMimetype?: string;
 }

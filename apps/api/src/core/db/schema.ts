@@ -77,6 +77,11 @@ export const quickReplies = pgTable(
     name: text('name').notNull(),
     content: text('content').notNull(),
     shortcut: text('shortcut'),
+    // Imagem opcional do template (base64 puro, sem prefixo data:) + mimetype.
+    // Persistida no Postgres para durar entre logins/rebuilds sem depender de
+    // volume de disco. Uma imagem por resposta; enviada como caption=content.
+    image: text('image'),
+    imageMimetype: text('image_mimetype'),
   },
   (t) => ({
     byTenant: index('ix_quickreply_tenant').on(t.instancia),

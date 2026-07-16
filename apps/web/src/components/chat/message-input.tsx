@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Zap, AlertTriangle, X, Mic, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useSendMessage, useSendAudio } from '@/hooks/use-messages';
+import { useSendMessage, useSendAudio, useSendMedia } from '@/hooks/use-messages';
 import { useQuickReplies } from '@/hooks/use-quick-replies';
 import { useVoiceRecorder } from '@/hooks/use-voice-recorder';
 import { useConversationStore } from '@/stores/conversation.store';
@@ -29,6 +29,7 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
   const replyingTo = useConversationStore((s) => s.replyingTo);
   const clearReplyingTo = useConversationStore((s) => s.clearReplyingTo);
   const sendAudio = useSendAudio(jid);
+  const sendMedia = useSendMedia(jid);
   const recorder = useVoiceRecorder();
 
   const startRecording = async () => {
@@ -156,10 +157,23 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
 
   // Envio direto: clicar numa resposta rápida dispara a mensagem na hora, sem
   // preencher o composer nem esperar edição/confirmação. Não cita nada e não
-  // mexe no texto que o operador já tenha digitado.
+  // mexe no texto que o operador já tenha digitado. Se o template tem imagem,
+  // envia a imagem com o texto como legenda (caption); senão, só o texto.
   const handleQuickReply = (qr: QuickReply) => {
-    if (sendMessage.isPending) return;
+    if (sendMessage.isPending || sendMedia.isPending) return;
     setShowQuickReplies(false);
+    if (qr.image) {
+      sendMedia.mutate(
+        {
+          mediatype: 'image',
+          media: qr.image,
+          mimetype: qr.imageMimetype,
+          caption: qr.content || undefined,
+        },
+        { onError: () => notify.error('Erro ao enviar imagem') },
+      );
+      return;
+    }
     sendMessage.mutate(
       { text: qr.content, quotedId: undefined, quoted: null },
       {
@@ -193,20 +207,30 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
             <button
               key={qr.id}
               onClick={() => handleQuickReply(qr)}
-              disabled={sendMessage.isPending}
-              title="Enviar direto"
-              className="w-full text-left px-4 py-2 hover:bg-bg-hover transition-colors duration-150 disabled:opacity-50"
+              disabled={sendMessage.isPending || sendMedia.isPending}
+              title={qr.image ? 'Enviar imagem + texto direto' : 'Enviar direto'}
+              className="w-full text-left px-4 py-2 hover:bg-bg-hover transition-colors duration-150 disabled:opacity-50 flex items-start gap-2"
             >
-              <div className="text-xs font-medium text-text-primary">
-                {qr.name}
-                {qr.shortcut && (
-                  <span className="ml-2 text-text-muted font-mono">
-                    /{qr.shortcut}
-                  </span>
-                )}
-              </div>
-              <div className="text-xs text-text-muted truncate mt-0.5">
-                {qr.content}
+              {qr.image && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={`data:${qr.imageMimetype ?? 'image/jpeg'};base64,${qr.image}`}
+                  alt=""
+                  className="w-8 h-8 rounded object-cover flex-shrink-0"
+                />
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-medium text-text-primary">
+                  {qr.name}
+                  {qr.shortcut && (
+                    <span className="ml-2 text-text-muted font-mono">
+                      /{qr.shortcut}
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-text-muted truncate mt-0.5">
+                  {qr.content}
+                </div>
               </div>
             </button>
           ))}

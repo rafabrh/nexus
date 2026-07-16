@@ -38,7 +38,14 @@ export class QuickRepliesController {
     @Tenant() instancia: string,
     @Body() dto: CreateQuickReplyDto,
   ): Promise<QuickReply> {
-    return this.service.create(instancia, dto.name, dto.content, dto.shortcut);
+    return this.service.create(
+      instancia,
+      dto.name,
+      dto.content,
+      dto.shortcut,
+      dto.image,
+      dto.imageMimetype,
+    );
   }
 
   @Patch(':id')
