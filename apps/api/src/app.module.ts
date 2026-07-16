@@ -23,6 +23,7 @@ import { OnboardingModule } from './onboarding/onboarding.module';
 import { RemindersModule } from './reminders/reminders.module';
 import { QuickRepliesModule } from './quick-replies/quick-replies.module';
 import { FunnelModule } from './funnel/funnel.module';
+import { MediaModule } from './media/media.module';
 import { validate } from './core/config/app.config';
 
 @Module({
@@ -58,6 +59,7 @@ import { validate } from './core/config/app.config';
     RemindersModule,
     QuickRepliesModule,
     FunnelModule,
+    MediaModule,
   ],
   providers: [
     // Global rate limiting. Without this guard the @Throttle decorators (e.g.
