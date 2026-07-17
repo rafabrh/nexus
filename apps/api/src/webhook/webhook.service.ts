@@ -778,6 +778,12 @@ export class WebhookService {
    * desligada — nesse caso o BFF nao reencaminha o payload pro N8N. Resolve o
    * mesmo JID canonico que o painel usa e checa `humanControlUntil` (canonica +
    * cru @lid), idêntico ao `AiControlService.getState`.
+   *
+   * EXCEÇÃO: o self-chat do dono (fromMe=true numa conversa consigo mesmo,
+   * `remoteJid` == `sender` que a Evolution injeta na raiz do webhook) é o canal
+   * de comandos de admin do fluxo N8N (/help, /tpl, on/off...) — NUNCA é gated.
+   * Sem isto, o takeover de 30min disparado por qualquer envio manual do painel
+   * pro próprio número silenciava os comandos.
    */
   private async isInboundAiOff(
     instanceName: string,
@@ -790,6 +796,8 @@ export class WebhookService {
       key.remoteJidAlt as string | undefined,
     );
     if (!resolved) return false;
+    const sender = typeof payload.sender === 'string' ? payload.sender : '';
+    if (key.fromMe === true && sender && resolved.jid === sender) return false;
     return isAiOff(this.redis, instanceName, resolved.jid);
   }
 }
