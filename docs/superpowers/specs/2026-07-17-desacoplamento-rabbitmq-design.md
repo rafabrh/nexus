@@ -74,7 +74,7 @@ Propriedade nova e central: **buffer durável**. Consumidor fora do ar deixa de 
 
 - Serviço novo no projeto `siteshkgroup` (imagem oficial `rabbitmq:3-management`), volume persistente, acessível na rede interna (`http://siteshkgroup_rabbitmq:5672`, management UI protegida).
 - **Exchange:** `evolution_exchange` (topic) — nome default da integração da Evolution; declarado pelo producer.
-- **Filas** (duráveis, mensagens persistentes), declaradas pelos consumidores:
+- **Filas** (duráveis, mensagens persistentes). Quem declara: a `nexus.panel.events` é declarada pelo consumer NestJS no boot; a `nexus.n8n.<tenant>` é **pré-declarada manualmente** na management UI (Fase 0, §7.1) — e seus argumentos (durable, DLX `nexus.dlx`) **devem casar** com o que o RabbitMQ Trigger do N8N assere ao ativar, senão o passo 4 do cutover falha com `PRECONDITION_FAILED` (falha segura — mensagens seguem acumulando — mas evitável):
   - `nexus.panel.events` — bindings dos eventos que o painel processa hoje (`<inst>.messages.upsert`, `<inst>.send.message`, `<inst>.messages.update`, `<inst>.connection.update`, `<inst>.contacts.*`, `<inst>.presence.update`).
   - `nexus.n8n.shkgroup` — bindings só do que o fluxo consome (`shkgroup.messages.upsert`). Fila única por tenant preserva **ordem FIFO** (importante pro buffer de conversa do fluxo).
   - DLX `nexus.dlx` + filas `*.dlq` — mensagem que estourar tentativas cai na DLQ (replay manual documentado no runbook; sem retry automático — YAGNI).
@@ -83,7 +83,7 @@ Propriedade nova e central: **buffer durável**. Consumidor fora do ar deixa de 
 
 - Envs no container da Evolution: `RABBITMQ_ENABLED=true`, `RABBITMQ_URI=amqp://...`, `RABBITMQ_EXCHANGE_NAME=evolution_exchange`, `RABBITMQ_GLOBAL_ENABLED=false` (eventos por instância).
 - Por instância: `POST /rabbitmq/set/{instance}` com a lista de eventos (mesma lista do webhook atual + os do painel).
-- Payload publicado = **mesmo shape do webhook** (`event`, `instance`, `data`, `sender`, `server_url`, ...). Routing key esperada: `<instancia>.<evento>` em minúsculas. **Ambos serão validados na Fase 0 com fila de inspeção** — qualquer divergência é absorvida no adapter (4.5) e documentada aqui.
+- Payload publicado = **mesmo shape do webhook** (`event`, `instance`, `data`, `sender`, `server_url`, ...). Routing key esperada: `<instancia>.<evento>` em minúsculas. **Ambos serão validados na Fase 0 com fila de inspeção** — divergência de *payload* é absorvida no adapter (4.5); divergência de *routing key* se corrige nos **bindings** (4.1). Ambas documentadas aqui.
 - ⚠️ **Regra operacional:** toda mudança na Evolution (env, `/rabbitmq/set`, webhook) é **passo manual executado com aprovação explícita do Rafa** — nunca automatizada por agente (config de webhook N8N é sagrada; ver runbook §7).
 
 ### 4.3 Consumer do painel (`apps/api/src/queue/`)
@@ -167,11 +167,12 @@ O fluxo atual tem dezenas de expressões `$('Webhook').item.json.body.X`. O work
 
 O cutover são **duas ações manuais** (SQL + UI do N8N); não há atomicidade. A ordem errada duplica resposta (workflow v2 ativo com forwarder ainda ligado — o dedup do painel não cobre o N8N) ou perde evento (flag flipada com fila inexistente — exchange descarta). Sequência que elimina os dois:
 
-1. **Pré-condição (feita na Fase 0):** fila `nexus.n8n.shkgroup` + bindings declarados. A partir daí, mensagens acumulam mesmo sem consumidor.
-2. **Flip `transport='amqp'`** (SQL): forwarder para de entregar ao N8N; novas mensagens ficam **seguras na fila** (buffer breve, zero perda, zero duplicata).
-3. **Ativa o workflow v2** no N8N: drena a fila em ordem.
+1. **Pré-condição (feita na Fase 0):** fila `nexus.n8n.shkgroup` + bindings declarados. A partir daí, mensagens acumulam mesmo sem consumidor — a **profundidade crescente desta fila nas Fases 0–1 é comportamento esperado** (não "corrigir" no dashboard); tudo que acumula ali está sendo respondido pelo v1 via forwarder.
+2. **Purga da fila** (management UI) **imediatamente seguida do passo 3** — sem a purga, o v2 drenaria dias de backlog que o v1 já respondeu (IA re-responderia conversas inteiras).
+3. **Flip `transport='amqp'`** (SQL): forwarder para de entregar ao N8N; novas mensagens ficam **seguras na fila**. *Trade-off documentado:* mensagens que chegarem na janela de segundos entre purga e flip serão respondidas 2× (uma vez pelo v1 via forwarder, uma vez pelo v2 ao drenar) — aceitável e raro; a ordem inversa (flip → purga) **perderia eventos**, o que viola o requisito do incidente.
+4. **Ativa o workflow v2** no N8N: drena a fila em ordem (segundos de buffer, não dias).
 
-Rollback exatamente inverso: desativa v2 → flip `transport='webhook'` → (fila volta a acumular sem consumidor; esvaziar/purgar antes de eventual nova tentativa, documentado no runbook).
+Rollback exatamente inverso: desativa v2 → flip `transport='webhook'` → (fila volta a acumular sem consumidor; purgar antes de eventual nova tentativa, documentado no runbook).
 
 ---
 
