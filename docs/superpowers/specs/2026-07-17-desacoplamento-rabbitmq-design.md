@@ -2,7 +2,7 @@
 
 **Data:** 2026-07-17
 **Status:** Aprovado — pronto para plano de implementação
-**Autor:** Rafa (rafabrh) + Claude
+**Autor:** RaFa (rafabrh)
 
 ---
 
