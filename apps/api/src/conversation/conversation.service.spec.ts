@@ -210,6 +210,148 @@ describe('ConversationService', () => {
     );
   });
 
+  // ── sendQuickReply ──────────────────────────────────────────────────────────
+
+  function makeQrSvc(row: Record<string, unknown>) {
+    return { getOwned: vi.fn(async () => row) } as any;
+  }
+
+  function makeEvolution() {
+    return {
+      sendTextMessage: vi.fn(async () => ({ key: { id: 'msg-txt' } })),
+      sendMedia: vi.fn(async () => ({ key: { id: 'msg-media' } })),
+    } as any;
+  }
+
+  function makeRedisForSend() {
+    return {
+      get: vi.fn(async () => null),
+      set: vi.fn(async () => 'OK'),
+      rpush: vi.fn(async () => 1),
+      del: vi.fn(async () => 1),
+      pipeline: () => ({ get: vi.fn(), exec: vi.fn(async () => []) }),
+    } as any;
+  }
+
+  function makeConfig(secret = 'testsecret', base = 'https://app.example.com') {
+    return {
+      getOrThrow: vi.fn((key: string) => {
+        if (key === 'MEDIA_SIGN_SECRET') return secret;
+        throw new Error(`unknown key ${key}`);
+      }),
+      get: vi.fn((key: string, def: string) => {
+        if (key === 'APP_BASE_URL') return base;
+        return def;
+      }),
+    } as any;
+  }
+
+  it('sendQuickReply — vídeo >16MB → sendMedia chamado com mediatype:document', async () => {
+    const evolution = makeEvolution();
+    const redis = makeRedisForSend();
+    const index = { addJid: vi.fn(async () => undefined) } as any;
+    const projection = { list: vi.fn(), project: vi.fn(async () => undefined) } as any;
+    const qrSvc = makeQrSvc({
+      id: 'qr1', instancia: 'shk', content: 'confira o vídeo',
+      mediaId: 'mid1', mediaType: 'video', mediaMimetype: 'video/mp4',
+      mediaFilename: 'video.mp4', mediaSize: 20 * 1024 * 1024,
+    });
+    const config = makeConfig();
+    const svc = new ConversationService({} as any, evolution, {} as any, redis, index, projection, {} as any, qrSvc, config);
+
+    await svc.sendQuickReply('shk', '5511@s.whatsapp.net', 'qr1');
+
+    expect(evolution.sendMedia).toHaveBeenCalledWith(
+      'shk', '5511@s.whatsapp.net',
+      expect.objectContaining({ mediatype: 'document', fileName: 'video.mp4' }),
+    );
+  });
+
+  it('sendQuickReply — vídeo <16MB → sendMedia chamado com mediatype:video', async () => {
+    const evolution = makeEvolution();
+    const redis = makeRedisForSend();
+    const index = { addJid: vi.fn(async () => undefined) } as any;
+    const projection = { list: vi.fn(), project: vi.fn(async () => undefined) } as any;
+    const qrSvc = makeQrSvc({
+      id: 'qr2', instancia: 'shk', content: 'vídeo pequeno',
+      mediaId: 'mid2', mediaType: 'video', mediaMimetype: 'video/mp4',
+      mediaFilename: 'small.mp4', mediaSize: 5 * 1024 * 1024,
+    });
+    const config = makeConfig();
+    const svc = new ConversationService({} as any, evolution, {} as any, redis, index, projection, {} as any, qrSvc, config);
+
+    await svc.sendQuickReply('shk', '5511@s.whatsapp.net', 'qr2');
+
+    expect(evolution.sendMedia).toHaveBeenCalledWith(
+      'shk', '5511@s.whatsapp.net',
+      expect.objectContaining({ mediatype: 'video' }),
+    );
+  });
+
+  it('sendQuickReply — imagem → sendMedia chamado com mediatype:image', async () => {
+    const evolution = makeEvolution();
+    const redis = makeRedisForSend();
+    const index = { addJid: vi.fn(async () => undefined) } as any;
+    const projection = { list: vi.fn(), project: vi.fn(async () => undefined) } as any;
+    const qrSvc = makeQrSvc({
+      id: 'qr3', instancia: 'shk', content: 'olha essa imagem',
+      mediaId: 'mid3', mediaType: 'image', mediaMimetype: 'image/jpeg',
+      mediaFilename: 'foto.jpg', mediaSize: 200 * 1024,
+    });
+    const config = makeConfig();
+    const svc = new ConversationService({} as any, evolution, {} as any, redis, index, projection, {} as any, qrSvc, config);
+
+    await svc.sendQuickReply('shk', '5511@s.whatsapp.net', 'qr3');
+
+    expect(evolution.sendMedia).toHaveBeenCalledWith(
+      'shk', '5511@s.whatsapp.net',
+      expect.objectContaining({ mediatype: 'image' }),
+    );
+  });
+
+  it('sendQuickReply — media field é URL assinada contendo sig=, exp=, inst=', async () => {
+    const evolution = makeEvolution();
+    const redis = makeRedisForSend();
+    const index = { addJid: vi.fn(async () => undefined) } as any;
+    const projection = { list: vi.fn(), project: vi.fn(async () => undefined) } as any;
+    const qrSvc = makeQrSvc({
+      id: 'qr4', instancia: 'shk', content: 'caption',
+      mediaId: 'mid4', mediaType: 'image', mediaMimetype: 'image/png',
+      mediaFilename: 'img.png', mediaSize: 100 * 1024,
+    });
+    const config = makeConfig('mysecret', 'https://app.example.com');
+    const svc = new ConversationService({} as any, evolution, {} as any, redis, index, projection, {} as any, qrSvc, config);
+
+    await svc.sendQuickReply('shk', '5511@s.whatsapp.net', 'qr4');
+
+    const call = evolution.sendMedia.mock.calls[0][2] as { media: string; caption?: string };
+    expect(call.media).toMatch(/^https:\/\/app\.example\.com\/api\/v1\/public\/qr-media\/mid4/);
+    expect(call.media).toContain('sig=');
+    expect(call.media).toContain('exp=');
+    expect(call.media).toContain('inst=shk');
+    expect(call.caption).toBe('caption');
+  });
+
+  it('sendQuickReply — sem mídia → envia como texto, não chama sendMedia', async () => {
+    const evolution = makeEvolution();
+    const redis = makeRedisForSend();
+    const index = { addJid: vi.fn(async () => undefined) } as any;
+    const projection = { list: vi.fn(), project: vi.fn(async () => undefined) } as any;
+    const qrSvc = makeQrSvc({
+      id: 'qr5', instancia: 'shk', content: 'só texto aqui',
+      mediaId: null, mediaType: null, mediaMimetype: null,
+      mediaFilename: null, mediaSize: null,
+    });
+    const config = makeConfig();
+    const svc = new ConversationService({} as any, evolution, {} as any, redis, index, projection, {} as any, qrSvc, config);
+
+    const result = await svc.sendQuickReply('shk', '5511@s.whatsapp.net', 'qr5');
+
+    expect(evolution.sendMedia).not.toHaveBeenCalled();
+    expect(evolution.sendTextMessage).toHaveBeenCalledWith('shk', '5511@s.whatsapp.net', 'só texto aqui', undefined);
+    expect(result.message).toBe('Mensagem enviada');
+  });
+
   it('rejects updateStage (400) when the key is not a stage of the tenant (dynamic funnel)', async () => {
     // O funil é dinâmico por-tenant: um key que não existe em funnel_stages do
     // tenant deve ser rejeitado ANTES de tocar o Redis — senão gravaria um

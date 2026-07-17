@@ -256,6 +256,105 @@ export class SyncService {
     return count;
   }
 
+  /**
+   * Conserta contatos que ficaram com o NOME DO DONO como `pushName` — sequela do
+   * bug do eco `fromMe` (ver webhook.service.ts): antes do fix, um envio do
+   * operador gravava o `pushName` do dono ("Você"/nome do perfil) sobre o contato.
+   * O fix estanca novas gravações, mas os registros já poluídos precisam ser
+   * limpos. Estratégia em dois passos:
+   *   1. Varre `contact:{inst}:*` e remove `pushName`/`name` iguais ao nome do
+   *      dono da instância (obtido via fetchInstances). Sobrando algo útil,
+   *      regrava; senão apaga a chave (o painel cai no número real).
+   *   2. Re-roda `syncContacts` (agenda autoritativa do WhatsApp) para repovoar
+   *      os nomes verdadeiros de quem está salvo na agenda.
+   * Idempotente e escopado por instância — seguro contra outros tenants.
+   */
+  async remediateContactNames(
+    instancia: string,
+  ): Promise<{ ownerName: string | null; scanned: number; cleaned: number }> {
+    const ownerName = await this.fetchOwnerName(instancia);
+    let scanned = 0;
+    let cleaned = 0;
+
+    if (ownerName) {
+      const pattern = RedisKeys.contact(instancia, '*');
+      let cursor = '0';
+      do {
+        const [next, keys] = await this.redis.scan(
+          cursor,
+          'MATCH',
+          pattern,
+          'COUNT',
+          200,
+        );
+        cursor = next;
+        for (const key of keys) {
+          scanned++;
+          const raw = await this.redis.get(key);
+          if (!raw) continue;
+          let obj: Record<string, unknown>;
+          try {
+            obj = JSON.parse(raw) as Record<string, unknown>;
+          } catch {
+            continue; // entrada corrompida — deixa o sync/contacts.update recriar
+          }
+          let dirty = false;
+          if (typeof obj.pushName === 'string' && obj.pushName.trim() === ownerName) {
+            delete obj.pushName;
+            dirty = true;
+          }
+          if (typeof obj.name === 'string' && obj.name.trim() === ownerName) {
+            delete obj.name;
+            dirty = true;
+          }
+          if (!dirty) continue;
+          if (obj.name || obj.pushName || obj.profilePicUrl) {
+            await this.redis.set(key, JSON.stringify(obj));
+          } else {
+            await this.redis.del(key);
+          }
+          cleaned++;
+        }
+      } while (cursor !== '0');
+    } else {
+      this.logger.warn(
+        `sync.remediate instancia=${instancia} sem nome do dono — só re-sync de contatos`,
+      );
+    }
+
+    // Repovoa nomes reais da agenda e invalida os caches de lista/detalhe.
+    await this.syncContacts(instancia);
+    await this.redis.del(RedisKeys.cacheContacts(instancia));
+    await this.redis.del(RedisKeys.cacheConversations(instancia));
+
+    this.logger.log(
+      `sync.remediate instancia=${instancia} owner="${ownerName ?? ''}" scanned=${scanned} cleaned=${cleaned}`,
+    );
+    return { ownerName, scanned, cleaned };
+  }
+
+  /** Nome de perfil do dono da instância (via fetchInstances), ou null. */
+  private async fetchOwnerName(instancia: string): Promise<string | null> {
+    try {
+      const raw = await this.evolution.fetchInstances();
+      if (!Array.isArray(raw)) return null;
+      for (const inst of raw) {
+        const o = inst as Record<string, unknown>;
+        const name = String(o.name ?? o.instanceName ?? '');
+        if (name !== instancia) continue;
+        const profileName = o.profileName ?? o.profilename;
+        return typeof profileName === 'string' && profileName.trim()
+          ? profileName.trim()
+          : null;
+      }
+    } catch (err) {
+      this.logger.warn(
+        `sync.remediate-owner-failed instancia=${instancia}: ${(err as Error).message}`,
+      );
+    }
+    return null;
+  }
+
   private async syncContacts(instancia: string): Promise<void> {
     try {
       const rawContacts = await this.evolution.findContacts(instancia);

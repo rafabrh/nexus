@@ -164,6 +164,46 @@ export async function apiBlob(path: string): Promise<Blob> {
   return res.blob();
 }
 
+/**
+ * Upload multipart autenticado. Não seta `Content-Type` — o browser monta o
+ * boundary do `FormData` sozinho (setá-lo manualmente quebra o parse no servidor).
+ * Espelha o refresh/Bearer do `api()`. Devolve o JSON de resposta.
+ */
+export async function apiUpload<T = unknown>(path: string, form: FormData): Promise<T> {
+  const token = await ensureToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  let res = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    body: form,
+    headers,
+    credentials: 'include',
+  });
+
+  if (res.status === 401 && token) {
+    const newToken = await dedupedRefresh();
+    if (newToken) {
+      headers['Authorization'] = `Bearer ${newToken}`;
+      res = await fetch(`${API_URL}${path}`, {
+        method: 'POST',
+        body: form,
+        headers,
+        credentials: 'include',
+      });
+    }
+  }
+
+  if (!res.ok) {
+    const raw = await res.text().catch(() => '');
+    let parsed: unknown = raw;
+    try { parsed = raw ? JSON.parse(raw) : raw; } catch { /* texto cru */ }
+    throw new ApiError(res.status, parsed, `API ${res.status}: ${raw}`);
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}
+
 export { API_URL };
 
 /**

@@ -1,0 +1,132 @@
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'crypto';
+import { createReadStream, createWriteStream } from 'fs';
+import { mkdir, stat as fsStat, unlink, access, readdir } from 'fs/promises';
+import { join } from 'path';
+import { pipeline } from 'stream/promises';
+import type { Readable } from 'stream';
+import type { MediaStorage, StoredMedia } from './media-storage.interface';
+
+const INSTANCIA_RE = /^[A-Za-z0-9_-]+$/;
+const MEDIA_ID_RE = /^[0-9a-f-]{36}$/;
+
+@Injectable()
+export class DiskMediaStorage implements MediaStorage {
+  private readonly root: string;
+  private readonly logger = new Logger(DiskMediaStorage.name);
+
+  constructor(private readonly config: ConfigService) {
+    this.root = this.config.get<string>('MEDIA_ROOT', '/data/media');
+  }
+
+  private validateInstancia(instancia: string): void {
+    if (!INSTANCIA_RE.test(instancia)) {
+      throw new BadRequestException(`Invalid instancia: ${instancia}`);
+    }
+  }
+
+  private validateMediaId(mediaId: string): void {
+    if (!MEDIA_ID_RE.test(mediaId)) {
+      throw new BadRequestException(`Invalid mediaId: ${mediaId}`);
+    }
+  }
+
+  private dir(instancia: string): string {
+    return join(this.root, instancia, 'quick-replies');
+  }
+
+  private filePath(instancia: string, mediaId: string): string {
+    return join(this.dir(instancia), mediaId);
+  }
+
+  async put(instancia: string, stream: Readable, meta: { mimetype: string; filename: string }): Promise<StoredMedia> {
+    this.validateInstancia(instancia);
+    const id = randomUUID();
+    const dir = this.dir(instancia);
+    await mkdir(dir, { recursive: true });
+    const dest = this.filePath(instancia, id);
+    try {
+      await pipeline(stream, createWriteStream(dest));
+    } catch (err) {
+      // Remove arquivo parcial em falha de pipeline (best-effort) para evitar órfãos
+      try {
+        await unlink(dest);
+      } catch {
+        // ignora: arquivo pode não ter sido criado ainda
+      }
+      throw err;
+    }
+    const { size } = await fsStat(dest);
+    return { id, mimetype: meta.mimetype, size, filename: meta.filename };
+  }
+
+  createReadStream(instancia: string, mediaId: string): Readable {
+    this.validateInstancia(instancia);
+    this.validateMediaId(mediaId);
+    return createReadStream(this.filePath(instancia, mediaId));
+  }
+
+  async stat(instancia: string, mediaId: string): Promise<{ size: number } | null> {
+    this.validateInstancia(instancia);
+    this.validateMediaId(mediaId);
+    try {
+      const s = await fsStat(this.filePath(instancia, mediaId));
+      return { size: s.size };
+    } catch {
+      return null;
+    }
+  }
+
+  async delete(instancia: string, mediaId: string): Promise<void> {
+    this.validateInstancia(instancia);
+    this.validateMediaId(mediaId);
+    try {
+      await unlink(this.filePath(instancia, mediaId));
+    } catch (err: any) {
+      // best-effort: arquivo já ausente não deve bloquear remoção da quick-reply
+      this.logger.debug(`delete best-effort ignorou erro para ${instancia}/${mediaId}: ${err?.code ?? err}`);
+    }
+  }
+
+  async exists(instancia: string, mediaId: string): Promise<boolean> {
+    this.validateInstancia(instancia);
+    this.validateMediaId(mediaId);
+    try {
+      await access(this.filePath(instancia, mediaId));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async listTenants(): Promise<string[]> {
+    try {
+      const entries = await readdir(this.root, { withFileTypes: true });
+      return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    } catch {
+      return [];
+    }
+  }
+
+  async listMediaIds(instancia: string): Promise<{ id: string; mtimeMs: number }[]> {
+    const dir = this.dir(instancia);
+    try {
+      const entries = await readdir(dir, { withFileTypes: true });
+      const results: { id: string; mtimeMs: number }[] = [];
+      for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        if (!MEDIA_ID_RE.test(entry.name)) continue;
+        try {
+          const s = await fsStat(join(dir, entry.name));
+          results.push({ id: entry.name, mtimeMs: s.mtimeMs });
+        } catch {
+          // arquivo desapareceu entre readdir e stat — ignora
+        }
+      }
+      return results;
+    } catch {
+      return [];
+    }
+  }
+}

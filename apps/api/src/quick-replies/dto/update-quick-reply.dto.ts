@@ -1,5 +1,17 @@
-import { IsString, IsOptional, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  MaxLength,
+  IsIn,
+  IsInt,
+  Min,
+  Matches,
+  ValidateNested,
+  ValidateIf,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { MediaRefDto } from './create-quick-reply.dto';
 
 export class UpdateQuickReplyDto {
   @ApiPropertyOptional({ description: 'Nome do template', maxLength: 100 })
@@ -19,4 +31,16 @@ export class UpdateQuickReplyDto {
   @IsString()
   @MaxLength(50)
   shortcut?: string;
+
+  @ApiPropertyOptional({
+    description: 'Referencia de midia. null remove a midia existente. Omitir nao altera.',
+    nullable: true,
+  })
+  @IsOptional()
+  @ValidateIf((o) => o.media !== null)
+  @ValidateNested()
+  @Type(() => MediaRefDto)
+  media?: MediaRefDto | null;
 }
+
+export { MediaRefDto };

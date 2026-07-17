@@ -77,6 +77,13 @@ export const quickReplies = pgTable(
     name: text('name').notNull(),
     content: text('content').notNull(),
     shortcut: text('shortcut'),
+    // Referência de mídia opcional (imagem ou vídeo armazenado em disco).
+    // O arquivo físico fica no volume gerenciado pelo MediaStorage (DiskMediaStorage).
+    mediaId: text('media_id'),
+    mediaType: text('media_type'),       // 'image' | 'video'
+    mediaMimetype: text('media_mimetype'),
+    mediaFilename: text('media_filename'),
+    mediaSize: integer('media_size'),
   },
   (t) => ({
     byTenant: index('ix_quickreply_tenant').on(t.instancia),

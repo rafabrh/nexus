@@ -115,6 +115,30 @@ describe('WebhookService BFF-gate do controle de IA', () => {
     );
   });
 
+  it('SEMPRE encaminha o self-chat do dono pro N8N, mesmo com a IA OFF (canal de comando admin)', async () => {
+    const d = makeDeps(knownTenant({ n8nWebhookUrl: 'https://n8n/w/shk' }));
+    // Takeover ativo na conversa self (ex.: testou quick-reply mandando pro
+    // proprio numero pelo painel) — humanControlUntil no futuro.
+    d.redis.get = vi.fn(async (key: string) =>
+      String(key).endsWith(':humanControlUntil') ? '4102444800000' : null,
+    );
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    // Self-chat: fromMe=true e remoteJid == sender (ownerJid que a Evolution
+    // injeta na raiz de todo webhook). E o canal dos comandos /help, /tpl...
+    await svc.processEvolutionEvent({
+      ...msgUpsert({ id: 'CMD1', fromMe: true, remoteJid: '5511912839594@s.whatsapp.net' }),
+      sender: '5511912839594@s.whatsapp.net',
+    });
+
+    expect(d.forwarder.forward).toHaveBeenCalledWith(
+      'shk',
+      'https://n8n/w/shk',
+      'CMD1',
+      expect.any(Object),
+    );
+  });
+
   it('still forwards to N8N when the AI-OFF pause has already expired', async () => {
     const d = makeDeps(knownTenant({ n8nWebhookUrl: 'https://n8n/w/shk' }));
     d.redis.get = vi.fn(async (key: string) =>
@@ -322,6 +346,49 @@ describe('WebhookService unread counter', () => {
     });
 
     expect(d.redis.incr).not.toHaveBeenCalled();
+  });
+});
+
+describe('WebhookService contact name (pushName)', () => {
+  const contactKey = 'contact:shk:5511999';
+
+  it('grava o pushName do contato numa mensagem RECEBIDA (fromMe=false)', async () => {
+    const d = makeDeps(knownTenant());
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent({
+      event: 'messages.upsert',
+      instance: 'shk',
+      data: {
+        key: { remoteJid: '5511999@s.whatsapp.net', fromMe: false },
+        message: { conversation: 'oi' },
+        pushName: 'Cliente Real',
+      },
+    });
+
+    const wrote = d.redis.set.mock.calls.find((c: unknown[]) => c[0] === contactKey);
+    expect(wrote).toBeTruthy();
+    expect(wrote![1]).toContain('Cliente Real');
+  });
+
+  it('NAO grava o pushName do DONO no contato numa mensagem ENVIADA (fromMe=true)', async () => {
+    const d = makeDeps(knownTenant());
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    // Eco do proprio envio: a Evolution devolve o pushName do dono ("SHK Group").
+    // Ele jamais pode ir para o registro do CONTATO (senao o nome oscila).
+    await svc.processEvolutionEvent({
+      event: 'messages.upsert',
+      instance: 'shk',
+      data: {
+        key: { remoteJid: '5511999@s.whatsapp.net', id: 'OUT1', fromMe: true },
+        message: { conversation: 'resposta' },
+        pushName: 'SHK Group',
+      },
+    });
+
+    const wrote = d.redis.set.mock.calls.find((c: unknown[]) => c[0] === contactKey);
+    expect(wrote).toBeUndefined();
   });
 });
 

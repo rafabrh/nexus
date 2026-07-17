@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   X,
   User,
+  Image as ImageIcon,
+  Film,
   Bot,
   Layers,
   Tag,
@@ -57,7 +59,10 @@ import {
   useQuickReplies,
   useCreateQuickReply,
   useDeleteQuickReply,
+  useUploadQuickReplyMedia,
+  useSendQuickReply,
 } from '@/hooks/use-quick-replies';
+import { QuickReplyThumb } from '@/components/ui/quick-reply-thumb';
 import { useReminders, useCreateReminder } from '@/hooks/use-reminders';
 import { useFunnelStages } from '@/hooks/use-funnel-stages';
 import { type AiState, type FunnelStageKey } from '@nexus/shared';
@@ -196,6 +201,8 @@ export function DetailPanel({ jid }: DetailPanelProps) {
   const { data: quickReplies } = useQuickReplies();
   const createQuickReply = useCreateQuickReply();
   const deleteQuickReply = useDeleteQuickReply();
+  const uploadQrMedia = useUploadQuickReplyMedia();
+  const sendQuickReply = useSendQuickReply(jid);
   const { data: reminders } = useReminders('pending');
   const createReminder = useCreateReminder();
   const { data: funnelStages } = useFunnelStages();
@@ -206,6 +213,26 @@ export function DetailPanel({ jid }: DetailPanelProps) {
   const [reminderMinutes, setReminderMinutes] = useState('30');
   const [qrName, setQrName] = useState('');
   const [qrContent, setQrContent] = useState('');
+  // Mídia opcional do template: já subida ao servidor (referência de disco) +
+  // uma object URL local só para o preview antes de salvar.
+  const [qrMedia, setQrMedia] = useState<
+    {
+      mediaId: string;
+      mediaType: 'image' | 'video';
+      mimetype: string;
+      filename: string;
+      size: number;
+      preview: string;
+    } | null
+  >(null);
+  const qrFileRef = useRef<HTMLInputElement>(null);
+  // Revoga a object URL do preview sempre que a mídia muda (troca sem salvar) ou
+  // o painel desmonta com anexo pendente — evita reter blobs de vídeo na memória.
+  useEffect(() => {
+    return () => {
+      if (qrMedia) URL.revokeObjectURL(qrMedia.preview);
+    };
+  }, [qrMedia]);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const saveContact = useSaveContact(jid);
@@ -252,14 +279,61 @@ export function DetailPanel({ jid }: DetailPanelProps) {
     });
   };
 
+  // Anexa imagem OU vídeo ao template: sobe o arquivo na hora (multipart → disco)
+  // e guarda a referência devolvida. Teto de 64 MB (vídeo grande vira documento no
+  // envio, decidido pelo servidor).
+  const handleQrMediaPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permite re-selecionar o mesmo arquivo
+    if (!file) return;
+    const isImage = file.type.startsWith('image/');
+    const isVideo = file.type.startsWith('video/');
+    if (!isImage && !isVideo) {
+      notify.error('Selecione uma imagem ou vídeo');
+      return;
+    }
+    if (file.size > 64_000_000) {
+      notify.error('Arquivo muito grande (máx. 64 MB)');
+      return;
+    }
+    uploadQrMedia.mutate(file, {
+      onSuccess: (res) => {
+        setQrMedia({
+          mediaId: res.mediaId,
+          mediaType: res.mediaType,
+          mimetype: res.mimetype,
+          filename: res.filename,
+          size: res.size,
+          preview: URL.createObjectURL(file),
+        });
+      },
+      onError: () => notify.error('Erro ao enviar o anexo'),
+    });
+  };
+
   const handleAddQuickReply = () => {
     if (!qrName.trim() || !qrContent.trim()) return;
     createQuickReply.mutate(
-      { name: qrName.trim(), content: qrContent.trim() },
+      {
+        name: qrName.trim(),
+        content: qrContent.trim(),
+        ...(qrMedia
+          ? {
+              media: {
+                id: qrMedia.mediaId,
+                type: qrMedia.mediaType,
+                mimetype: qrMedia.mimetype,
+                filename: qrMedia.filename,
+                size: qrMedia.size,
+              },
+            }
+          : {}),
+      },
       {
         onSuccess: () => {
           setQrName('');
           setQrContent('');
+          setQrMedia(null); // o useEffect de cleanup revoga o preview
           notify.success('Resposta rápida salva');
         },
         onError: () => notify.error('Erro ao salvar resposta'),
@@ -727,14 +801,37 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                           <button
                             type="button"
                             onClick={() => {
-                              insertIntoComposer(qr.content);
-                              notify.success('Resposta inserida no chat');
+                              // Com mídia: envia direto (imagem/vídeo + legenda).
+                              // Sem mídia: preenche o composer para o operador editar.
+                              if (qr.media) {
+                                sendQuickReply.mutate(qr.id, {
+                                  onSuccess: () => notify.success('Resposta rápida enviada'),
+                                  onError: () => notify.error('Erro ao enviar resposta'),
+                                });
+                              } else {
+                                insertIntoComposer(qr.content);
+                                notify.success('Resposta inserida no chat');
+                              }
                             }}
-                            title="Clique para preencher o chat (voce edita e envia)"
-                            className="flex-1 min-w-0 text-left cursor-pointer"
+                            disabled={sendQuickReply.isPending}
+                            title={
+                              qr.media
+                                ? 'Enviar direto (mídia + texto)'
+                                : 'Clique para preencher o chat (você edita e envia)'
+                            }
+                            className="flex-1 min-w-0 text-left cursor-pointer flex items-start gap-2 disabled:opacity-50"
                           >
-                            <div className="font-medium text-text-primary">{qr.name}</div>
-                            <div className="text-text-muted mt-0.5">{qr.content}</div>
+                            {qr.media && (
+                              <QuickReplyThumb mediaId={qr.media.id} type={qr.media.type} size={36} />
+                            )}
+                            <div className="min-w-0">
+                              <div className="font-medium text-text-primary flex items-center gap-1">
+                                {qr.name}
+                                {qr.media?.type === 'video' && <Film size={11} className="text-text-muted flex-shrink-0" />}
+                                {qr.media?.type === 'image' && <ImageIcon size={11} className="text-text-muted flex-shrink-0" />}
+                              </div>
+                              <div className="text-text-muted mt-0.5 truncate">{qr.content}</div>
+                            </div>
                           </button>
                           <button
                             onClick={() => deleteQuickReply.mutate(qr.id, { onSuccess: () => notify.success('Resposta removida') })}
@@ -765,6 +862,26 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                       onKeyDown={(e) => e.key === 'Enter' && handleAddQuickReply()}
                       className="h-7 text-xs"
                     />
+                    {/* Anexar imagem ou vídeo ao template (opcional) */}
+                    <input
+                      ref={qrFileRef}
+                      type="file"
+                      accept="image/*,video/*"
+                      className="hidden"
+                      onChange={handleQrMediaPick}
+                    />
+                    <motion.div whileTap={{ scale: 0.97 }}>
+                      <Button
+                        size="xs"
+                        variant={qrMedia ? 'primary' : 'secondary'}
+                        onClick={() => qrFileRef.current?.click()}
+                        disabled={uploadQrMedia.isPending}
+                        title="Anexar imagem ou vídeo ao template"
+                        aria-label="Anexar mídia"
+                      >
+                        <ImageIcon size={12} />
+                      </Button>
+                    </motion.div>
                     <motion.div whileTap={{ scale: 0.97 }}>
                       <Button
                         size="xs"
@@ -776,6 +893,47 @@ export function DetailPanel({ jid }: DetailPanelProps) {
                       </Button>
                     </motion.div>
                   </div>
+
+                  {/* Estado de upload em andamento */}
+                  {uploadQrMedia.isPending && (
+                    <div className="text-xs text-text-muted px-1">Enviando anexo…</div>
+                  )}
+
+                  {/* Preview da mídia anexada, com opção de remover antes de salvar */}
+                  {qrMedia && (
+                    <div
+                      className="flex items-center gap-2 p-1.5 rounded"
+                      style={{ background: 'var(--glass-bg)', border: '1px solid var(--separator)' }}
+                    >
+                      {qrMedia.mediaType === 'video' ? (
+                        <video
+                          src={qrMedia.preview}
+                          muted
+                          playsInline
+                          className="w-10 h-10 rounded object-cover flex-shrink-0"
+                          style={{ border: '1px solid var(--separator)' }}
+                        />
+                      ) : (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={qrMedia.preview}
+                          alt=""
+                          className="w-10 h-10 rounded object-cover flex-shrink-0"
+                        />
+                      )}
+                      <span className="text-xs text-text-muted flex-1 truncate">
+                        {qrMedia.mediaType === 'video' ? 'Vídeo' : 'Imagem'} anexado ao template
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setQrMedia(null)} // o useEffect de cleanup revoga o preview
+                        className="text-text-muted hover:text-error transition-colors flex-shrink-0"
+                        aria-label="Remover mídia"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  )}
                 </div>
                         </>
                       );

@@ -1,5 +1,5 @@
 import { plainToInstance, Type } from 'class-transformer';
-import { IsString, IsNumber, IsOptional, Min, MinLength, validateSync } from 'class-validator';
+import { IsString, IsNumber, IsOptional, Min, MinLength, ValidateIf, validateSync } from 'class-validator';
 
 export class AppConfig {
   // ---- Redis ----
@@ -136,6 +136,27 @@ export class AppConfig {
   @IsOptional()
   @IsString()
   GOOGLE_SERVICE_ACCOUNT_JSON?: string;
+
+  // ---- Media (quick-reply attachments) ----
+  // Diretório raiz onde imagens/vídeos de respostas rápidas são armazenados em disco.
+  @IsOptional()
+  @IsString()
+  MEDIA_ROOT: string = '/data/media';
+
+  // Tamanho máximo (bytes) aceito por upload de mídia de resposta rápida (default 64 MB).
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  QR_MEDIA_MAX_BYTES: number = 67108864;
+
+  // Segredo para assinar URLs de mídia.
+  // Em produção: obrigatório com pelo menos 32 caracteres (256 bits mínimos).
+  // Fora de produção: opcional (dev/test não precisam configurar).
+  @ValidateIf((o) => process.env.NODE_ENV === 'production')
+  @IsString({ message: 'MEDIA_SIGN_SECRET deve ser uma string em producao' })
+  @MinLength(32, { message: 'MEDIA_SIGN_SECRET deve ter ao menos 32 caracteres em producao (segredo curto e fraco)' })
+  MEDIA_SIGN_SECRET?: string;
 }
 
 export function validate(config: Record<string, unknown>): AppConfig {

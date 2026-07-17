@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
 import fastifyCookie from '@fastify/cookie';
+import fastifyMultipart from '@fastify/multipart';
 import helmet from '@fastify/helmet';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { join } from 'path';
@@ -55,6 +56,14 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   await app.register(fastifyCookie, {
     secret: configService.getOrThrow<string>('JWT_SECRET'),
+  });
+
+  // Multipart — usado pelo endpoint de upload de mídia de quick-replies.
+  await app.register(fastifyMultipart, {
+    limits: {
+      fileSize: configService.get<number>('QR_MEDIA_MAX_BYTES', 67108864),
+      files: 1,
+    },
   });
 
   // Global prefix

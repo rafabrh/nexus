@@ -5,7 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Zap, AlertTriangle, X, Mic, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSendMessage, useSendAudio } from '@/hooks/use-messages';
-import { useQuickReplies } from '@/hooks/use-quick-replies';
+import { useQuickReplies, useSendQuickReply } from '@/hooks/use-quick-replies';
+import { QuickReplyThumb } from '@/components/ui/quick-reply-thumb';
 import { useVoiceRecorder } from '@/hooks/use-voice-recorder';
 import { useConversationStore } from '@/stores/conversation.store';
 import { notify } from '@/lib/notify';
@@ -29,6 +30,7 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
   const replyingTo = useConversationStore((s) => s.replyingTo);
   const clearReplyingTo = useConversationStore((s) => s.clearReplyingTo);
   const sendAudio = useSendAudio(jid);
+  const sendQuickReply = useSendQuickReply(jid);
   const recorder = useVoiceRecorder();
 
   const startRecording = async () => {
@@ -155,17 +157,14 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
   }, [replyingTo]);
 
   // Envio direto: clicar numa resposta rápida dispara a mensagem na hora, sem
-  // preencher o composer nem esperar edição/confirmação. Não cita nada e não
-  // mexe no texto que o operador já tenha digitado.
+  // preencher o composer nem esperar edição/confirmação. O servidor resolve texto
+  // vs mídia (e vídeo > 16 MB vira documento), então a UI só passa o id.
   const handleQuickReply = (qr: QuickReply) => {
-    if (sendMessage.isPending) return;
+    if (sendQuickReply.isPending) return;
     setShowQuickReplies(false);
-    sendMessage.mutate(
-      { text: qr.content, quotedId: undefined, quoted: null },
-      {
-        onError: () => notify.error('Erro ao enviar mensagem'),
-      },
-    );
+    sendQuickReply.mutate(qr.id, {
+      onError: () => notify.error('Erro ao enviar resposta'),
+    });
   };
 
   return (
@@ -193,20 +192,25 @@ export function MessageInput({ jid, aiState }: MessageInputProps) {
             <button
               key={qr.id}
               onClick={() => handleQuickReply(qr)}
-              disabled={sendMessage.isPending}
-              title="Enviar direto"
-              className="w-full text-left px-4 py-2 hover:bg-bg-hover transition-colors duration-150 disabled:opacity-50"
+              disabled={sendQuickReply.isPending}
+              title={qr.media ? 'Enviar mídia + texto direto' : 'Enviar direto'}
+              className="w-full text-left px-4 py-2 hover:bg-bg-hover transition-colors duration-150 disabled:opacity-50 flex items-start gap-2"
             >
-              <div className="text-xs font-medium text-text-primary">
-                {qr.name}
-                {qr.shortcut && (
-                  <span className="ml-2 text-text-muted font-mono">
-                    /{qr.shortcut}
-                  </span>
-                )}
-              </div>
-              <div className="text-xs text-text-muted truncate mt-0.5">
-                {qr.content}
+              {qr.media && (
+                <QuickReplyThumb mediaId={qr.media.id} type={qr.media.type} size={32} />
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-medium text-text-primary">
+                  {qr.name}
+                  {qr.shortcut && (
+                    <span className="ml-2 text-text-muted font-mono">
+                      /{qr.shortcut}
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-text-muted truncate mt-0.5">
+                  {qr.content}
+                </div>
               </div>
             </button>
           ))}

@@ -15,6 +15,20 @@
       "when": 1784089032968,
       "tag": "0001_parched_kronos",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784162107433,
+      "tag": "0002_quick_reply_image",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784162200000,
+      "tag": "0003_quick_reply_media_ref",
+      "breakpoints": true
     }
   ]
 }
