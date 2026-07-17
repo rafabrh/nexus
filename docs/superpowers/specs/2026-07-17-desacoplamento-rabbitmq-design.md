@@ -120,14 +120,15 @@ O fluxo atual tem dezenas de expressões `$('Webhook').item.json.body.X`. O work
 ```
 
 - O nó Code **assume o nome "Webhook"** — as referências por nome resolvem para ele. Zero refactor, rollback = reativar o workflow antigo.
-- **Gate de IA interno (D6):** novo nó logo após o adapter checa `humanControlUntil` no Redis (chave canônica **e** cru `@lid` via mapa `rawJid` que o painel mantém — o motivo histórico da inconfiabilidade do gate está resolvido), com a **exceção do self-chat do dono** (`fromMe` && `remoteJid`/`remoteJidAlt` == `sender`): comando admin nunca é gated (paridade com o fix `0223966` do painel).
+- **Gate de IA interno (D6):** novo nó logo após o adapter checa `humanControlUntil` no Redis (chave canônica **e** cru `@lid` via mapa `rawJid` que o painel mantém), com a **exceção do self-chat do dono** (`fromMe` && `remoteJid`/`remoteJidAlt` == `sender`): comando admin nunca é gated (paridade com o fix `0223966` do painel).
+- **Registro honesto sobre o gate antigo:** o comentário em `webhook.service.ts` documenta que o gate interno anterior *"lia o `humanControlUntil` correto e respondia assim mesmo"* — a falha não era (só) chave errada. O gate v2 difere em **posição**: fica na cabeça do fluxo, antes de buffer/espera/qualquer resposta, num caminho único (fila → adapter → gate), eliminando as rotas que contornavam a checagem. Como o histórico recomenda ceticismo, o **teste de bloqueio é critério de saída obrigatório da Fase 2** (§7) — o corte do webhook (Fase 3) não acontece sem essa prova.
 - Artefato versionado: `docs/n8n-workflow-v2-amqp.json` (importável). Ativação/desativação de workflows é passo manual do runbook.
 
 ### 4.6 Tenant registry — flag `transport`
 
 - Migration Drizzle nova (⚠️ conferir ordem no `journal` — gotcha de 07/2026): coluna `transport text NOT NULL DEFAULT 'webhook'` em `tenants`.
 - `n8n-forwarder`: tenant com `transport='amqp'` **não recebe forward** (o N8N dele já consome da fila; evita resposta duplicada da IA). Com `'webhook'`, comportamento atual intacto.
-- Flip por tenant via SQL/endpoint admin — é o botão do cutover (Fase 2) e do rollback.
+- Flip por tenant **via SQL direto no piloto** (endpoint/tela admin fica explicitamente fora de escopo — o plano não deve inventar rota) — é o botão do cutover (Fase 2) e do rollback.
 
 ---
 
@@ -148,7 +149,7 @@ O fluxo atual tem dezenas de expressões `$('Webhook').item.json.body.X`. O work
 | RabbitMQ cai | Evolution não entrega (integração AMQP falha) | Runbook: reabilitar webhook da instância (mecanismo preservado); alarme via watchdog |
 | Mensagem venenosa (payload inesperado) | `nack` → DLQ; fluxo não trava | Watchdog avisa no WhatsApp; replay manual pós-correção |
 | Dual-run: evento duplicado | Dedup boundary descarta a 2ª cópia | — (por design) |
-| Cutover: IA responde 2× | Impossível por construção: `transport='amqp'` desliga o forward **no mesmo passo** que ativa o workflow v2 | Rollback = flip reverso |
+| Cutover: IA responde 2× ou evento perdido | Prevenido pela **sequência obrigatória do cutover** (§7.1) — o dedup do painel NÃO cobre o caminho do N8N | Rollback = sequência inversa |
 
 ---
 
@@ -156,18 +157,28 @@ O fluxo atual tem dezenas de expressões `$('Webhook').item.json.body.X`. O work
 
 | Fase | Entrega | Critério de saída | Rollback |
 |---|---|---|---|
-| **0 — Infra + validação** | RabbitMQ no EasyPanel; envs na Evolution; `rabbitmq/set` na `Shkgroup` (manual, com aval); fila de inspeção | Payload e routing key reais documentados nesta spec | Desligar `RABBITMQ_ENABLED` |
+| **0 — Infra + validação** | RabbitMQ no EasyPanel; envs na Evolution; `rabbitmq/set` na `Shkgroup` (manual, com aval); fila de inspeção; **pré-declara `nexus.n8n.shkgroup` + bindings na management UI** (exchange sem fila bound DESCARTA mensagem — §7.1) | Payload e routing key reais documentados nesta spec; fila do N8N existe e acumula | Desligar `RABBITMQ_ENABLED` |
 | **1 — Painel dual-run** | Módulo `queue/` + dedup + kill-switch em produção | ≥ 3 dias com paridade webhook×fila (contadores por fonte, sem divergência) | `QUEUE_CONSUMER_ENABLED=false` |
-| **2 — Cutover N8N (piloto Shkgroup)** | Workflow v2 ativo + `transport='amqp'` | `/help` e `/tpl` no self-chat OK; conversa de teste ponta a ponta OK; 48 h sem anomalia | Flip flag + reativar workflow antigo |
-| **3 — Corte do webhook** | Painel 100% fila; webhook da instância desabilitado (manual, com aval); replica fases 2–3 nos demais tenants | 1 semana estável por tenant migrado | Reabilitar webhook |
+| **2 — Cutover N8N (piloto Shkgroup)** | Workflow v2 ativo + `transport='amqp'`, na **sequência do §7.1** | **(a) Exceção:** `/help` e `/tpl` no self-chat OK; **(b) Bloqueio:** takeover ativo → IA silencia, testado com contato canônico **e** `@lid`; **(c)** conversa de teste ponta a ponta OK; **(d)** fluxo não depende de eventos não-message que o forwarder entregava por tabela (`connection.update`, `contacts.*`); 48 h sem anomalia | Sequência inversa do §7.1 |
+| **3 — Corte do webhook** | Painel 100% fila; webhook da instância desabilitado (manual, com aval); replica fases 2–3 nos demais tenants | 1 semana estável por tenant migrado; **teste de bloqueio (2b) repetido por tenant** | Reabilitar webhook |
 | **4 — Resiliência operacional** | DLQ + watchdog N8N → alerta WhatsApp; runbook final; `/health` com AMQP | Alarme testado com falha simulada | — |
+
+### 7.1 Sequência obrigatória do cutover (Fase 2) — por que a ordem importa
+
+O cutover são **duas ações manuais** (SQL + UI do N8N); não há atomicidade. A ordem errada duplica resposta (workflow v2 ativo com forwarder ainda ligado — o dedup do painel não cobre o N8N) ou perde evento (flag flipada com fila inexistente — exchange descarta). Sequência que elimina os dois:
+
+1. **Pré-condição (feita na Fase 0):** fila `nexus.n8n.shkgroup` + bindings declarados. A partir daí, mensagens acumulam mesmo sem consumidor.
+2. **Flip `transport='amqp'`** (SQL): forwarder para de entregar ao N8N; novas mensagens ficam **seguras na fila** (buffer breve, zero perda, zero duplicata).
+3. **Ativa o workflow v2** no N8N: drena a fila em ordem.
+
+Rollback exatamente inverso: desativa v2 → flip `transport='webhook'` → (fila volta a acumular sem consumidor; esvaziar/purgar antes de eventual nova tentativa, documentado no runbook).
 
 ---
 
 ## 8. Observabilidade
 
 - Logs estruturados no consumer: `evt.consumed instancia=<i> event=<e> fonte=amqp`, `evt.dedup-hit`, `evt.nack-dlq`.
-- Fase 1: contadores Redis por fonte (`evt:count:{fonte}:{instancia}:{event}`, TTL 7 d) para o relatório de paridade.
+- Fase 1: contadores Redis por fonte (`evt:count:{fonte}:{instancia}:{event}`, TTL 7 d) para o relatório de paridade — incrementados **antes** do descarte por dedup (contando depois, "paridade" seria inalcançável por construção: uma fonte sempre perde a corrida).
 - Management UI do RabbitMQ (profundidade de fila, taxa) — a profundidade da `nexus.panel.events` é o novo indicador "painel fora do ar".
 - Watchdog (Fase 4): fluxo N8N agendado — DLQ > 0 ou fila do painel crescendo → WhatsApp do dono via Evolution.
 
@@ -182,7 +193,7 @@ O fluxo atual tem dezenas de expressões `$('Webhook').item.json.body.X`. O work
 | Risco | Mitigação |
 |---|---|
 | Payload/routing key da fila divergirem do assumido | Fase 0 valida com fila de inspeção **antes** de qualquer código depender; adapter é ponto único de correção |
-| IA responder 2× durante transição | Cutover atômico por tenant (D7) + dedup boundary |
+| IA responder 2× ou evento sumir durante transição | Sequência obrigatória do cutover (§7.1): fila pré-declarada → flip → ativar v2 |
 | RabbitMQ vira novo SPOF | Filas duráveis + volume persistente; webhook preservado como fallback; broker não recebe deploy de feature |
 | Mexer na Evolution quebrar o fluxo atual | Todos os passos na Evolution são manuais, com aval, reversíveis e listados no runbook |
 | Migration Drizzle fora de ordem | Conferir `journal` (gotcha conhecido do repo) + teste de boot local |
