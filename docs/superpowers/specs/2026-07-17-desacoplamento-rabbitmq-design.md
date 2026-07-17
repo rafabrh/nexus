@@ -165,7 +165,7 @@ O fluxo atual tem dezenas de expressões `$('Webhook').item.json.body.X`. O work
 
 ### 7.1 Sequência obrigatória do cutover (Fase 2) — por que a ordem importa
 
-O cutover são **duas ações manuais** (SQL + UI do N8N); não há atomicidade. A ordem errada duplica resposta (workflow v2 ativo com forwarder ainda ligado — o dedup do painel não cobre o N8N) ou perde evento (flag flipada com fila inexistente — exchange descarta). Sequência que elimina os dois:
+O cutover são **três ações manuais em três superfícies distintas** (purga na management UI do RabbitMQ, flip via SQL, ativação na UI do N8N); não há atomicidade. A ordem errada duplica resposta (workflow v2 ativo com forwarder ainda ligado — o dedup do painel não cobre o N8N), perde evento (flag flipada com fila inexistente — exchange descarta) ou re-responde backlog antigo (v2 drenando dias de fila que o v1 já atendeu). Sequência que elimina os três:
 
 1. **Pré-condição (feita na Fase 0):** fila `nexus.n8n.shkgroup` + bindings declarados. A partir daí, mensagens acumulam mesmo sem consumidor — a **profundidade crescente desta fila nas Fases 0–1 é comportamento esperado** (não "corrigir" no dashboard); tudo que acumula ali está sendo respondido pelo v1 via forwarder.
 2. **Purga da fila** (management UI) **imediatamente seguida do passo 3** — sem a purga, o v2 drenaria dias de backlog que o v1 já respondeu (IA re-responderia conversas inteiras).
@@ -194,7 +194,7 @@ Rollback exatamente inverso: desativa v2 → flip `transport='webhook'` → (fil
 | Risco | Mitigação |
 |---|---|
 | Payload/routing key da fila divergirem do assumido | Fase 0 valida com fila de inspeção **antes** de qualquer código depender; adapter é ponto único de correção |
-| IA responder 2× ou evento sumir durante transição | Sequência obrigatória do cutover (§7.1): fila pré-declarada → flip → ativar v2 |
+| IA responder 2× ou evento sumir durante transição | Sequência obrigatória do cutover (§7.1): fila pré-declarada → **purga** → flip → ativar v2 |
 | RabbitMQ vira novo SPOF | Filas duráveis + volume persistente; webhook preservado como fallback; broker não recebe deploy de feature |
 | Mexer na Evolution quebrar o fluxo atual | Todos os passos na Evolution são manuais, com aval, reversíveis e listados no runbook |
 | Migration Drizzle fora de ordem | Conferir `journal` (gotcha conhecido do repo) + teste de boot local |
