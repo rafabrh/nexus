@@ -1,7 +1,7 @@
 # Desacoplamento via RabbitMQ + Engine N8N multi-tenant — escala 500 clientes
 
 **Data:** 2026-07-17 (v2 em 2026-07-18 — N8N deixou de ser intocável; alvo de escala explícito)
-**Status:** Aprovado — pronto para plano de implementação
+**Status:** Em review — ciclo v2
 **Autor:** RaFa (rafabrh)
 
 ---
@@ -83,7 +83,7 @@ Propriedades novas: **buffer durável** (consumidor fora do ar = evento adiado, 
 - **Exchange:** `evolution_exchange` (topic) — nome default da integração da Evolution; declarado pelo producer.
 - **Filas** (duráveis, mensagens persistentes). Quem declara: a `nexus.panel.events` é declarada pelo consumer NestJS no boot; a `nexus.n8n.events` é **pré-declarada manualmente** na management UI (Fase 0, §7.1) — e seus argumentos (durable, DLX `nexus.dlx`) **devem casar** com o que o RabbitMQ Trigger do N8N assere ao ativar, senão a ativação falha com `PRECONDITION_FAILED` (falha segura — mensagens seguem acumulando — mas evitável):
   - `nexus.panel.events` — bindings dos eventos que o painel processa hoje (`<inst>.messages.upsert`, `<inst>.send.message`, `<inst>.messages.update`, `<inst>.connection.update`, `<inst>.contacts.*`, `<inst>.presence.update`), com `<inst>` = `#` (todos os tenants).
-  - `nexus.n8n.events` — **bindings explícitos por tenant migrado** (`shkgroup.messages.upsert` no piloto). Adicionar um tenant ao engine = adicionar binding + config (§4.6) + flip (§7.1). Tenants com fluxo custom ainda não absorvido (ex.: Geotech) simplesmente não têm binding — continuam no forwarder (`transport='webhook'`).
+  - `nexus.n8n.events` — **bindings explícitos por tenant migrado** (`shkgroup.messages.upsert` no piloto). Adicionar um tenant ao engine = sequência do **§7.2** (a do §7.1 vale SÓ para o piloto). Tenants com fluxo custom ainda não absorvido (ex.: Geotech) simplesmente não têm binding — continuam no forwarder (`transport='webhook'`).
   - DLX `nexus.dlx` + filas `*.dlq` — mensagem que estourar tentativas cai na DLQ (replay manual no runbook; sem retry automático — YAGNI).
 - **Ordem:** fila única multi-tenant não garante FIFO por conversa sob consumo concorrente. O engine já tolera: o **buffer de conversa em Redis** agrega mensagens por contato antes de responder (design atual preservado).
 
@@ -112,9 +112,11 @@ No dual-run cada evento chega 2× (webhook + fila); na fila, redelivery também 
 | `messages.update` (ACK) | ✅ CAS Lua só avança status | Sem dedup |
 | `connection.update`, `contacts.*`, `presence.update` | ✅ `set`/projeção idempotente | Sem dedup |
 
-- `EventDedupService`: `SET NX` em `evt:dedup:{instancia}:{key.id}` (TTL 300 s). Chave nova em `RedisKeys` (`packages/shared`).
+- `EventDedupService`: `SET NX` em `evt:dedup:{instancia}:{event}:{key.id}` — o **evento faz parte da chave**: a resposta da IA gera `send.message` (API) e `messages.upsert` (eco, `fromMe=true`) com o MESMO `key.id`, e ambos devem passar (o `handleMessageUpsert` já arbitra o eco hoje; o dedup só mata duplicata do *mesmo* evento). Chave nova em `RedisKeys` (`packages/shared`).
+- **TTL 48 h** (não segundos): o rollback da Fase 1 é desligar o consumer com o webhook ativo — o backlog acumula na fila por horas/dias e, ao religar, o dreno passa pelo dedup; com TTL curto as chaves teriam expirado e o `rpush` duplicaria o histórico em massa. 100 k eventos/dia × 48 h de chaves pequenas é custo desprezível no Redis.
 - Aplicado **nos dois boundaries do painel** (controller HTTP e consumer AMQP) antes de processar `messages.upsert`/`send.message` — quem chegar primeiro vence; a cópia é descartada com log `evt.dedup-hit fonte=<amqp|webhook>`.
-- **Escopo:** o dedup protege o *painel*. O caminho do N8N é protegido pela sequência do cutover (§7.1), não por este dedup.
+- Runbook: religar o consumer após kill-switch prolongado **em dual-run** = purgar `nexus.panel.events` antes (o webhook já processou tudo; o dedup de 48 h é a segunda linha de defesa). **Pós-corte do webhook (Fase 3+), purga proibida** — a fila é a única fonte.
+- **Escopo:** o dedup protege o *painel*. O caminho do N8N é protegido pelas sequências §7.1/§7.2, não por este dedup.
 
 ### 4.5 Engine N8N multi-tenant (substitui o clone por cliente)
 
@@ -149,6 +151,7 @@ O workflow atual da Shkgroup é o protótipo: ele já parametriza `instanceName`
 - **Write-through:** o service do painel grava Postgres e espelha em `tenant:cfg:<instancia>` (JSON string) na mesma operação; reconciliação Postgres→Redis no boot da API (autocura de drift).
 - **O engine lê SÓ o Redis.** Painel morto → atendimento segue com a config viva; apenas a *edição* fica indisponível (aceitável e documentado).
 - **Conteúdo v1** (inventário fechado na Fase 0 a partir do fluxo real): persona/system prompt do agente; templates do `/tpl` (texto/imagem/caption); flags de módulo (`followup`, `sheets`, `payments`); IDs externos (planilhas); timezone; parâmetros de buffer/timeout. `ownerJid`/admin **não** entra — deriva do `sender` do payload.
+- **Chave canônica de `instancia`:** o casing vem do campo `instance` do **payload** (ex.: `Shkgroup`), NÃO da routing key (minúscula, `shkgroup`). Seed, lookup do engine e `RedisKeys` usam o mesmo valor — evita `tenant:cfg:Shkgroup` × `tenant:cfg:shkgroup` → NACK no primeiro evento do piloto.
 - **Piloto:** seed da Shkgroup via script/SQL. UI de edição fica **fora de escopo** (§11) — o plano não deve inventar tela.
 - Flag `transport` (`webhook`|`amqp`) permanece no tenant registry existente; flip **via SQL no piloto** (endpoint/tela fora de escopo). `tenants.n8nWebhookUrl` segue em uso pelo forwarder durante a transição e **aposenta por tenant** quando o binding assume (§7.1).
 
@@ -174,8 +177,10 @@ O workflow atual da Shkgroup é o protótipo: ele já parametriza `instanceName`
 | Mensagem venenosa | `nack` → DLQ; engine não trava | Watchdog avisa no WhatsApp; replay manual pós-correção |
 | Tenant sem config chega ao engine | NACK → DLQ + alerta (nunca atende às cegas) | Corrigir config/binding; replay |
 | Config drift Postgres×Redis | Reconciliação no boot da API; `cfg_version` no log do engine | Autocura; divergência visível |
-| Dual-run: evento duplicado no painel | Dedup boundary descarta a 2ª cópia | — (por design) |
-| Cutover: IA responde 2×, evento sumir ou backlog re-respondido | Prevenido pela **sequência obrigatória do cutover** (§7.1): fila pré-declarada → **purga** → flip → ativar engine | Rollback = sequência inversa |
+| Dual-run: evento duplicado no painel | Dedup boundary (TTL 48 h) descarta a 2ª cópia | — (por design) |
+| Consumer religado após kill-switch prolongado (dual-run) | Backlog drena pelo dedup de 48 h | Runbook: purgar `nexus.panel.events` antes de religar (webhook já processou tudo); pós-corte, purga proibida |
+| Cutover do piloto: IA responde 2×, evento sumir ou backlog re-respondido | Prevenido pela **sequência do §7.1** (fila pré-declarada → **purga** → flip → ativar engine) | Rollback = sequência inversa |
+| Migração de tenant com engine JÁ ATIVO | Prevenido pela **sequência do §7.2** — purga e desativação do engine são **proibidas** com fila compartilhada viva | Rollback **por tenant** (§7.2) |
 
 ---
 
@@ -185,8 +190,8 @@ O workflow atual da Shkgroup é o protótipo: ele já parametriza `instanceName`
 |---|---|---|---|
 | **0 — Infra + validação + inventário** | RabbitMQ no EasyPanel; envs na Evolution; `rabbitmq/set` na `Shkgroup` (manual, com aval); fila de inspeção; **pré-declara `nexus.n8n.events` + binding shkgroup** (§7.1); **inventário completo dos hardcodes do fluxo atual → schema da config v1** | Payload e routing key reais documentados; fila do engine existe e acumula (profundidade crescente é **esperada** nas Fases 0–1); schema de config aprovado | Desligar `RABBITMQ_ENABLED` |
 | **1 — Painel dual-run + config store** | Módulo `queue/` + dedup + kill-switch em produção; migration `tenant_engine_config` + write-through + reconcile + seed Shkgroup | ≥ 3 dias com paridade webhook×fila (contadores por fonte); config da Shkgroup íntegra no Redis | `QUEUE_CONSUMER_ENABLED=false` |
-| **2 — Engine v1 + cutover piloto** | Engine construído e testado com **fixtures de payload real** (execução manual no N8N); cutover na **sequência do §7.1** | **(a) Exceção:** `/help` e `/tpl` no self-chat OK; **(b) Bloqueio:** takeover ativo → IA silencia, com contato canônico **e** `@lid`; **(c)** conversa ponta a ponta OK; **(d) Regressão por módulo** (buffer/áudio/followup/sheets/MP) contra o comportamento do fluxo v1; **(e)** fluxo não depende de eventos não-message que o forwarder entregava por tabela; 48 h sem anomalia | Sequência inversa do §7.1 (workflow v1 reativado) |
-| **3 — Corte do webhook + onboarding modelo** | Webhook da `Shkgroup` desabilitado (manual, com aval); painel 100% fila; **runbook de onboarding O(1)** (§5); próximos tenants modelo-SHK migram por config+binding+flip | 1 semana estável; **teste de bloqueio (2b) repetido por tenant migrado**; um tenant novo onboardado sem criar workflow | Reabilitar webhook |
+| **2 — Engine v1 + cutover piloto** | Engine construído e testado com **fixtures de payload real** (execução manual no N8N); cutover na **sequência do §7.1** | **(a) Exceção:** `/help` e `/tpl` no self-chat OK; **(b) Bloqueio:** takeover ativo → IA silencia, com contato canônico **e** `@lid`; **(c)** conversa ponta a ponta OK; **(d) Regressão por módulo** (buffer/áudio/followup/sheets/MP) contra o comportamento do fluxo v1; **(e)** confirmado que o engine só precisa de `messages.upsert`: o forwarder entrega hoje também `connection.update`/`contacts.*` (tabela do webhook), e o binding do engine não os inclui — verificar que nenhum nó do fluxo v1 dependia deles; 48 h sem anomalia | Sequência inversa do §7.1 (workflow v1 reativado) |
+| **3 — Corte do webhook + onboarding modelo** | Webhook da `Shkgroup` desabilitado (manual, com aval); painel 100% fila; **runbook de onboarding O(1)** (§5); próximos tenants modelo-SHK migram pela **sequência do §7.2** | 1 semana estável; **teste de bloqueio (2b) repetido por tenant migrado**; um tenant novo onboardado sem criar workflow | Reabilitar webhook (por tenant, §7.2) |
 | **4 — Resiliência operacional** | DLQ + watchdog N8N → alerta WhatsApp; runbook final; `/health` com AMQP | Alarme testado com falha simulada | — |
 
 ### 7.1 Sequência obrigatória do cutover (Fase 2) — por que a ordem importa
@@ -199,6 +204,18 @@ O cutover são **três ações manuais em três superfícies distintas** (purga 
 4. **Ativa o engine** no N8N: drena a fila em ordem (segundos de buffer, não dias).
 
 Rollback exatamente inverso: desativa engine → flip `transport='webhook'` (workflow v1 volta a responder) → purgar a fila antes de eventual nova tentativa.
+
+### 7.2 Migração de tenant com o engine JÁ ATIVO (Fase 3+) — a sequência do §7.1 NÃO se aplica
+
+Depois do piloto, a `nexus.n8n.events` é compartilhada e carrega tráfego **vivo** dos tenants migrados. Duas ações do §7.1 ficam **proibidas**: purga (apagaria eventos em trânsito de outros tenants — perda, violando o requisito nº 1) e desativação do engine (derrubaria todos os migrados, não só o tenant com problema). Sequência por tenant:
+
+1. **`rabbitmq/set` na instância do tenant** (manual, com aval): a Evolution passa a publicar os eventos dele no exchange. Sem binding ainda, o engine não os vê — sem efeito.
+2. **Config do tenant** inserida (Postgres → espelho Redis) e conferida no Redis.
+3. **Binding `<inst>.messages.upsert`** adicionado na `nexus.n8n.events`, **imediatamente seguido do passo 4** — a partir do binding, os eventos do tenant entram na fila viva e o engine (ativo) vai drená-los.
+4. **Flip `transport='amqp'`** (SQL): forwarder para. *Trade-off documentado:* na janela de segundos entre binding e flip, mensagens do tenant são respondidas 2× (v1 via forwarder + engine) — raro e aceitável; **a ordem inversa (flip antes do binding) perderia eventos** (exchange sem binding descarta).
+5. **Webhook da instância desabilitado** na Evolution (manual, com aval) quando o tenant estabilizar (critérios da Fase 3).
+
+Rollback **por tenant**, sem tocar nos demais: flip `transport='webhook'` (forwarder volta) → **remover o binding** do tenant (eventos dele param de entrar na fila; os já enfileirados serão processados pelo engine — duplicação breve e limitada ao tenant, preferível a purgar a fila de todos). **Nunca** desativar o engine, **nunca** purgar a fila compartilhada.
 
 ---
 
