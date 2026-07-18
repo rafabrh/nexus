@@ -1,7 +1,7 @@
 # Desacoplamento via RabbitMQ + Engine N8N multi-tenant + Evolution GO — escala 500 clientes
 
 **Data:** 2026-07-17 (v2 2026-07-18: N8N tocável + escala explícita; v3 2026-07-18: **Evolution GO como gateway-alvo desde o início**)
-**Status:** Em review — ciclo v3
+**Status:** Aprovado (review ciclo v3 concluído em 2026-07-18)
 **Autor:** RaFa (rafabrh)
 
 ---
@@ -84,6 +84,7 @@ Propriedades novas: **buffer durável**, **operação O(1) por cliente** e **gat
   - `nexus.panel.events` — bindings de todos os eventos que o painel processa (equivalentes GO: `Message`, `SendMessage`, `Receipt`, `Connected`/`LoggedOut`, `Contact`/`PushName`, `Presence`/`ChatPresence`), todos os tenants.
   - `nexus.n8n.events` — **bindings explícitos por tenant migrado** (mensagens; equivalente GO de `messages.upsert` = `Message`). Adicionar tenant = sequência §7.2. Tenants com fluxo custom não absorvido (Geotech) não têm binding — seguem no legado.
   - DLX `nexus.dlx` + `*.dlq`; replay manual; sem retry automático (YAGNI).
+  - **Contingência de roteamento:** se a Fase 0 mostrar que a routing key da GO NÃO discrimina instância (só evento), o design degrada bem — só instâncias migradas publicam na GO, e o NACK-sem-config do engine protege contra tenant inesperado; nesse caso o "remover binding" do rollback §7.2 deixa de existir e o rollback vira só re-pareamento + flip. Registrado para não replanejar na Fase 0.
 - **Ordem:** fila única não garante FIFO por conversa sob consumo concorrente — o buffer de conversa em Redis do engine já agrega por contato (preservado).
 
 ### 4.2 Producer-alvo — Evolution GO (e o legado Node)
@@ -101,7 +102,7 @@ Propriedades novas: **buffer durável**, **operação O(1) por cliente** e **gat
 ### 4.3 Consumer do painel (`apps/api/src/queue/`) — poliglota por construção
 
 - `@golevelup/nestjs-rabbitmq`; `EvolutionQueueConsumer` na `nexus.panel.events`: **normalizer** (4.7) → dedup (4.4) → `WebhookService.processEvolutionEvent(nexusEventV1)` — o service existente não muda.
-- Endpoint HTTP atual continua (legado Node + fallback documentado).
+- Endpoint HTTP atual continua (legado Node) e **também passa pelo `normalizeGatewayEvent`** — custo ~zero (mesma função) e torna o webhook da GO um fallback REAL do painel se o broker cair. Limite honesto: o engine só consome fila; com o broker fora, **a IA pausa até ele voltar** (§6).
 - Kill-switch `QUEUE_CONSUMER_ENABLED`; prefetch 10–20; erro → `nack` → DLQ; `/health` reporta AMQP (informativo).
 - **Client adapter de saída:** `EvolutionClient` vira port com dois adapters (`node` = client atual; `go` = dialeto novo), selecionado por `tenant.gateway`. Envio de mensagem/mídia/QR do painel funciona nos dois mundos durante a transição.
 
@@ -114,7 +115,7 @@ Propriedades novas: **buffer durável**, **operação O(1) por cliente** e **gat
 | `connection.update`, `contacts.*`, `presence.update` | ✅ idempotentes | Sem dedup |
 
 - `SET NX` em `evt:dedup:{instancia}:{event}:{key.id}` — evento na chave (o `send.message` e o eco `messages.upsert` compartilham `key.id` e ambos devem passar; o dedup mata só duplicata do MESMO evento). **TTL 48 h**: o rollback da Fase 1 (kill-switch com backlog acumulando por horas/dias) drena pelo dedup ao religar. Aplicado após a normalização (chaveia por NEXUS v1, independente do gateway).
-- Runbook: religar consumer após kill-switch prolongado = purgar `nexus.panel.events` antes **enquanto houver fonte redundante**; quando a fila for fonte única do painel (Fase 3+), purga proibida.
+- Runbook: religar consumer após kill-switch prolongado nas Fases 1–2 = purgar `nexus.panel.events` antes — seguro **porque a fila só carrega tráfego do número de TESTE** nessas fases (perda aceitável por definição), não por haver redundância; a produção Node segue por webhook e nunca passa pela fila até a Fase 3. **A partir da Fase 3 a fila é fonte única do painel para tenants GO: purga proibida.**
 - Escopo: protege o *painel*. O caminho do N8N é protegido pelas sequências §7.1/§7.2.
 
 ### 4.5 Engine N8N multi-tenant — GO-native
@@ -145,7 +146,7 @@ Propriedades novas: **buffer durável**, **operação O(1) por cliente** e **gat
 ### 4.6 Config store por tenant
 
 - Tabela `tenant_engine_config` (migration Drizzle — conferir `journal`, gotcha conhecido): `instancia`, `config jsonb`, `cfg_version`, `updated_at`. Write-through → `tenant:cfg:<instancia>` (Redis); reconcile no boot.
-- **Conteúdo v1** (inventário fecha na Fase 0): persona/prompt; templates `/tpl`; flags de módulo; IDs externos; timezone; buffer/timeouts; **e os campos exigidos pela GO:** `gateway` (`go`|`node`), `instanceId` (UUID GO) e **`ownerJid`** (a GO identifica eventos por `instanceId`/`instanceToken`, sem nome de instância nem `sender` — o normalizer resolve `instanceId→instancia` e o gate/self-chat usa `ownerJid` da config; mapa espelhado no Redis junto com a config).
+- **Conteúdo v1** (inventário fecha na Fase 0): persona/prompt; templates `/tpl`; flags de módulo; IDs externos; timezone; buffer/timeouts; **e os campos exigidos pela GO:** `instanceId` (UUID GO) e **`ownerJid`** (a GO identifica eventos por `instanceId`/`instanceToken`, sem nome de instância nem `sender` — o normalizer resolve `instanceId→instancia` e o gate/self-chat usa `ownerJid` da config; mapa espelhado no Redis junto com a config). **`gateway` mora SÓ no tenant registry** (uma fonte de verdade; o espelho Redis da config replica o valor derivado do registry, nunca o contrário — sem dupla escrita).
 - **Chave canônica de `instancia`:** o nome usado hoje (ex.: `Shkgroup`, casing do painel/registry) segue sendo a identidade em todo o sistema — a GO entra como atributo (`instanceId`), nunca como chave.
 - Piloto: seed via SQL/script; UI fora de escopo. Flip de `gateway`/`transport` via SQL no piloto (endpoint/tela fora de escopo).
 
@@ -154,8 +155,8 @@ Propriedades novas: **buffer durável**, **operação O(1) por cliente** e **gat
 - **Definição:** o shape que painel e fluxo já falam (`{event: 'messages.upsert', instance, data: {key: {remoteJid, remoteJidAlt, fromMe, id}, pushName, message, messageTimestamp}, sender, ...}`) é promovido a **contrato versionado**: tipos + docs em `packages/shared` (`NexusEventV1`).
 - **Normalizer `normalizeGatewayEvent(raw, ctx) → NexusEventV1`** (função pura em `packages/shared`, tabela de testes dourada com fixtures reais dos dois gateways):
   - Node → identidade (validação de shape apenas).
-  - GO → mapeamento: `Message→messages.upsert`, `SendMessage→send.message`, `Receipt(Delivered|Read)→messages.update`, `Connected/LoggedOut/QRCode→connection.update`, `Contact/PushName→contacts.update`, `Presence/ChatPresence→presence.update`; campos `Info.Chat→key.remoteJid`, `Info.SenderAlt→key.remoteJidAlt` (LID nativo), `Info.IsFromMe→key.fromMe`, `Info.ID→key.id`, `Info.PushName→pushName`, `Info.Timestamp→messageTimestamp`; `ctx` resolve `instanceId→instancia` e injeta `sender=ownerJid` (config 4.6) para manter o contrato v1 íntegro.
-  - Evento GO sem equivalente v1 (calls, labels, newsletter...) → descartado com log (não é NACK — é fora de contrato por design).
+  - GO → mapeamento: `Message→messages.upsert`, `SendMessage→send.message`, `Receipt(Delivered|Read)→messages.update`, `Connected/LoggedOut→connection.update`, `Contact/PushName→contacts.update`, `Presence/ChatPresence→presence.update`; campos `Info.Chat→key.remoteJid`, `Info.SenderAlt→key.remoteJidAlt` (LID nativo), `Info.IsFromMe→key.fromMe`, `Info.ID→key.id`, `Info.PushName→pushName`, `Info.Timestamp→messageTimestamp`, e `Info.Sender→key.participant` quando `Info.IsGroup` (remetente dentro do grupo); `ctx` resolve `instanceId→instancia` e injeta `sender=ownerJid` (config 4.6) para manter o contrato v1 íntegro.
+  - **Descartes explícitos (logados, não é NACK — fora de contrato por design):** `Receipt(ReadSelf)` (leitura própria em outro device — sem equivalente v1), `QRCode` (pareamento é coberto pelo REST do adapter, e o `connection.update` v1 não carrega QR), calls, labels, newsletter, `HistorySync` (salvo decisão do §7.1 passo 4).
 - **Onde roda:** no consumer do painel (import direto) e **espelhada no nó de entrada do engine** (mesma lógica, mesmos fixtures). Duplicação controlada de UMA função pura testada — sem microserviço novo no caminho crítico; se surgir um 3º consumidor, promove-se a normalizer-worker (§11).
 
 ---
@@ -176,13 +177,14 @@ Propriedades novas: **buffer durável**, **operação O(1) por cliente** e **gat
 |---|---|---|
 | Painel cai | Atendimento segue; `nexus.panel.events` acumula | Drena na volta |
 | N8N cai | Painel segue; `nexus.n8n.events` acumula | Drena na volta |
-| RabbitMQ cai | GO não entrega (retry 5×/30 s da GO ajuda em blips) | Runbook: fallback webhook; watchdog alerta |
+| RabbitMQ cai | GO não entrega via AMQP (retry 5×/30 s ajuda em blips) | Painel: fallback webhook GO (normalizado — §4.3). Engine: **IA pausa até o broker voltar**. Alerta §8 |
 | GO cai / licença | Instâncias daquele container offline; heartbeat tolera offline longo | Restart; N containers pequenos limitam blast radius |
 | Payload venenoso / tenant sem config | `nack` → DLQ + alerta | Replay pós-correção |
 | Evento GO fora do contrato v1 | Descarte logado no normalizer (por design) | — |
 | Config drift | Reconcile no boot; `cfg_version` logado | Autocura |
-| Dual-run painel: duplicata | Dedup 48 h descarta | — |
-| Consumer religado pós kill-switch | Backlog drena pelo dedup 48 h | Purga de `nexus.panel.events` antes (enquanto webhook Node cobre); proibida quando fila for fonte única |
+| Duplicata por redelivery AMQP / replay de DLQ | Dedup 48 h descarta | — |
+| Consumer religado pós kill-switch | Backlog drena pelo dedup 48 h | Fases 1–2: purga de `nexus.panel.events` antes (fila só carrega teste); Fase 3+: purga proibida (fonte única) |
+| RabbitMQ fora com tenants GO em produção (Fase 3+) | Painel pode voltar ao webhook GO (normalizado no boundary HTTP — §4.3); **a IA pausa até o broker voltar** (engine só consome fila) — honesto e documentado | Restaurar broker; alerta de vivacidade (§8) |
 | Cutover piloto: 2×/perda/backlog | Sequência §7.1 | Inversa |
 | Migração de tenant (engine ativo) | Sequência §7.2 — purga/desativação proibidas | Rollback por tenant |
 
@@ -192,8 +194,8 @@ Propriedades novas: **buffer durável**, **operação O(1) por cliente** e **gat
 
 | Fase | Entrega | Critério de saída | Rollback |
 |---|---|---|---|
-| **0 — Infra + validação GO + inventário** | RabbitMQ; **Evolution GO deployada** (Postgres, MinIO, licença ativada); **número de TESTE pareado na GO**; AMQP habilitado; fila de inspeção; pré-declara `nexus.n8n.events` + binding do teste; inventário de hardcodes → schema config v1 | **Naming AMQP + payload real da GO documentados**; **checklist de paridade de features PASSA** (texto, mídia in/out, áudio PTT, citação/reply, reação, ACKs, self-chat, LID) — reprovou = plano B (v2 desta spec, producer Node) sem mudar arquitetura; schema aprovado | Desligar container GO |
-| **1 — Painel poliglota (dual-run com número de teste)** | Consumer + **normalizer GO→v1** + dedup + kill-switch; config store + seed (teste e Shkgroup); registry `gateway`; client adapter GO | Número de teste ponta a ponta no painel (histórico/realtime/envio); produção Node intocada e saudável; paridade de processamento das fixtures douradas | Kill-switch |
+| **0 — Infra + validação GO + inventário** | RabbitMQ; **Evolution GO deployada** (Postgres, MinIO, licença ativada); **número de TESTE pareado na GO**; AMQP habilitado; fila de inspeção; pré-declara `nexus.n8n.events` + binding do teste; inventário de hardcodes → schema config v1 | **Naming AMQP + payload real da GO documentados** (as fixtures douradas do normalizer e o engine dependem de payload CAPTURADO, não assumido — front-carregar); **checklist de paridade PASSA** (texto, mídia in/out, áudio PTT, citação/reply, reação, ACKs, self-chat, LID, **grupos** — msgs de grupo não quebram histórico/engine e o gate os ignora corretamente); comportamento do sync pós-pareamento validado (§7.1 passo 4) — reprovou = plano B (v2 desta spec, producer Node) sem mudar arquitetura; schema aprovado | Desligar container GO |
+| **1 — Painel poliglota (paralelo com número de teste)** | Consumer + **normalizer GO→v1** (também no boundary HTTP) + dedup + kill-switch; config store + seed (teste e Shkgroup); registry `gateway`; client adapter GO | Número de teste ponta a ponta no painel (histórico/realtime/envio); produção Node intocada e saudável; paridade de processamento das fixtures douradas | Kill-switch |
 | **2 — Engine v1 GO-native (ainda sem produção)** | Engine consumindo eventos do número de teste; config resolver; gate; comandos; núcleo; módulos por flag; envio via REST GO | **(a)** `/help`/`/tpl` self-chat no número de teste; **(b) Bloqueio:** takeover → IA silencia (canônico e `@lid`); **(c)** conversa e2e; **(d)** regressão por módulo vs fluxo v1 (fixtures); **(e)** confirmado que o engine só precisa dos eventos com binding | Desativar engine (teste não é produção) |
 | **3 — Cutover do piloto Shkgroup** | Purga da fila do engine → flip `transport='amqp'`+`gateway='go'` → **re-parear a Shkgroup na GO** (QR; janela de minutos, fora de horário) → engine assume; webhook Node da Shkgroup desabilitado após estabilizar | `/help`/`/tpl` e bloqueio ao vivo; 48 h sem anomalia; painel exibindo histórico/realtime da Shkgroup via fila | **Re-parear de volta na Node** + flip reverso (fluxo v1 reativado) |
 | **4 — Migração por tenant + onboarding O(1)** | Tenants modelo-SHK migram pela **sequência §7.2 (com re-pareamento)**; novos tenants nascem na GO (§5) | 1 semana estável por tenant; teste de bloqueio por tenant; 1 tenant novo onboardado sem workflow/instância Node | §7.2 rollback por tenant |
@@ -203,10 +205,11 @@ Propriedades novas: **buffer durável**, **operação O(1) por cliente** e **gat
 
 Ações manuais em superfícies distintas — sem atomicidade. Ordem que elimina resposta dupla, perda e replay de backlog:
 
+0. **Criar a instância `Shkgroup` na GO** (sem parear) + habilitar AMQP dela (manual, com aval) — sem pareamento, nada é publicado; sem efeito.
 1. **Pré-condição (Fase 0):** fila `nexus.n8n.events` + bindings declarados; engine ativo servindo o número de teste (Fase 2).
-2. **Purga das mensagens do piloto** acumuladas (a essa altura a fila carrega só teste + eventual tráfego do binding da Shkgroup se já criado — criar o binding da Shkgroup **neste momento**, não antes, evita acúmulo).
-3. **Flip `transport='amqp'` + `gateway='go'`** (SQL): forwarder para de entregar ao fluxo v1.
-4. **Re-parear a Shkgroup na GO** (QR): a partir daqui os eventos fluem GO→fila→engine. *Janela:* entre o flip e o pareamento concluído, mensagens recebidas ficam **no telefone** (WhatsApp server-side) e sincronizam ao parear — validar na Fase 0 o comportamento de sync do whatsmeow (`HistorySync`/`OfflineSyncCompleted`) para confirmar zero perda; janela executada fora de horário.
+2. **Criar o binding da Shkgroup NESTE momento** (não antes — evita acúmulo) e **purgar** eventual resíduo (seguro: até aqui a fila só carregou teste).
+3. **Flip `transport='amqp'` + `gateway='go'`** (SQL): forwarder para de entregar ao fluxo v1. *Nuance da janela:* entre o flip e o logout da Node (passo 4), a Node ainda entrega webhooks — essas mensagens ganham histórico no painel mas **não chegam ao engine** (sem resposta da IA; aceito pela janela de minutos, fora de horário).
+4. **Re-parear a Shkgroup na GO** (QR): eventos fluem GO→fila→engine. Mensagens do gap ficam server-side no WhatsApp e sincronizam ao parear — **a Fase 0 valida** se chegam como `Message` normal ou só como `HistorySync` (que o normalizer descarta); se for só `HistorySync`, decidir mapear ou aceitar a perda do gap ANTES do cutover.
 5. Estabilizou (critérios da fase) → desabilitar o webhook Node da Shkgroup (manual, com aval).
 
 Rollback: re-parear de volta na Node → flip reverso → fluxo v1 reativado (engine segue servindo só o teste).
@@ -223,7 +226,8 @@ A fila compartilhada carrega tráfego vivo. Sequência por tenant: **(1)** criar
 - Engine loga `instancia` + `cfg_version` por execução.
 - Fase 1: contadores por fonte (`evt:count:{fonte}:{instancia}:{event}`, TTL 7 d), incrementados **antes** do dedup.
 - Management UI: profundidade da `nexus.panel.events` = "painel fora"; `nexus.n8n.events` = "N8N fora".
-- Watchdog (Fase 5): DLQ > 0 ou fila crescendo → WhatsApp do dono.
+- **Alerta mínimo de vivacidade já na Fase 3** (não esperar a Fase 5): broker inacessível OU `nexus.n8n.events` sem consumo por N minutos → aviso no WhatsApp do dono (pode ser o próprio fluxo watchdog simples no N8N). Entre as Fases 3 e 4, broker fora de madrugada = perda silenciosa — exatamente o cenário do incidente original.
+- Watchdog completo (Fase 5): DLQ > 0 ou fila crescendo anormalmente → WhatsApp do dono.
 
 ## 9. Testes
 
