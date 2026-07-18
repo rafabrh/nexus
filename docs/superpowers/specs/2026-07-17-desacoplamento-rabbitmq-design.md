@@ -1,7 +1,7 @@
 # Desacoplamento via RabbitMQ + Engine N8N multi-tenant — escala 500 clientes
 
 **Data:** 2026-07-17 (v2 em 2026-07-18 — N8N deixou de ser intocável; alvo de escala explícito)
-**Status:** Em review — ciclo v2
+**Status:** Aprovado (review ciclo v2 concluído em 2026-07-18)
 **Autor:** RaFa (rafabrh)
 
 ---
@@ -153,7 +153,7 @@ O workflow atual da Shkgroup é o protótipo: ele já parametriza `instanceName`
 - **Conteúdo v1** (inventário fechado na Fase 0 a partir do fluxo real): persona/system prompt do agente; templates do `/tpl` (texto/imagem/caption); flags de módulo (`followup`, `sheets`, `payments`); IDs externos (planilhas); timezone; parâmetros de buffer/timeout. `ownerJid`/admin **não** entra — deriva do `sender` do payload.
 - **Chave canônica de `instancia`:** o casing vem do campo `instance` do **payload** (ex.: `Shkgroup`), NÃO da routing key (minúscula, `shkgroup`). Seed, lookup do engine e `RedisKeys` usam o mesmo valor — evita `tenant:cfg:Shkgroup` × `tenant:cfg:shkgroup` → NACK no primeiro evento do piloto.
 - **Piloto:** seed da Shkgroup via script/SQL. UI de edição fica **fora de escopo** (§11) — o plano não deve inventar tela.
-- Flag `transport` (`webhook`|`amqp`) permanece no tenant registry existente; flip **via SQL no piloto** (endpoint/tela fora de escopo). `tenants.n8nWebhookUrl` segue em uso pelo forwarder durante a transição e **aposenta por tenant** quando o binding assume (§7.1).
+- Flag `transport` (`webhook`|`amqp`) permanece no tenant registry existente; flip **via SQL no piloto** (endpoint/tela fora de escopo). `tenants.n8nWebhookUrl` segue em uso pelo forwarder durante a transição e **aposenta por tenant** quando o binding assume (§7.1 no piloto; §7.2 nos demais).
 
 ---
 
@@ -240,7 +240,7 @@ Rollback **por tenant**, sem tocar nos demais: flip `transport='webhook'` (forwa
 |---|---|
 | Payload/routing key da fila divergirem do assumido | Fase 0 valida com fila de inspeção antes de qualquer código depender; entrada do engine e bindings são os pontos únicos de correção |
 | **Regressão comportamental na reescrita do fluxo** (risco novo do "direto pro engine") | Inventário completo na Fase 0; fixtures de payload real; checklist de regressão por módulo (2d); piloto na **nossa** instância; workflow v1 preservado para rollback instantâneo |
-| IA responder 2×, evento sumir ou backlog re-respondido na transição | Sequência obrigatória do cutover (§7.1): fila pré-declarada → **purga** → flip → ativar engine |
+| IA responder 2×, evento sumir ou backlog re-respondido na transição | Sequências obrigatórias: §7.1 no piloto (fila pré-declarada → **purga** → flip → ativar engine); §7.2 na migração por tenant (binding → flip, sem purga) |
 | RabbitMQ vira novo SPOF | Filas duráveis + volume persistente; webhook preservado como fallback; broker não recebe deploy de feature |
 | Mexer na Evolution quebrar o fluxo atual | Passos manuais, com aval, reversíveis, no runbook |
 | Config drift / tenant sem config | Write-through + reconcile no boot; engine NACKa tenant sem config (DLQ + alerta) |
@@ -264,7 +264,7 @@ Branch `feat/desacoplamento-rabbitmq` → PR único contra `worktree-macos-reski
 4. `feat(api)` — config store (write-through + reconcile + seed) com testes.
 5. `feat(api)` — módulo `queue/` (consumer + dedup + kill-switch) com testes.
 6. `feat(n8n)` — `docs/n8n-engine-v1.json` (engine multi-tenant: entrada, config resolver, gate, comandos, núcleo, módulos por flag).
-7. `docs(runbook)` — fases operacionais, cutover §7.1, onboarding O(1), passos manuais da Evolution, fallback.
+7. `docs(runbook)` — fases operacionais, cutover do piloto (§7.1), migração por tenant (§7.2), onboarding O(1), passos manuais da Evolution, fallback.
 
 Corpo do PR: problema (incidente de 12/07 + limite do clone-por-cliente) → diagrama de/para → link pra spec → checklist das fases com evidências (paridade, `/help`, teste de bloqueio, onboarding de tenant sem workflow).
 
