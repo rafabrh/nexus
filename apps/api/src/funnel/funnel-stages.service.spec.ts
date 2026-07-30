@@ -41,6 +41,8 @@ function makeDb(opts: {
   selects?: any[][]; // queued rows, one per select() call, in call order
   insertRow?: any; // row returned by insert().values().returning()
   updateRow?: any[]; // rows returned by update().set().where().returning()
+  txOwned?: any[]; // owned-ids select inside transaction (reorder) — see makeTxDb
+  txFinal?: any[]; // final ordered select inside transaction (reorder) — see makeTxDb
 } = {}) {
   const selectQueue = [...(opts.selects ?? [])];
   const whereCalls: any[] = [];
