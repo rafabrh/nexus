@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, type ExecutionContext } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
+import { isRateLimitExemptEmail, resolveExemptEmails } from './rate-limit-exempt';
 
 /**
  * Rate-limit tracker that scales past per-IP limiting.
@@ -12,6 +13,22 @@ import { ThrottlerGuard } from '@nestjs/throttler';
  */
 @Injectable()
 export class TenantThrottlerGuard extends ThrottlerGuard {
+  private readonly exemptEmails = resolveExemptEmails();
+
+  /**
+   * Isenta os admins do sistema do rate limit. No `POST /auth/magic-link` o
+   * e-mail chega no CORPO do request (a rota é pública, sem JWT ainda), então a
+   * decisão é por e-mail — a única identidade disponível nesse ponto. Retornar
+   * `true` pula TODOS os throttlers da requisição. Fora do magic-link nenhum
+   * corpo carrega `email`, então o caminho comum devolve `false` de imediato.
+   */
+  protected async shouldSkip(context: ExecutionContext): Promise<boolean> {
+    const req = context
+      .switchToHttp()
+      .getRequest<{ body?: { email?: unknown } }>();
+    return isRateLimitExemptEmail(req?.body?.email, this.exemptEmails);
+  }
+
   protected async getTracker(req: Record<string, any>): Promise<string> {
     if (req.instancia) return `tenant:${req.instancia}`;
     if (req.user?.instancia) return `tenant:${req.user.instancia}`;

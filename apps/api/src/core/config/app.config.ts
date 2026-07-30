@@ -157,6 +157,15 @@ export class AppConfig {
   @IsString({ message: 'MEDIA_SIGN_SECRET deve ser uma string em producao' })
   @MinLength(32, { message: 'MEDIA_SIGN_SECRET deve ter ao menos 32 caracteres em producao (segredo curto e fraco)' })
   MEDIA_SIGN_SECRET?: string;
+
+  // ---- Rate limit ----
+  // E-mails ISENTOS do rate limit de login (magic-link), ADICIONAIS aos admins
+  // do sistema já embutidos no código (core/throttler/rate-limit-exempt.ts).
+  // CSV, opcional — a lista base já cobre os donos; use para estender sem
+  // redeploy. Lido diretamente do env pelo TenantThrottlerGuard.
+  @IsOptional()
+  @IsString()
+  RATE_LIMIT_EXEMPT_EMAILS?: string;
 }
 
 export function validate(config: Record<string, unknown>): AppConfig {

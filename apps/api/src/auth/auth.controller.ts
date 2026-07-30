@@ -29,7 +29,10 @@ export class AuthController {
   @Post('magic-link')
   @Public()
   @HttpCode(200)
-  @Throttle({ default: { ttl: 3600000, limit: 5 } })
+  // 6 pedidos de magic-link por hora por IP (era 5). Os admins do sistema são
+  // isentos deste limite no TenantThrottlerGuard.shouldSkip (allowlist por
+  // e-mail — ver core/throttler/rate-limit-exempt.ts).
+  @Throttle({ default: { ttl: 3600000, limit: 6 } })
   @ApiOperation({ summary: 'Request a magic link login email' })
   @ApiResponse({ status: 200, description: 'Magic link email sent (if registered)' })
   async sendMagicLink(
