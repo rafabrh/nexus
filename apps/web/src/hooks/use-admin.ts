@@ -93,3 +93,24 @@ export function useRemoveUser() {
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
   });
 }
+
+/** Troca o e-mail de acesso de um usuário (mata o acesso do e-mail antigo). */
+export function useChangeUserEmail() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      instancia,
+      oldEmail,
+      newEmail,
+    }: {
+      instancia: string;
+      oldEmail: string;
+      newEmail: string;
+    }) =>
+      api<TenantEntry>(
+        `/api/v1/admin/tenants/${encodeURIComponent(instancia)}/users/${encodeURIComponent(oldEmail)}`,
+        { method: 'PATCH', body: JSON.stringify({ newEmail }) },
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+  });
+}
