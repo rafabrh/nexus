@@ -70,4 +70,22 @@ export class TenantService {
   async removeUser(instancia: string, email: string): Promise<TenantEntry | null> {
     return this.repo.removeUser(instancia, email);
   }
+
+  /**
+   * Troca o e-mail de acesso de um usuário da instância (mata o acesso do antigo,
+   * habilita o novo com o mesmo papel).
+   */
+  async changeUserEmail(
+    instancia: string,
+    oldEmail: string,
+    newEmail: string,
+  ): Promise<TenantEntry | null> {
+    const entry = await this.repo.changeUserEmail(instancia, oldEmail, newEmail);
+    if (entry) {
+      this.logger.log(
+        `Tenant ${instancia}: e-mail de acesso trocado ${oldEmail.toLowerCase()} -> ${newEmail.toLowerCase()}`,
+      );
+    }
+    return entry;
+  }
 }

@@ -21,6 +21,7 @@ import { ToggleTenantDto } from './dto/toggle-tenant.dto';
 import { AddUserDto } from './dto/add-user.dto';
 import { InstanceConfigDto } from './dto/instance-config.dto';
 import { AdoptInstanceDto } from './dto/adopt-instance.dto';
+import { ChangeUserEmailDto } from './dto/change-user-email.dto';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
@@ -95,5 +96,17 @@ export class AdminController {
     @Param('email') email: string,
   ): Promise<TenantEntry | null> {
     return this.tenants.removeUser(instancia, email);
+  }
+
+  @Patch('tenants/:instancia/users/:email')
+  @ApiOperation({
+    summary: 'Trocar o e-mail de acesso de um usuario (mata o acesso do antigo)',
+  })
+  async changeUserEmail(
+    @Param('instancia') instancia: string,
+    @Param('email') email: string,
+    @Body() dto: ChangeUserEmailDto,
+  ): Promise<TenantEntry | null> {
+    return this.tenants.changeUserEmail(instancia, email, dto.newEmail);
   }
 }

@@ -107,6 +107,18 @@ export class AuthService {
       throw new UnauthorizedException('Token revogado');
     }
 
+    // O usuário ainda pertence à instância? Se o e-mail foi removido ou trocado no
+    // admin, o refresh o expulsa aqui — o acesso do e-mail antigo morre em no máximo
+    // uma janela do access token, sem depender de logout.
+    const sub = payload.sub;
+    const instancia = payload.instancia;
+    if (sub && instancia) {
+      const stillMember = await this.tenants.userExists(instancia, sub);
+      if (!stillMember) {
+        throw new UnauthorizedException('Acesso revogado');
+      }
+    }
+
     // Blacklist the old refresh token (rotation)
     const now = Math.floor(Date.now() / 1000);
     const ttlSeconds = Math.max((payload.exp ?? now) - now, 0);
