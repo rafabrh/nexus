@@ -30,3 +30,26 @@ nexus-panel-api/
 .docs/
 NEXUS_Painel_Cliente_Plano_Mestre.md
 NEXUS V6.0 - SHK FINAL \[AUDIO-FIX\].json
+
+# --- Rastros pessoais / IA / capturas (defensivo; docs/ e .claude/ já ignorados) ---
+# Capturas de tela soltas na RAIZ do repo (as de docs/ já são ignoradas)
+/*.png
+/*.jpg
+/*.jpeg
+/*.gif
+/*.webp
+/*.mp4
+/*.mov
+screenshots/
+scratch/
+# Assistentes de IA e suas sessões/config locais
+CLAUDE.local.md
+AGENTS.local.md
+GEMINI.local.md
+.claude-*
+.cursor/
+.aider*
+.windsurf/
+# Notas e planos pessoais
+*.local.md
+*.personal.*
