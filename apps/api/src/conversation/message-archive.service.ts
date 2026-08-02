@@ -44,7 +44,9 @@ export class MessageArchiveService {
     private readonly archive: MessageArchiveRepository,
     private readonly config: ConfigService,
   ) {
-    this.hotCap = this.config.get<number>('CHATHISTORY_HOT_CAP') ?? 300;
+    // Number() blinda contra config stub que entregue string: `-( '300' + 50 )`
+    // daria NaN no lrange sem erro de tipo. AppConfig já coage, isto é defesa.
+    this.hotCap = Number(this.config.get<number>('CHATHISTORY_HOT_CAP') ?? 300);
     this.archiveEnabled = this.config.get<string>('CHATHISTORY_ARCHIVE_ENABLED') === 'true';
     this.ltrimEnabled = this.config.get<string>('CHATHISTORY_LTRIM_ENABLED') === 'true';
   }

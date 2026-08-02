@@ -6,17 +6,13 @@ import type { MessageArchiveRepository, ArchiveEntry } from './message-archive.r
 // Fake Redis stub — operates on an in-memory list, simulates Lua atomically.
 // ---------------------------------------------------------------------------
 
-function makeFakeRedis(initialItems: string[] = []) {
+function makeFakeRedis() {
   // Internal list — shared mutable reference across method calls.
   const store: Record<string, string[]> = {};
 
   const setKey = (key: string, items: string[]) => {
     store[key] = [...items];
   };
-
-  // Seed the initial list for the test key.
-  const SEED_KEY = '__seed__';
-  setKey(SEED_KEY, initialItems);
 
   const lrange = vi.fn(async (key: string, start: number, stop: number): Promise<string[]> => {
     const list = store[key] ?? [];
