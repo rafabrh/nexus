@@ -52,12 +52,35 @@ Base do desacoplamento; tira o painel do caminho crítico.
 
 ## Status
 
+Legenda: ✅ feito+merge · 🔵 feito+PR aberto · 📋 plano escrito · ✍️ escrevendo plano · ⏳ spec/HLD só · 🔒 portão manual (Rafa).
+
 | Etapa | Estado |
 |---|---|
-| 1 — Tiering do Redis | 📋 plano escrito, aguarda execução |
-| 2 — Contrato + barramento | ⏳ spec pronta (desacoplamento) |
+| 1 — Tiering do Redis | ✅ **em prod** (PR #19 mergeado, `ab63833`) |
+| 2 — Contrato + barramento | 🔵 em andamento (1/4 fatias em PR) |
 | 3 — Gateway híbrido | ⏳ HLD |
 | 4 — Engine + IA | ⏳ HLD |
 | 5 — Migração + descom. | ⏳ HLD |
 
-**Perf fixes** (commit `5f947aa`) e **spec HLD** (commit `e493b15`) já feitos; falta `push` (branch de deploy — decisão do Rafa).
+---
+
+## CRONOGRAMA VIVO (fonte única — atualizar a CADA fatia)
+
+> Regra: uma fatia = um plano em `docs/superpowers/plans/` = uma feature branch = um PR contra `worktree-macos-reskin` (prod). Marcar aqui ao concluir. **Não iniciar código sem o plano da fatia escrito e revisado.**
+
+### Etapa 1 — Fundação (Tiering do Redis) — ✅ CONCLUÍDA
+- ✅ **Tiering** — plano `2026-08-01-redis-tiering.md`; 8 tasks TDD; PR #19 **mergeado** em prod. Runbook de ativação pendente (backfill→ARCHIVE→LTRIM), 🔒 do Rafa.
+
+### Etapa 2 — Contrato + barramento — 🔵 EM ANDAMENTO (1/4)
+- 🔵 **Fatia 2.1 — NEXUS Event v1 + normalizer** — plano `2026-08-02-nexus-event-v1-normalizer.md`; 6 tasks; `packages/shared` (contrato + `normalizeGatewayEvent` + fixtures douradas + `RedisKeys.evtDedup/evtCount`); 33 testes verdes; **PR #20 aberto** (aguarda merge do Rafa). ⚠️ fixtures GO `@provisional` até captura na Fase 0.
+- 📋 **Fatia 2.2 — Módulo `queue/` (consumer)** — plano `2026-08-02-queue-consumer.md` (próximo a executar). `apps/api/src/queue/`: `EvolutionQueueConsumer` (@golevelup/nestjs-rabbitmq) → `normalizeGatewayEvent` → dedup (`evtDedup`, SET NX 48h, política por tipo §4.4) → `WebhookService.processEvolutionEvent` + kill-switch `QUEUE_CONSUMER_ENABLED`. Boundary HTTP existente também passa a normalizar. Testes unit; conexão AMQP real 🔒.
+- ⏳ **Fatia 2.3 — Config store por tenant** — `tenant_engine_config` (migration Drizzle, conferir journal) + write-through Redis (`tenant:cfg:*`) + reconcile no boot + seed SQL; migrations `gateway`/`transport` no registry (§4.6/D7/D9). 100% testável agora.
+- ⏳ **Fatia 2.4 — `EvolutionClient` port + 2 adapters** — port de saída com adapters `node` (client atual) e `go` (dialeto REST GO), selecionado por `tenant.gateway` (§4.3). Testes unit; envio real GO 🔒.
+- 🔒 **Fase 0 (infra/captura)** — subir RabbitMQ + Evolution GO (EasyPanel) + parear número de TESTE + capturar payload/naming AMQP real → **trocar fixtures GO `@provisional`** e re-rodar tabela dourada. Gate duro de paridade (§7 Fase 0). **Depende do Rafa.**
+- ⏳ **Engine N8N GO-native** (`docs/n8n-engine-v1.json`) — espelha o normalizer no nó de entrada; config resolver/gate/comandos/núcleo (§4.5). Após config store.
+
+### Etapa 3 — Gateway híbrido — ⏳ HLD (vira planos quando a Etapa 2 fechar)
+### Etapa 4 — Engine próprio + IA — ⏳ HLD (inclui port `LLMProvider`)
+### Etapa 5 — Migração + descomissionamento — ⏳ HLD (cutover §7.1/§7.2, 🔒)
+
+**Já em prod/histórico:** perf fixes, tiering (Etapa 1). **Handoff de retomada:** [[project_roadmap_handoff]] (memória — sempre atualizar ao fim da sessão).
