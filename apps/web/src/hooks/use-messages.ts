@@ -8,7 +8,10 @@ export function useMessages(jid: string | null) {
     queryFn: () =>
       api(`/api/v1/conversations/${encodeURIComponent(jid!)}/messages`),
     enabled: !!jid,
-    refetchInterval: 10_000,
+    // O tempo real vem do socket (message.received invalida ['messages']); este
+    // poll é só rede de segurança para o canal keyspace lossy. 30s evita o refetch
+    // pesado a cada 10s por conversa aberta (cada um relia a cauda no servidor).
+    refetchInterval: 30_000,
   });
 }
 

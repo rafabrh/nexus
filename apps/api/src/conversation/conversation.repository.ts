@@ -200,7 +200,12 @@ export class ConversationRepository {
   async getMessages(instancia: string, jid: string, limit: number): Promise<Message[]> {
     const phone = jid.replace('@s.whatsapp.net', '');
     const histKey = RedisKeys.chatHistory(instancia, phone);
-    const raw = await this.redis.lrange(histKey, 0, -1);
+    // Lê só a CAUDA: para um histórico de milhares de mensagens, `lrange 0 -1`
+    // puxava e parseava a conversa inteira só para devolver as últimas `limit`. A
+    // folga (`limit*2 + 20`) cobre o dedup do eco de envio; o `slice(-limit)` no
+    // fim mantém o resultado idêntico. `limit<=0` preserva o "tudo" (retrocompat).
+    const start = limit > 0 ? -(limit * 2 + 20) : 0;
+    const raw = await this.redis.lrange(histKey, start, -1);
     // Status de entrega/leitura das mensagens de saída (hash lateral de ACK).
     const ackMap = await this.redis.hgetall(RedisKeys.ackStatus(instancia, jid));
 
@@ -288,7 +293,22 @@ export class ConversationRepository {
   ): Promise<{ fromMe: boolean; mimetype: string | null } | null> {
     const phone = jid.replace('@s.whatsapp.net', '');
     const histKey = RedisKeys.chatHistory(instancia, phone);
-    const raw = await this.redis.lrange(histKey, 0, -1);
+    // A mídia clicada quase sempre está na cauda (a thread mostra as últimas N).
+    // Varre a cauda primeiro; só faz o scan completo como fallback — evita ler o
+    // histórico inteiro no caso comum.
+    const tailRef = this.scanMediaRef(
+      await this.redis.lrange(histKey, -200, -1),
+      mediaId,
+    );
+    if (tailRef) return tailRef;
+    return this.scanMediaRef(await this.redis.lrange(histKey, 0, -1), mediaId);
+  }
+
+  /** Varre entradas do chathistory procurando a referência de mídia por id. */
+  private scanMediaRef(
+    raw: string[],
+    mediaId: string,
+  ): { fromMe: boolean; mimetype: string | null } | null {
     for (const item of raw) {
       try {
         const parsed = JSON.parse(item);
