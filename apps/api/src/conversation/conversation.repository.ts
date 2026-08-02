@@ -14,6 +14,8 @@ import type {
   AiState,
 } from '@nexus/shared';
 import { parseHistoryEntry, phoneFromJid } from './parse-history-entry';
+import type { MessageRow } from '../core/db/schema';
+import { MessageArchiveRepository } from './message-archive.repository';
 
 /** Keywords that indicate a hot lead */
 const HOT_KEYWORDS = [
@@ -30,6 +32,7 @@ export class ConversationRepository {
 
   constructor(
     @Inject(REDIS_CLIENT) public readonly redis: Redis,
+    private readonly archive: MessageArchiveRepository,
   ) {}
 
   /**
@@ -251,6 +254,41 @@ export class ConversationRepository {
       return messages.slice(-limit);
     }
     return messages;
+  }
+
+  /**
+   * Lê uma página do histórico frio (Postgres) por `seq`.
+   * Complementa `getMessages` (cauda Redis) para scroll-up infinito.
+   * Cursor: `beforeMsgId` → resolve o seq no archive; ausente → página mais recente.
+   */
+  async getMessagesPage(
+    instancia: string,
+    jid: string,
+    opts: { beforeMsgId?: string; limit: number },
+  ): Promise<Message[]> {
+    let beforeSeq: number | undefined;
+    if (opts.beforeMsgId != null) {
+      const seq = await this.archive.seqOf(instancia, jid, opts.beforeMsgId);
+      // Cursor pedido mas não encontrado no frio → não há página antiga a mostrar.
+      if (seq == null) return [];
+      beforeSeq = seq;
+    }
+    const rows = await this.archive.readPage(instancia, jid, { beforeSeq, limit: opts.limit });
+    return rows.map((r) => this.rowToMessage(r));
+  }
+
+  /** Mapeia um `MessageRow` do archive frio para o shape `Message` do painel. */
+  private rowToMessage(row: MessageRow): Message {
+    return {
+      id: row.msgId,
+      role: row.fromMe ? 'assistant' : 'user',
+      content: row.content ?? '',
+      mediaType: this.mediaKindToType(row.mediaKind ?? undefined),
+      ...(row.mediaId ? { mediaId: row.mediaId } : {}),
+      ts: row.ts ? row.ts.toISOString() : null,
+      ...(row.quoted ? { quoted: row.quoted } : {}),
+      // Sem `status` — cold history não rastreia ACK (YAGNI).
+    };
   }
 
   /** Mapeia o `kind` interno da mídia para o `mediaType` do painel. */
