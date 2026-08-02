@@ -12,7 +12,12 @@ export type NexusEventV1Type =
   | 'contacts.update' // nome/foto de contato
   | 'presence.update'; // digitando/online (efêmero)
 
-/** Chave da mensagem no contrato v1 (espelha o `data.key` da Evolution). */
+/**
+ * Chave da mensagem no contrato v1 (espelha o `data.key` da Evolution).
+ * NOTA: em eventos SEM mensagem (`connection.update`), `remoteJid` e `id` vêm
+ * VAZIOS. O consumer NÃO deve dedupar por `id` nesses tipos (spec §4.4: dedup só
+ * em messages.upsert/send.message) — senão colapsaria todos num único evt:dedup.
+ */
 export interface NexusEventV1Key {
   /** JID canônico do chat (pode conter @lid, @g.us, @s.whatsapp.net). */
   remoteJid: string;
@@ -35,6 +40,9 @@ export interface NexusEventV1Data {
   messageTimestamp?: number | string;
   /** Status do ACK em messages.update (ex.: 'DELIVERY_ACK', 'READ'). */
   status?: string;
+  // Index signature DELIBERADA: o upstream (Evolution) é aberto e o consumer pode
+  // parsear extras. Não "apertar" — quebraria o passthrough. A rigidez vem dos
+  // testes dourados (toEqual), não do tipo.
   [k: string]: unknown;
 }
 
