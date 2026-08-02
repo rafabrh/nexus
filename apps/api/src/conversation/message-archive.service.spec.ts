@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { RedisKeys } from '@nexus/shared';
 import { MessageArchiveService } from './message-archive.service';
 import type { MessageArchiveRepository, ArchiveEntry } from './message-archive.repository';
 
@@ -395,7 +396,7 @@ describe('MessageArchiveService', () => {
       await svc.archiveTailCoalesced(INSTANCIA, JID);
 
       // SET NX EX must have been called with the throttle key, '1', 'EX', 5, 'NX'.
-      const throttleKey = `archive:throttle:${INSTANCIA}:${JID}`;
+      const throttleKey = RedisKeys.archiveThrottle(INSTANCIA, JID);
       expect(redis.set).toHaveBeenCalledWith(throttleKey, '1', 'EX', 5, 'NX');
       // Archive work must have run (lrange → insertManyIdempotent).
       expect(redis.lrange).toHaveBeenCalled();

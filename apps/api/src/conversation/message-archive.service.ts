@@ -75,6 +75,10 @@ export class MessageArchiveService {
    *
    * Early exit: if archiveEnabled=false the method is a no-op (safe to call
    * at any time; activate via CHATHISTORY_ARCHIVE_ENABLED=true env var).
+   *
+   * Chamadores externos (ex.: keyspace listener) devem preferir
+   * {@link archiveTailCoalesced} para não saturar o pool do Postgres sob alto
+   * volume de mensagens. Este método é público para teste isolado do protocolo.
    */
   async archiveTail(instancia: string, jid: string): Promise<void> {
     // Rollout gate — nothing archived until the feature is enabled.
@@ -119,10 +123,14 @@ export class MessageArchiveService {
    * Coalescing por conversa: só roda archiveTail se não houve archive nos
    * últimos throttleSec. O SET NX EX envolve o archiveTail INTEIRO — se throttled,
    * nem archive nem trim rodam (seguro: a Lua sempre arquiva o que apara).
+   *
+   * Best-effort: se o archive falhar após a marca de throttle ser setada, os
+   * retries ficam suprimidos pelo resto da janela; a próxima mensagem fora da
+   * janela re-dispara (o protocolo é idempotente via ON CONFLICT DO NOTHING).
    */
   async archiveTailCoalesced(instancia: string, jid: string): Promise<void> {
     if (!this.archiveEnabled) return; // gate barato antes de tocar o Redis
-    const key = `archive:throttle:${instancia}:${jid}`;
+    const key = RedisKeys.archiveThrottle(instancia, jid);
     const acquired = await this.redis.set(key, '1', 'EX', this.throttleSec, 'NX');
     if (acquired == null) return; // outro ciclo recente já arquivou esta conversa
     await this.archiveTail(instancia, jid);
