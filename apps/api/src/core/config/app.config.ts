@@ -189,6 +189,15 @@ export class AppConfig {
   @IsOptional()
   @IsString()
   CHATHISTORY_LTRIM_ENABLED: string = 'false';
+
+  // Janela de coalescing do archive write-behind (segundos).
+  // Dentro da janela, apenas o primeiro rpush de uma conversa dispara o archive;
+  // os seguintes são ignorados (o SET NX EX atua como throttle por conversa).
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  CHATHISTORY_ARCHIVE_THROTTLE_SEC: number = 5;
 }
 
 export function validate(config: Record<string, unknown>): AppConfig {

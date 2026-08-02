@@ -38,6 +38,9 @@ export class MessageArchiveService {
   private readonly archiveEnabled: boolean;
   /** Whether to trim the Redis list after archiving the head (rollout gate). */
   private readonly ltrimEnabled: boolean;
+  /** Coalescing window: seconds during which a second archive for the same
+   *  conversation is suppressed (SET NX EX throttle gate). */
+  private readonly throttleSec: number;
 
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
@@ -49,6 +52,7 @@ export class MessageArchiveService {
     this.hotCap = Number(this.config.get<number>('CHATHISTORY_HOT_CAP') ?? 300);
     this.archiveEnabled = this.config.get<string>('CHATHISTORY_ARCHIVE_ENABLED') === 'true';
     this.ltrimEnabled = this.config.get<string>('CHATHISTORY_LTRIM_ENABLED') === 'true';
+    this.throttleSec = Number(this.config.get<number>('CHATHISTORY_ARCHIVE_THROTTLE_SEC') ?? 5);
   }
 
   /**
@@ -109,6 +113,19 @@ export class MessageArchiveService {
         }
       }
     }
+  }
+
+  /**
+   * Coalescing por conversa: só roda archiveTail se não houve archive nos
+   * últimos throttleSec. O SET NX EX envolve o archiveTail INTEIRO — se throttled,
+   * nem archive nem trim rodam (seguro: a Lua sempre arquiva o que apara).
+   */
+  async archiveTailCoalesced(instancia: string, jid: string): Promise<void> {
+    if (!this.archiveEnabled) return; // gate barato antes de tocar o Redis
+    const key = `archive:throttle:${instancia}:${jid}`;
+    const acquired = await this.redis.set(key, '1', 'EX', this.throttleSec, 'NX');
+    if (acquired == null) return; // outro ciclo recente já arquivou esta conversa
+    await this.archiveTail(instancia, jid);
   }
 
   /**

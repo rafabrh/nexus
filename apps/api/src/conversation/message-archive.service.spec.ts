@@ -41,11 +41,16 @@ function makeFakeRedis() {
     return head;
   });
 
+  // SET NX EX stub: default behaviour simulates "not throttled" (returns 'OK').
+  // Tests that need "already throttled" should override set.mockResolvedValueOnce(null).
+  const setFn = vi.fn(async (): Promise<string | null> => 'OK');
+
   return {
     store,
     setKey,
     lrange,
     eval: evalFn,
+    set: setFn,
     // Helper: seed the given histKey with a list of raw strings.
     seed(key: string, items: string[]) {
       setKey(key, items);
@@ -76,6 +81,7 @@ interface ServiceOpts {
   archiveEnabled?: boolean;
   ltrimEnabled?: boolean;
   hotCap?: number;
+  throttleSec?: number;
 }
 
 function makeService(
@@ -83,7 +89,7 @@ function makeService(
   repo: MessageArchiveRepository,
   opts: ServiceOpts = {},
 ) {
-  const { archiveEnabled = true, ltrimEnabled = true, hotCap = 300 } = opts;
+  const { archiveEnabled = true, ltrimEnabled = true, hotCap = 300, throttleSec = 5 } = opts;
 
   // Build a ConfigService stub that reads from the opts.
   const config = {
@@ -91,6 +97,7 @@ function makeService(
       if (key === 'CHATHISTORY_ARCHIVE_ENABLED') return archiveEnabled ? 'true' : 'false';
       if (key === 'CHATHISTORY_LTRIM_ENABLED') return ltrimEnabled ? 'true' : 'false';
       if (key === 'CHATHISTORY_HOT_CAP') return hotCap;
+      if (key === 'CHATHISTORY_ARCHIVE_THROTTLE_SEC') return throttleSec;
       return undefined;
     }),
   } as any;
@@ -360,6 +367,70 @@ describe('MessageArchiveService', () => {
       const entries: ArchiveEntry[] = callWithEntries![2];
       expect(entries).toHaveLength(1);
       expect(entries[0].msgId).toBe('wamid.1');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 8. archiveTailCoalesced — coalescing gate (Task 5)
+  // -------------------------------------------------------------------------
+
+  describe('archiveTailCoalesced — coalescing por conversa', () => {
+    it('retorna sem chamar redis.set quando archiveEnabled=false', async () => {
+      redis.seed(HIST_KEY, makeRawList(50));
+      const svc = makeService(redis, repo, { archiveEnabled: false });
+
+      await svc.archiveTailCoalesced(INSTANCIA, JID);
+
+      // The cheap gate must short-circuit before touching Redis at all.
+      expect(redis.set).not.toHaveBeenCalled();
+      expect(redis.lrange).not.toHaveBeenCalled();
+      expect(repo.insertManyIdempotent).not.toHaveBeenCalled();
+    });
+
+    it('primeira chamada: SET NX EX retorna OK → archiveTail roda (insertManyIdempotent é chamado)', async () => {
+      redis.seed(HIST_KEY, makeRawList(50));
+      // Default: set returns 'OK' (key not yet present — not throttled).
+      const svc = makeService(redis, repo, { ltrimEnabled: false, throttleSec: 5 });
+
+      await svc.archiveTailCoalesced(INSTANCIA, JID);
+
+      // SET NX EX must have been called with the throttle key, '1', 'EX', 5, 'NX'.
+      const throttleKey = `archive:throttle:${INSTANCIA}:${JID}`;
+      expect(redis.set).toHaveBeenCalledWith(throttleKey, '1', 'EX', 5, 'NX');
+      // Archive work must have run (lrange → insertManyIdempotent).
+      expect(redis.lrange).toHaveBeenCalled();
+      expect(repo.insertManyIdempotent).toHaveBeenCalled();
+    });
+
+    it('segunda chamada dentro da janela: SET NX EX retorna null → archive NÃO roda', async () => {
+      redis.seed(HIST_KEY, makeRawList(50));
+      // Simulate the NX key already exists (throttled): set returns null.
+      redis.set.mockResolvedValue(null);
+      const svc = makeService(redis, repo, { ltrimEnabled: false, throttleSec: 5 });
+
+      await svc.archiveTailCoalesced(INSTANCIA, JID);
+
+      // SET was called (to attempt the lock), but archive must NOT have run.
+      expect(redis.set).toHaveBeenCalled();
+      expect(redis.lrange).not.toHaveBeenCalled();
+      expect(repo.insertManyIdempotent).not.toHaveBeenCalled();
+    });
+
+    it('coalescing: primeira OK, segunda null → só uma rodada de archive', async () => {
+      redis.seed(HIST_KEY, makeRawList(50));
+      // First call acquires the lock; second finds it already set.
+      redis.set
+        .mockResolvedValueOnce('OK')
+        .mockResolvedValueOnce(null);
+      const svc = makeService(redis, repo, { ltrimEnabled: false, throttleSec: 5 });
+
+      await svc.archiveTailCoalesced(INSTANCIA, JID);
+      await svc.archiveTailCoalesced(INSTANCIA, JID);
+
+      // Two SET attempts, but only one archive run.
+      expect(redis.set).toHaveBeenCalledTimes(2);
+      expect(redis.lrange).toHaveBeenCalledTimes(1);
+      expect(repo.insertManyIdempotent).toHaveBeenCalledTimes(1);
     });
   });
 });

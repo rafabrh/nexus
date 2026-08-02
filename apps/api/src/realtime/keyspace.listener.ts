@@ -5,6 +5,7 @@ import { RedisKeys } from '@nexus/shared';
 import { EventTranslator } from './event.translator';
 import { EventPublisher } from './event.publisher';
 import { ConversationProjectionService } from '../conversation/conversation-projection.service';
+import { MessageArchiveService } from '../conversation/message-archive.service';
 
 @Injectable()
 export class KeyspaceListener implements OnModuleInit, OnModuleDestroy {
@@ -33,6 +34,7 @@ export class KeyspaceListener implements OnModuleInit, OnModuleDestroy {
     private readonly translator: EventTranslator,
     private readonly publisher: EventPublisher,
     private readonly projection: ConversationProjectionService,
+    private readonly archive: MessageArchiveService,
   ) {}
 
   async onModuleInit() {
@@ -60,6 +62,12 @@ export class KeyspaceListener implements OnModuleInit, OnModuleDestroy {
                 .catch((err: Error) =>
                   this.logger.warn(`index self-heal failed: ${err.message}`),
                 );
+
+              // Archive write-behind do chathistory (coalescido). Best-effort: não atrasa o
+              // publish nem a projeção. Gate de rollout + coalescing vivem no serviço.
+              void this.archive
+                .archiveTailCoalesced(event.instancia, event.jid)
+                .catch((err: Error) => this.logger.warn(`chathistory archive failed: ${err.message}`));
             }
             // Write-behind: projeta o estado atual do Redis no Postgres. Cobre as
             // mudanças dirigidas pelo N8N (followup_step, chathistory, payment).
