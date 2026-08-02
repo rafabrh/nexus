@@ -48,6 +48,16 @@ export const RedisKeys = {
   archiveThrottle: (inst: string, jid: string) =>
     `archive:throttle:${inst}:${jid}`,
 
+  // ---- Boundary do consumer RabbitMQ (Etapa 2 — desacoplamento) ----
+  // Dedup de boundary (SET NX, TTL 48h — spec §4.4). Chaveado pelo evento v1
+  // NORMALIZADO, independente do gateway de origem (node|go).
+  evtDedup: (inst: string, event: string, msgId: string) =>
+    `evt:dedup:${inst}:${event}:${msgId}`,
+
+  // Contador de eventos por fonte (Fase 1, TTL 7d — observabilidade §8).
+  evtCount: (fonte: string, inst: string, event: string) =>
+    `evt:count:${fonte}:${inst}:${event}`,
+
   // ---- Contato (namespaced por instancia — BFF popula e le a sua chave) ----
   // O N8N escreve a chave global `contact:{phone}`, mas o BFF NAO depende dela:
   // mantem a sua propria chave `contact:{inst}:{phone}` para isolar PII por tenant.
