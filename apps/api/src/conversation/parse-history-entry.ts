@@ -33,6 +33,35 @@ export function phoneFromJid(jid: string): string {
   return jid.replace('@s.whatsapp.net', '');
 }
 
+/** Resultado do parse de uma chave `chathistory:{inst}-{id}`. */
+export interface ParsedHistoryKey {
+  instancia: string;
+  id: string;
+  jid: string;
+}
+
+/**
+ * FONTE ÚNICA do parse da chave `chathistory:{inst}-{id}` → `(instancia, id, jid)`.
+ * Usado pelo event.translator (caminho incremental), pelo conversation-index e
+ * pelo backfill — os três DEVEM produzir os mesmos `(instancia, jid)`, senão o
+ * dedup por PK `(instancia, jid, msgId)` quebra entre backfill e incremental.
+ *
+ * Split no PRIMEIRO '-' (nomes de instância não contêm '-' neste codebase). O
+ * `jid` é o inverso de `phoneFromJid`: id sem '@' vira `@s.whatsapp.net`;
+ * @lid/@g.us/@s.whatsapp.net passam inalterados. Retorna null para chave malformada.
+ */
+export function parseHistoryKey(key: string): ParsedHistoryKey | null {
+  if (!key.startsWith('chathistory:')) return null;
+  const rest = key.slice('chathistory:'.length);
+  const dash = rest.indexOf('-');
+  if (dash < 0) return null;
+  const instancia = rest.slice(0, dash);
+  const id = rest.slice(dash + 1);
+  if (!instancia || !id) return null;
+  const jid = id.includes('@') ? id : `${id}@s.whatsapp.net`;
+  return { instancia, id, jid };
+}
+
 /**
  * Parse a single raw chathistory JSON string into a ParsedHistoryEntry.
  *

@@ -2,6 +2,7 @@ import { Injectable, Inject, Logger, OnApplicationBootstrap } from '@nestjs/comm
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { MessageArchiveRepository, toArchiveEntries } from './message-archive.repository';
+import { parseHistoryKey } from './parse-history-entry';
 
 /**
  * One-shot backfill that reads ALL existing `chathistory:*` keys from Redis and
@@ -49,18 +50,11 @@ export class ChathistoryBackfillCommand implements OnApplicationBootstrap {
       cursor = next;
 
       for (const key of keys) {
-        // Key parsing IDENTICAL to event.translator.ts:26-32.
-        // Cross-reference: if the translator changes its parse, update this too.
-        const rest = key.slice('chathistory:'.length);
-        const dash = rest.indexOf('-'); // FIRST dash only
-        if (dash < 0) continue; // skip malformed (no dash)
-        const instancia = rest.slice(0, dash);
-        const id = rest.slice(dash + 1);
-        if (!instancia || !id) continue; // skip if either part is empty
-
-        // Inverse of phoneFromJid: bare numbers become @s.whatsapp.net JIDs;
-        // already-qualified JIDs (@lid, @g.us, @s.whatsapp.net) pass through.
-        const jid = id.includes('@') ? id : `${id}@s.whatsapp.net`;
+        // Parse compartilhado (fonte única) — mesmos (instancia, jid) que o
+        // caminho incremental (event.translator), garantindo dedup por PK.
+        const parsed = parseHistoryKey(key);
+        if (!parsed) continue; // chave malformada — pula
+        const { instancia, jid } = parsed;
 
         // Read the ENTIRE list (0 to -1), not just the tail.
         // The plan specifies: backfill precedes incremental, so seq is chronological.
@@ -71,6 +65,13 @@ export class ChathistoryBackfillCommand implements OnApplicationBootstrap {
           await this.archive.insertManyIdempotent(instancia, jid, entries);
           conversations++;
           rows += entries.length;
+          // Progresso + cede o event loop a cada 500 conversas: num backfill de
+          // milhões de threads o boot fica preso aqui; sem ceder, o healthcheck do
+          // container (EasyPanel) estoura e reinicia no meio da carga.
+          if (conversations % 500 === 0) {
+            this.logger.log(`chathistory-backfill: ${conversations} conversas, ${rows} mensagens…`);
+            await new Promise((r) => setImmediate(r));
+          }
         }
       }
     } while (cursor !== '0');

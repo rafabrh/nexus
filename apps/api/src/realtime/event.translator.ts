@@ -3,6 +3,7 @@ import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { RedisKeys } from '@nexus/shared';
 import type { NexusEvent } from '@nexus/shared';
+import { parseHistoryKey } from '../conversation/parse-history-entry';
 
 @Injectable()
 export class EventTranslator {
@@ -19,18 +20,17 @@ export class EventTranslator {
       if (operation !== 'rpush' && operation !== 'lpush' && operation !== 'set') {
         return null;
       }
-      // Split on the FIRST '-' after the prefix: inst, then the remainder is the
-      // conversation id. Instance names contain no '-' in this codebase
-      // (e.g. `shk`, `nexusdev`); if that ever changes, switch to matching the
-      // known tenant list.
-      const rest = key.slice('chathistory:'.length);
-      const dash = rest.indexOf('-');
-      if (dash < 0) return null;
-      const instancia = rest.slice(0, dash);
-      const id = rest.slice(dash + 1);
-      if (!instancia || !id) return null;
-      const jid = id.includes('@') ? id : `${id}@s.whatsapp.net`;
-      return { type: 'message.received', instancia, jid, ts, payload: {} };
+      // Parse compartilhado (fonte única) — mesmo (instancia, jid) que o backfill
+      // e o conversation-index. Instance names não contêm '-' neste codebase.
+      const parsed = parseHistoryKey(key);
+      if (!parsed) return null;
+      return {
+        type: 'message.received',
+        instancia: parsed.instancia,
+        jid: parsed.jid,
+        ts,
+        payload: {},
+      };
     }
 
     const parts = key.split(':');

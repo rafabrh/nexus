@@ -1,10 +1,32 @@
 import { describe, it, expect } from 'vitest';
-import { parseHistoryEntry, phoneFromJid } from './parse-history-entry';
+import { parseHistoryEntry, phoneFromJid, parseHistoryKey } from './parse-history-entry';
 
 describe('phoneFromJid', () => {
   it('normal → dígitos', () => expect(phoneFromJid('5511@s.whatsapp.net')).toBe('5511'));
   it('@lid → inalterado', () => expect(phoneFromJid('262246@lid')).toBe('262246@lid'));
   it('@g.us → inalterado', () => expect(phoneFromJid('123@g.us')).toBe('123@g.us'));
+});
+
+describe('parseHistoryKey', () => {
+  it('normal → jid ganha @s.whatsapp.net', () =>
+    expect(parseHistoryKey('chathistory:shk-5511')).toEqual({
+      instancia: 'shk',
+      id: '5511',
+      jid: '5511@s.whatsapp.net',
+    }));
+  it('@lid passa inalterado', () =>
+    expect(parseHistoryKey('chathistory:shk-262246@lid')).toEqual({
+      instancia: 'shk',
+      id: '262246@lid',
+      jid: '262246@lid',
+    }));
+  it('split no PRIMEIRO traço (id pode conter -)', () =>
+    expect(parseHistoryKey('chathistory:shk-12-34')).toMatchObject({ instancia: 'shk', id: '12-34' }));
+  it('sem traço → null', () => expect(parseHistoryKey('chathistory:shk')).toBeNull());
+  it('id vazio (chathistory:shk-) → null', () => expect(parseHistoryKey('chathistory:shk-')).toBeNull());
+  it('instancia vazia (chathistory:-5511) → null', () =>
+    expect(parseHistoryKey('chathistory:-5511')).toBeNull());
+  it('prefixo diferente → null', () => expect(parseHistoryKey('chat:shk:5511')).toBeNull());
 });
 
 describe('parseHistoryEntry', () => {
