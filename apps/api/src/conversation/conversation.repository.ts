@@ -260,6 +260,13 @@ export class ConversationRepository {
    * Lê uma página do histórico frio (Postgres) por `seq`.
    * Complementa `getMessages` (cauda Redis) para scroll-up infinito.
    * Cursor: `beforeMsgId` → resolve o seq no archive; ausente → página mais recente.
+   *
+   * PRECONDIÇÃO: `beforeMsgId`, quando informado, deve JÁ estar no archive (arquivado
+   * pelo write-behind antes desta chamada). Se o cursor ainda é quente-apenas (não
+   * arquivado — janela de throttle do write-behind, ~CHATHISTORY_ARCHIVE_THROTTLE_SEC),
+   * `seqOf` devolve null e este método retorna []. Ao ligar o controller, passe como
+   * `beforeMsgId` apenas um msgId vindo do frio (ex.: o msgId mais antigo de uma página
+   * anterior de `getMessagesPage`), NÃO a fronteira entre a cauda Redis e o archive.
    */
   async getMessagesPage(
     instancia: string,
