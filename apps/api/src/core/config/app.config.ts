@@ -166,6 +166,29 @@ export class AppConfig {
   @IsOptional()
   @IsString()
   RATE_LIMIT_EXEMPT_EMAILS?: string;
+
+  // ---- Chat-history archiving (tiering do Redis) ----
+  // Número de mensagens a manter quentes no Redis (cauda do chathistory).
+  // Quando a lista ultrapassa esse valor o LTRIM atômico (Lua) descarta a cabeça
+  // — que já foi arquivada no Postgres — para manter o Redis enxuto.
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  CHATHISTORY_HOT_CAP: number = 300;
+
+  // Habilita o write-behind da cauda para o Postgres (archive).
+  // 'true' | 'false' — default 'false' (desligado; ligar após o backfill rodar).
+  @IsOptional()
+  @IsString()
+  CHATHISTORY_ARCHIVE_ENABLED: string = 'false';
+
+  // Habilita o LTRIM atômico após o archive (reduz tamanho do Redis).
+  // Só tem efeito quando CHATHISTORY_ARCHIVE_ENABLED=true.
+  // 'true' | 'false' — default 'false' (ligar na última fase do rollout).
+  @IsOptional()
+  @IsString()
+  CHATHISTORY_LTRIM_ENABLED: string = 'false';
 }
 
 export function validate(config: Record<string, unknown>): AppConfig {
