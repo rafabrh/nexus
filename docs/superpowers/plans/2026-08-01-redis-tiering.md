@@ -17,9 +17,12 @@
 **Derivação de chave (não é bug — validado no review):** `phone = jid.replace('@s.whatsapp.net','')` recupera o `id` original em TODOS os casos (`@lid`, `@g.us`, normal), porque o único sufixo que o `event.translator.ts:32` adiciona é `@s.whatsapp.net`, e só quando não há `@`. O `getMessages` de produção (`conversation.repository.ts:201`) já usa isso. Para DRY, extrair `phoneFromJid(jid)` num util compartilhado e usar nos dois lugares.
 
 **Config (env):**
+- `CHATHISTORY_ARCHIVE_ENABLED` (default `false`) — liga o archive incremental (keyspace). **Deve ficar OFF até o backfill terminar** (garante ordem cronológica do `seq` — ver abaixo).
 - `CHATHISTORY_HOT_CAP` (default `300`) — tamanho da cauda mantida no Redis.
 - `CHATHISTORY_LTRIM_ENABLED` (default `false`) — liga o LTRIM só após o backfill validado.
 - `CHATHISTORY_ARCHIVE_THROTTLE_SEC` (default `5`) — coalescing do archive por conversa.
+
+**Ordem do `seq` (correção do 2º review):** `seq` (bigserial) reflete ordem de INSERÇÃO no Postgres, que só é igual à ordem cronológica da lista Redis **se o backfill (lista inteira, em ordem) rodar ANTES do archive incremental** (que só vê a cauda). Se o incremental rodasse antes, a cauda ganharia `seq` baixo e a cabeça (via backfill posterior) `seq` alto → ordem invertida. Por isso `CHATHISTORY_ARCHIVE_ENABLED` começa OFF e o runbook faz **backfill → depois liga o incremental**. Não é "cronológico por construção"; é cronológico **por sequência de rollout**.
 
 **Nota de commit:** `apps/api/**` NÃO está no `.gitignore` (só `docs/` está). Usar `git add` normal para código; `git add -f` **apenas** para arquivos sob `docs/`.
 
@@ -37,6 +40,8 @@ Este plano já incorpora o review multi-agente. Resumo:
 - 🟢 **`parseHistoryEntry`** → tarefa dedicada com testes de caracterização ANTES do reuso (Task 2).
 - 🟢 **pressão de escrita** → coalescing por conversa (Task 5).
 - 🟢 **`lint`=`tsc --noEmit`** confirmado (`apps/api/package.json`); comando válido como typecheck.
+
+**2ª iteração do review** (novo achado, corrigido aqui): `seq` NÃO é cronológico se o incremental rodar antes do backfill (cauda ganha seq baixo, cabeça do backfill ganha seq alto → invertido). Corrigido por **rollout: backfill antes do incremental**, via flag `CHATHISTORY_ARCHIVE_ENABLED` (default OFF) + runbook reordenado + texto do schema corrigido. Gate de coalescing agora explicitado envolvendo o `archiveTail` inteiro. Review aprovou liberar com essas correções de texto/rollout (sem retrabalho de código).
 
 ---
 
@@ -65,7 +70,9 @@ import { bigserial } from 'drizzle-orm/pg-core'; // adicionar ao import existent
 // ---- Messages (projeção durável/archive do chathistory Redis; N8N+BFF escrevem o Redis) ----
 // Fonte quente = lista Redis chathistory:{inst}-{phone}; esta tabela é o arquivo
 // frio COMPLETO. Dedup = (instancia, jid, msgId). Ordenação/paginação = `seq`
-// (monotônico por inserção = ordem da lista Redis = cronológico), NÃO `ts` (nullable).
+// (bigserial, ordem de INSERÇÃO), NÃO `ts` (nullable). O `seq` só é cronológico
+// se o BACKFILL preceder o archive incremental — garantido pelo runbook (flag
+// CHATHISTORY_ARCHIVE_ENABLED). Ver "Ordem do seq" no topo do plano.
 // Cold history NÃO rastreia ACK/status ao vivo (YAGNI) — status vem da leitura quente.
 export const messages = pgTable(
   'messages',
@@ -305,7 +312,7 @@ git commit -m "feat(conversation): archive write-behind + LTRIM atômico via Lua
 
 - [ ] **Step 1: Teste** — em `message.received`, `archiveTail` é chamado; segunda chamada dentro da janela é coalescida (não chama). Estender `keyspace.listener.spec.ts`.
 - [ ] **Step 2: Rodar (deve falhar)** → FAIL.
-- [ ] **Step 3: Implementar** — injetar `MessageArchiveService`; no ramo `message.received`, `this.archive.archiveTail(...).catch(...)` **sem await bloqueante** (best-effort, não atrasa o publish do realtime). Coalescing dentro do service ou do listener.
+- [ ] **Step 3: Implementar** — injetar `MessageArchiveService`; no ramo `message.received`, `this.archive.archiveTail(...).catch(...)` **sem await bloqueante** (best-effort, não atrasa o publish do realtime). O `archiveTail` retorna cedo se `CHATHISTORY_ARCHIVE_ENABLED=false` (gate de rollout). **O gate de coalescing (`SET NX EX`) envolve o método `archiveTail` INTEIRO** (passos 1 e 2), não só o archive da cauda — se throttled, nem archive nem trim rodam naquele ciclo (seguro: nada é aparado sem archive).
 - [ ] **Step 4: Rodar (deve passar)** → PASS.
 - [ ] **Step 5: Commit**
 
@@ -362,11 +369,14 @@ git commit -m "feat(conversation): backfill único do chathistory para o Postgre
 
 ## Rollout (runbook — passos do Rafa, fora da pipeline)
 
-1. Deploy com `CHATHISTORY_LTRIM_ENABLED=false` → archive write-behind popula o Postgres em tempo real.
-2. Rodar o **backfill** uma vez (Task 7) → histórico antigo entra no Postgres.
-3. **Validar por amostragem de WAMIDs** (não por `llen`, que diverge por dedup de eco e entradas malformadas): pegar N mensagens conhecidas de algumas conversas e confirmar presença em `messages`. Conferir também que a leitura tiered devolve páginas antigas corretas.
-4. Ligar `CHATHISTORY_LTRIM_ENABLED=true` → Redis mantém só a cauda (`CHATHISTORY_HOT_CAP`).
-5. Observar a memória do Redis cair; validar que UI e N8N seguem lendo a cauda normalmente.
+> **Ordem crítica:** backfill ANTES do archive incremental, senão o `seq` fica fora de ordem cronológica (ver "Ordem do seq" no topo). Ambas as flags começam OFF.
+
+1. Deploy com `CHATHISTORY_ARCHIVE_ENABLED=false` e `CHATHISTORY_LTRIM_ENABLED=false` (nada arquiva nem apara ainda).
+2. Rodar o **backfill** uma vez (Task 7) → histórico existente entra no Postgres **em ordem de lista** (`seq` cronológico).
+3. **Validar por amostragem de WAMIDs** (não por `llen`, que diverge por dedup de eco e entradas malformadas): pegar N mensagens conhecidas de algumas conversas e confirmar presença/ordem em `messages`. Conferir que a leitura tiered devolve páginas antigas corretas e ordenadas.
+4. Ligar `CHATHISTORY_ARCHIVE_ENABLED=true` → daqui pra frente só mensagens genuinamente novas são anexadas (mantêm o `seq` cronológico).
+5. Ligar `CHATHISTORY_LTRIM_ENABLED=true` → Redis mantém só a cauda (`CHATHISTORY_HOT_CAP`).
+6. Observar a memória do Redis cair; validar que UI e N8N seguem lendo a cauda normalmente.
 
 **Rollback:** desligar `CHATHISTORY_LTRIM_ENABLED` (para de aparar). O que já foi aparado permanece no Postgres (leitura tiered cobre). Sem perda.
 ```
