@@ -1,8 +1,7 @@
 import { Injectable, Inject, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../core/redis/redis.module';
-import { MessageArchiveRepository } from './message-archive.repository';
-import { toArchiveEntries } from './message-archive.repository';
+import { MessageArchiveRepository, toArchiveEntries } from './message-archive.repository';
 
 /**
  * One-shot backfill that reads ALL existing `chathistory:*` keys from Redis and
