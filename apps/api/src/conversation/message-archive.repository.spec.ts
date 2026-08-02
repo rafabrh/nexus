@@ -191,16 +191,6 @@ describe('MessageArchiveRepository.readPage', () => {
     const page = await repo.readPage('shk', 'j', { limit: 20 });
     expect(page).toEqual([]);
   });
-
-  it('chama orderBy(desc) e limit() com os valores corretos', async () => {
-    const orderedRows: any[] = [];
-    // We can inspect the stub call — check that the chain was used correctly
-    const stub = makeDb({ selects: [[m0]] });
-    const repo = new MessageArchiveRepository(stub.db);
-
-    await repo.readPage('shk', 'j', { limit: 5 });
-
-    // select was called once
-    expect(stub.select).toHaveBeenCalledTimes(1);
-  });
+  // Ordenação (desc + reverse) já é coberta pelos dois testes de output acima:
+  // o stub devolve linhas em desc e a saída sai em asc só se o .reverse() estiver certo.
 });
