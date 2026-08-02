@@ -42,6 +42,12 @@ export const RedisKeys = {
   chatHistory: (inst: string, phone: string) =>
     `chathistory:${inst}-${phone}`,
 
+  // Marca de throttle do archive write-behind do chathistory (SET NX EX).
+  // Coalesce ciclos de archive da mesma conversa dentro de
+  // CHATHISTORY_ARCHIVE_THROTTLE_SEC segundos. Chave exclusiva do BFF.
+  archiveThrottle: (inst: string, jid: string) =>
+    `archive:throttle:${inst}:${jid}`,
+
   // ---- Contato (namespaced por instancia — BFF popula e le a sua chave) ----
   // O N8N escreve a chave global `contact:{phone}`, mas o BFF NAO depende dela:
   // mantem a sua propria chave `contact:{inst}:{phone}` para isolar PII por tenant.

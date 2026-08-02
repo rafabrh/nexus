@@ -13,6 +13,9 @@ import type {
   Message,
   AiState,
 } from '@nexus/shared';
+import { parseHistoryEntry, phoneFromJid } from './parse-history-entry';
+import type { MessageRow } from '../core/db/schema';
+import { MessageArchiveRepository } from './message-archive.repository';
 
 /** Keywords that indicate a hot lead */
 const HOT_KEYWORDS = [
@@ -29,6 +32,7 @@ export class ConversationRepository {
 
   constructor(
     @Inject(REDIS_CLIENT) public readonly redis: Redis,
+    private readonly archive: MessageArchiveRepository,
   ) {}
 
   /**
@@ -49,7 +53,7 @@ export class ConversationRepository {
    * Build a ConversationListItem using a Redis pipeline for performance.
    */
   async buildListItem(instancia: string, jid: string): Promise<ConversationListItem> {
-    const phone = jid.replace('@s.whatsapp.net', '');
+    const phone = phoneFromJid(jid);
     const histKey = RedisKeys.chatHistory(instancia, phone);
     const pipeline = this.redis.pipeline();
 
@@ -115,7 +119,7 @@ export class ConversationRepository {
    * Build a ConversationDetail including notes and message count.
    */
   async buildDetail(instancia: string, jid: string): Promise<ConversationDetail | null> {
-    const phone = jid.replace('@s.whatsapp.net', '');
+    const phone = phoneFromJid(jid);
     const histKey = RedisKeys.chatHistory(instancia, phone);
     const pipeline = this.redis.pipeline();
 
@@ -198,9 +202,14 @@ export class ConversationRepository {
    * Get messages from LangChain Redis chat history.
    */
   async getMessages(instancia: string, jid: string, limit: number): Promise<Message[]> {
-    const phone = jid.replace('@s.whatsapp.net', '');
+    const phone = phoneFromJid(jid);
     const histKey = RedisKeys.chatHistory(instancia, phone);
-    const raw = await this.redis.lrange(histKey, 0, -1);
+    // Lê só a CAUDA: para um histórico de milhares de mensagens, `lrange 0 -1`
+    // puxava e parseava a conversa inteira só para devolver as últimas `limit`. A
+    // folga (`limit*2 + 20`) cobre o dedup do eco de envio; o `slice(-limit)` no
+    // fim mantém o resultado idêntico. `limit<=0` preserva o "tudo" (retrocompat).
+    const start = limit > 0 ? -(limit * 2 + 20) : 0;
+    const raw = await this.redis.lrange(histKey, start, -1);
     // Status de entrega/leitura das mensagens de saída (hash lateral de ACK).
     const ackMap = await this.redis.hgetall(RedisKeys.ackStatus(instancia, jid));
 
@@ -211,47 +220,33 @@ export class ConversationRepository {
     // fromMe=true). Ambas carregam o MESMO id de mensagem do WhatsApp; sem dedup
     // a bolha (texto, áudio, imagem) aparece repetida na visão do operador,
     // embora o destinatário receba só uma. Entradas sem id real (legadas, fallback
-    // `msg-i`) nunca colidem → preservadas.
+    // `legacy-sha1`) nunca colidem → preservadas.
     const seenIds = new Set<string>();
-    for (let i = 0; i < raw.length; i++) {
-      try {
-        const parsed = JSON.parse(raw[i]);
-        const media = parsed.media as { kind?: string; id?: string } | undefined;
-        const realId = (typeof parsed.id === 'string' && parsed.id) || media?.id || null;
-        if (realId) {
-          if (seenIds.has(realId)) continue; // eco do próprio envio — ignora a cópia
-          seenIds.add(realId);
-        }
-        const ts =
-          typeof parsed.data?.timestamp === 'number'
-            ? new Date(parsed.data.timestamp).toISOString()
-            : null;
-        const quoted =
-          parsed.quoted && typeof parsed.quoted === 'object'
-            ? {
-                id: String(parsed.quoted.id ?? ''),
-                preview: String(parsed.quoted.preview ?? ''),
-                fromMe: parsed.quoted.fromMe === true,
-              }
-            : undefined;
-        const id = realId || `msg-${i}`;
-        const isOutgoing = parsed.type === 'ai';
-        const status = isOutgoing
-          ? (ackMap[id] as Message['status'] | undefined)
-          : undefined;
-        messages.push({
-          id,
-          role: isOutgoing ? 'assistant' : 'user',
-          content: parsed.data?.content ?? '',
-          mediaType: this.mediaKindToType(media?.kind),
-          ...(media?.id ? { mediaId: media.id } : {}),
-          ts,
-          ...(quoted ? { quoted } : {}),
-          ...(status ? { status } : {}),
-        });
-      } catch {
-        // Skip malformed entries
+    for (const entry of raw) {
+      const parsed = parseHistoryEntry(entry);
+      if (!parsed) continue; // Skip malformed entries
+
+      // Dedup: only real WAMIDs (not legacy- synthetics) are tracked in seenIds.
+      const hasRealId = !parsed.msgId.startsWith('legacy-');
+      if (hasRealId) {
+        if (seenIds.has(parsed.msgId)) continue; // eco do próprio envio — ignora a cópia
+        seenIds.add(parsed.msgId);
       }
+
+      const ts = parsed.ts ? parsed.ts.toISOString() : null;
+      const status = parsed.fromMe
+        ? (ackMap[parsed.msgId] as Message['status'] | undefined)
+        : undefined;
+      messages.push({
+        id: parsed.msgId,
+        role: parsed.fromMe ? 'assistant' : 'user',
+        content: parsed.content,
+        mediaType: this.mediaKindToType(parsed.mediaKind),
+        ...(parsed.mediaId ? { mediaId: parsed.mediaId } : {}),
+        ts,
+        ...(parsed.quoted ? { quoted: parsed.quoted } : {}),
+        ...(status ? { status } : {}),
+      });
     }
 
     // Return last N messages if limit is specified
@@ -259,6 +254,48 @@ export class ConversationRepository {
       return messages.slice(-limit);
     }
     return messages;
+  }
+
+  /**
+   * Lê uma página do histórico frio (Postgres) por `seq`.
+   * Complementa `getMessages` (cauda Redis) para scroll-up infinito.
+   * Cursor: `beforeMsgId` → resolve o seq no archive; ausente → página mais recente.
+   *
+   * PRECONDIÇÃO: `beforeMsgId`, quando informado, deve JÁ estar no archive (arquivado
+   * pelo write-behind antes desta chamada). Se o cursor ainda é quente-apenas (não
+   * arquivado — janela de throttle do write-behind, ~CHATHISTORY_ARCHIVE_THROTTLE_SEC),
+   * `seqOf` devolve null e este método retorna []. Ao ligar o controller, passe como
+   * `beforeMsgId` apenas um msgId vindo do frio (ex.: o msgId mais antigo de uma página
+   * anterior de `getMessagesPage`), NÃO a fronteira entre a cauda Redis e o archive.
+   */
+  async getMessagesPage(
+    instancia: string,
+    jid: string,
+    opts: { beforeMsgId?: string; limit: number },
+  ): Promise<Message[]> {
+    let beforeSeq: number | undefined;
+    if (opts.beforeMsgId != null) {
+      const seq = await this.archive.seqOf(instancia, jid, opts.beforeMsgId);
+      // Cursor pedido mas não encontrado no frio → não há página antiga a mostrar.
+      if (seq == null) return [];
+      beforeSeq = seq;
+    }
+    const rows = await this.archive.readPage(instancia, jid, { beforeSeq, limit: opts.limit });
+    return rows.map((r) => this.rowToMessage(r));
+  }
+
+  /** Mapeia um `MessageRow` do archive frio para o shape `Message` do painel. */
+  private rowToMessage(row: MessageRow): Message {
+    return {
+      id: row.msgId,
+      role: row.fromMe ? 'assistant' : 'user',
+      content: row.content ?? '',
+      mediaType: this.mediaKindToType(row.mediaKind ?? undefined),
+      ...(row.mediaId ? { mediaId: row.mediaId } : {}),
+      ts: row.ts ? row.ts.toISOString() : null,
+      ...(row.quoted ? { quoted: row.quoted } : {}),
+      // Sem `status` — cold history não rastreia ACK (YAGNI).
+    };
   }
 
   /** Mapeia o `kind` interno da mídia para o `mediaType` do painel. */
@@ -286,9 +323,24 @@ export class ConversationRepository {
     jid: string,
     mediaId: string,
   ): Promise<{ fromMe: boolean; mimetype: string | null } | null> {
-    const phone = jid.replace('@s.whatsapp.net', '');
+    const phone = phoneFromJid(jid);
     const histKey = RedisKeys.chatHistory(instancia, phone);
-    const raw = await this.redis.lrange(histKey, 0, -1);
+    // A mídia clicada quase sempre está na cauda (a thread mostra as últimas N).
+    // Varre a cauda primeiro; só faz o scan completo como fallback — evita ler o
+    // histórico inteiro no caso comum.
+    const tailRef = this.scanMediaRef(
+      await this.redis.lrange(histKey, -200, -1),
+      mediaId,
+    );
+    if (tailRef) return tailRef;
+    return this.scanMediaRef(await this.redis.lrange(histKey, 0, -1), mediaId);
+  }
+
+  /** Varre entradas do chathistory procurando a referência de mídia por id. */
+  private scanMediaRef(
+    raw: string[],
+    mediaId: string,
+  ): { fromMe: boolean; mimetype: string | null } | null {
     for (const item of raw) {
       try {
         const parsed = JSON.parse(item);
