@@ -23,8 +23,10 @@ describe('parseHistoryEntry', () => {
   });
   it('legado sem id → msgId sintético estável por sha1(raw)', () => {
     const raw = JSON.stringify({ data: { content: 'x' } });
-    expect(parseHistoryEntry(raw)!.msgId).toBe(parseHistoryEntry(raw)!.msgId); // determinístico
-    expect(parseHistoryEntry(raw)!.msgId.startsWith('legacy-')).toBe(true);
+    const first = parseHistoryEntry(raw)!.msgId;
+    const second = parseHistoryEntry(raw)!.msgId; // duas invocações independentes
+    expect(first).toBe(second); // determinístico entre chamadas
+    expect(first).toMatch(/^legacy-[0-9a-f]{40}$/); // prefixo + sha1 (40 hex)
   });
   it('malformada → null', () => expect(parseHistoryEntry('{invalid')).toBeNull());
 });
