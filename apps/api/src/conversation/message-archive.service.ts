@@ -3,8 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { RedisKeys } from '@nexus/shared';
-import { parseHistoryEntry, phoneFromJid } from './parse-history-entry';
-import { MessageArchiveRepository, ArchiveEntry } from './message-archive.repository';
+import { phoneFromJid } from './parse-history-entry';
+import { MessageArchiveRepository, ArchiveEntry, toArchiveEntries } from './message-archive.repository';
 
 /**
  * Atomic Lua script for safe LTRIM.
@@ -139,28 +139,11 @@ export class MessageArchiveService {
   /**
    * Maps a list of raw JSON strings (chathistory entries) to ArchiveEntry objects.
    *
-   * - Malformed entries (parseHistoryEntry returns null) are skipped.
-   * - `raw` is set to the ORIGINAL JSON string, not the parsed object, so that
-   *   the archive retains full fidelity and `msgId` dedup can rely on it.
+   * Delegates to the shared {@link toArchiveEntries} function co-located with
+   * ArchiveEntry in message-archive.repository.ts. The private method is kept as
+   * a thin wrapper so existing call-sites inside this class are unchanged.
    */
   private toEntries(rawList: string[]): ArchiveEntry[] {
-    const entries: ArchiveEntry[] = [];
-    for (const raw of rawList) {
-      const parsed = parseHistoryEntry(raw);
-      if (parsed === null) continue;
-      entries.push({
-        msgId: parsed.msgId,
-        fromMe: parsed.fromMe,
-        type: parsed.type,
-        content: parsed.content,
-        mediaKind: parsed.mediaKind,
-        mediaId: parsed.mediaId,
-        mediaMimetype: parsed.mediaMimetype,
-        quoted: parsed.quoted ?? null,
-        ts: parsed.ts,
-        raw, // original JSON string — preserves full fidelity
-      });
-    }
-    return entries;
+    return toArchiveEntries(rawList);
   }
 }

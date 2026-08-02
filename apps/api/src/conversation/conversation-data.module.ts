@@ -4,6 +4,7 @@ import { ConversationIndexService } from './conversation-index.service';
 import { ConversationProjectionService } from './conversation-projection.service';
 import { MessageArchiveRepository } from './message-archive.repository';
 import { MessageArchiveService } from './message-archive.service';
+import { ChathistoryBackfillCommand } from './chathistory-backfill.command';
 
 /**
  * Módulo global de dados de conversa. Expõe:
@@ -27,6 +28,7 @@ import { MessageArchiveService } from './message-archive.service';
     ConversationProjectionService,
     MessageArchiveRepository,
     MessageArchiveService,
+    ChathistoryBackfillCommand,
   ],
   exports: [
     ConversationRepository,

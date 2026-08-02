@@ -3,6 +3,7 @@ import { and, desc, eq, lt } from 'drizzle-orm';
 import { DB } from '../core/db/db.module';
 import type { Database } from '../core/db/db.module';
 import { messages, MessageRow } from '../core/db/schema';
+import { parseHistoryEntry } from './parse-history-entry';
 
 /**
  * Per-row payload for cold-archive inserts. Covers all user-supplied columns
@@ -26,6 +27,38 @@ export interface ArchiveEntry {
   quoted: { id: string; preview: string; fromMe: boolean } | null | undefined;
   ts: Date | null;
   raw: unknown;
+}
+
+/**
+ * Maps a list of raw JSON strings (chathistory entries) to ArchiveEntry objects.
+ *
+ * Shared between MessageArchiveService (incremental write-behind) and
+ * ChathistoryBackfillCommand (one-shot historical backfill). Extracted here so
+ * neither caller duplicates the mapping logic.
+ *
+ * - Malformed entries (parseHistoryEntry returns null) are skipped.
+ * - `raw` is set to the ORIGINAL JSON string, preserving full fidelity so that
+ *   the archive retains the source and `msgId` dedup can rely on it.
+ */
+export function toArchiveEntries(rawList: string[]): ArchiveEntry[] {
+  const entries: ArchiveEntry[] = [];
+  for (const raw of rawList) {
+    const parsed = parseHistoryEntry(raw);
+    if (parsed === null) continue;
+    entries.push({
+      msgId: parsed.msgId,
+      fromMe: parsed.fromMe,
+      type: parsed.type,
+      content: parsed.content,
+      mediaKind: parsed.mediaKind,
+      mediaId: parsed.mediaId,
+      mediaMimetype: parsed.mediaMimetype,
+      quoted: parsed.quoted ?? null,
+      ts: parsed.ts,
+      raw,
+    });
+  }
+  return entries;
 }
 
 @Injectable()
