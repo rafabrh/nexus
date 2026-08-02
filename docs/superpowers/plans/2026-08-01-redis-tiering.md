@@ -372,7 +372,7 @@ git commit -m "feat(conversation): backfill único do chathistory para o Postgre
 > **Ordem crítica:** backfill ANTES do archive incremental, senão o `seq` fica fora de ordem cronológica (ver "Ordem do seq" no topo). Ambas as flags começam OFF.
 
 1. Deploy com `CHATHISTORY_ARCHIVE_ENABLED=false` e `CHATHISTORY_LTRIM_ENABLED=false` (nada arquiva nem apara ainda).
-2. Rodar o **backfill** uma vez (Task 7) → histórico existente entra no Postgres **em ordem de lista** (`seq` cronológico).
+2. Rodar o **backfill** uma vez (Task 7): setar `BACKFILL_CHATHISTORY=once` e subir → histórico existente entra no Postgres **em ordem de lista** (`seq` cronológico). **Ao terminar, REMOVER `BACKFILL_CHATHISTORY` do env** antes do próximo deploy (o gate roda de novo a cada boot com a flag setada; é idempotente via ON CONFLICT, mas desperdiça SCAN+lrange). O backfill cede o event loop a cada 500 conversas p/ não estourar o healthcheck; em bases muito grandes, considere rodá-lo como job dedicado em vez de no boot da API.
 3. **Validar por amostragem de WAMIDs** (não por `llen`, que diverge por dedup de eco e entradas malformadas): pegar N mensagens conhecidas de algumas conversas e confirmar presença/ordem em `messages`. Conferir que a leitura tiered devolve páginas antigas corretas e ordenadas.
 4. Ligar `CHATHISTORY_ARCHIVE_ENABLED=true` → daqui pra frente só mensagens genuinamente novas são anexadas (mantêm o `seq` cronológico).
 5. Ligar `CHATHISTORY_LTRIM_ENABLED=true` → Redis mantém só a cauda (`CHATHISTORY_HOT_CAP`).
