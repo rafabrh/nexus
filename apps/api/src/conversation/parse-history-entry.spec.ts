@@ -1,0 +1,30 @@
+import { describe, it, expect } from 'vitest';
+import { parseHistoryEntry, phoneFromJid } from './parse-history-entry';
+
+describe('phoneFromJid', () => {
+  it('normal → dígitos', () => expect(phoneFromJid('5511@s.whatsapp.net')).toBe('5511'));
+  it('@lid → inalterado', () => expect(phoneFromJid('262246@lid')).toBe('262246@lid'));
+  it('@g.us → inalterado', () => expect(phoneFromJid('123@g.us')).toBe('123@g.us'));
+});
+
+describe('parseHistoryEntry', () => {
+  it('mensagem de saída (type ai) com id real', () => {
+    const e = parseHistoryEntry(JSON.stringify({ id: 'WAMID1', type: 'ai', data: { content: 'oi', timestamp: 1700000000000 } }));
+    expect(e).toMatchObject({ msgId: 'WAMID1', type: 'ai', content: 'oi', fromMe: true });
+    expect(e!.ts).toBeInstanceOf(Date);
+  });
+  it('mídia usa media.id como msgId quando não há id de topo', () => {
+    const e = parseHistoryEntry(JSON.stringify({ media: { id: 'M1', kind: 'image', mimetype: 'image/jpeg' } }));
+    expect(e).toMatchObject({ msgId: 'M1', mediaKind: 'image', mediaId: 'M1' });
+  });
+  it('quoted preservado', () => {
+    const e = parseHistoryEntry(JSON.stringify({ id: 'W', quoted: { id: 'q', preview: 'p', fromMe: true } }));
+    expect(e!.quoted).toEqual({ id: 'q', preview: 'p', fromMe: true });
+  });
+  it('legado sem id → msgId sintético estável por sha1(raw)', () => {
+    const raw = JSON.stringify({ data: { content: 'x' } });
+    expect(parseHistoryEntry(raw)!.msgId).toBe(parseHistoryEntry(raw)!.msgId); // determinístico
+    expect(parseHistoryEntry(raw)!.msgId.startsWith('legacy-')).toBe(true);
+  });
+  it('malformada → null', () => expect(parseHistoryEntry('{invalid')).toBeNull());
+});
