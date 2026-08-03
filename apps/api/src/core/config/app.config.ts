@@ -198,6 +198,27 @@ export class AppConfig {
   @IsNumber()
   @Min(1)
   CHATHISTORY_ARCHIVE_THROTTLE_SEC: number = 5;
+
+  // ---- RabbitMQ consumer (Etapa 2 — desacoplamento) ----
+  // URL AMQP do broker. Ausente => o QueueModule sobe SEM consumer (não quebra o
+  // boot local/prod atual). Só configurada após o RabbitMQ no ar (Fase 0, 🔒).
+  @IsOptional()
+  @IsString()
+  RABBITMQ_URL?: string;
+
+  // Kill-switch do consumer. 'true' | 'false' — default 'false' (desligado).
+  // Quando 'false' o consumer NÃO registra a subscription (nada consome da fila).
+  // Ativar só após o broker validado com o número de TESTE (Fase 1).
+  @IsOptional()
+  @IsString()
+  QUEUE_CONSUMER_ENABLED: string = 'false';
+
+  // Prefetch (QoS) do consumer — quantas mensagens não-ackadas o canal segura.
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  QUEUE_PREFETCH: number = 10;
 }
 
 export function validate(config: Record<string, unknown>): AppConfig {
