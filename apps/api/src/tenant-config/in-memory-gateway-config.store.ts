@@ -12,17 +12,23 @@ import type { TenantEngineConfig } from './tenant-engine-config.types';
 export class InMemoryGatewayConfigStore implements GatewayConfigStore {
   private byInstanceId = new Map<string, string>(); // UUID GO → instancia (nome canônico)
   private ownerByInstancia = new Map<string, string>(); // instancia → ownerJid
+  private gatewayByInstancia = new Map<string, 'node' | 'go'>(); // instancia → gateway (só 'go' entra)
 
   /** Substitui o snapshot inteiro (idempotente; remoções no Postgres refletem). */
-  hydrate(rows: { instancia: string; config: TenantEngineConfig }[]): void {
+  hydrate(rows: { instancia: string; gateway?: string; config: TenantEngineConfig }[]): void {
     const byId = new Map<string, string>();
     const owner = new Map<string, string>();
-    for (const { instancia, config } of rows) {
+    const gw = new Map<string, 'node' | 'go'>();
+    for (const { instancia, gateway, config } of rows) {
       if (config.instanceId) byId.set(config.instanceId, instancia);
       if (config.ownerJid) owner.set(instancia, config.ownerJid);
+      // Só 'go' entra no mapa; qualquer outro valor (ausente/inválido) cai no
+      // default 'node' em gatewayFor — não precisa ocupar o mapa.
+      if (gateway === 'go') gw.set(instancia, 'go');
     }
     this.byInstanceId = byId;
     this.ownerByInstancia = owner;
+    this.gatewayByInstancia = gw;
   }
 
   resolveInstanceId(instanceId: string): string | null {
@@ -31,5 +37,10 @@ export class InMemoryGatewayConfigStore implements GatewayConfigStore {
 
   ownerJid(instancia: string): string | undefined {
     return this.ownerByInstancia.get(instancia);
+  }
+
+  /** Gateway do tenant p/ o router de saída. Desconhecido/ausente → 'node'. */
+  gatewayFor(instancia: string): 'node' | 'go' {
+    return this.gatewayByInstancia.get(instancia) ?? 'node';
   }
 }

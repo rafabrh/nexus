@@ -1,15 +1,17 @@
 import { describe, it, expect, vi } from 'vitest';
 import { TenantEngineConfigRepository } from './tenant-engine-config.repository';
 
-// Drizzle stub: `from(table)` é thenable (list = await direto) E expõe `where`
-// (get). Captura o insert/upsert para asserção.
-function makeRepo(opts: { rows?: any[] } = {}) {
+// Drizzle stub: `from(table)` é thenable (list = await direto), expõe `where`
+// (get) E `leftJoin` (listWithGateway, também thenable). Captura o insert/upsert
+// para asserção. `joinRows` alimenta o resultado do leftJoin quando presente.
+function makeRepo(opts: { rows?: any[]; joinRows?: any[] } = {}) {
   const rows = opts.rows ?? [];
-  const state = { insertValues: null as any, conflict: null as any };
-  const thenable = (data: any[]) => ({
+  const thenable = (data: any[]): any => ({
     where: () => Promise.resolve(data),
+    leftJoin: () => thenable(opts.joinRows ?? data),
     then: (res: any, rej: any) => Promise.resolve(data).then(res, rej),
   });
+  const state = { insertValues: null as any, conflict: null as any };
   const select = vi.fn(() => ({ from: vi.fn(() => thenable(rows)) }));
   const insert = vi.fn(() => ({
     values: vi.fn((v: any) => {
@@ -48,6 +50,20 @@ describe('TenantEngineConfigRepository', () => {
     const all = await repo.list();
     expect(all).toHaveLength(2);
     expect(all[0].instancia).toBe('Shkgroup');
+  });
+
+  it('listWithGateway junta tenants.gateway e normaliza config=null → {} (tenant Node puro)', async () => {
+    const { repo } = makeRepo({
+      joinRows: [
+        { instancia: 'Shk', gateway: 'go', config: { instanceId: 'u1' } },
+        { instancia: 'Node1', gateway: 'node', config: null },
+      ],
+    });
+    const all = await repo.listWithGateway();
+    expect(all).toEqual([
+      { instancia: 'Shk', gateway: 'go', config: { instanceId: 'u1' } },
+      { instancia: 'Node1', gateway: 'node', config: {} },
+    ]);
   });
 
   it('upsert insere com cfg_version=1 e, no conflito, funde config + bumpa versão', async () => {
