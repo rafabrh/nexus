@@ -219,6 +219,16 @@ export class AppConfig {
   @IsNumber()
   @Min(1)
   QUEUE_PREFETCH: number = 10;
+
+  // ---- Config store por tenant (Etapa 2 — Fatia 2.3) ----
+  // Intervalo (segundos) do reconcile periódico do snapshot em memória do config
+  // store. A config muda raramente (onboarding/flip); re-hidratar do Postgres
+  // mantém o snapshot fresco entre réplicas sem pub/sub.
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(5)
+  TENANT_CFG_RECONCILE_SEC: number = 60;
 }
 
 export function validate(config: Record<string, unknown>): AppConfig {

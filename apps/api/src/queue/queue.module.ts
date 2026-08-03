@@ -2,6 +2,9 @@ import { DynamicModule, Logger, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { RabbitMQModule } from '@golevelup/nestjs-rabbitmq';
 import { WebhookModule } from '../webhook/webhook.module';
+import { TenantConfigModule } from '../tenant-config/tenant-config.module';
+import { GATEWAY_CONFIG_STORE } from '../tenant-config/gateway-config-store';
+import { InMemoryGatewayConfigStore } from '../tenant-config/in-memory-gateway-config.store';
 import { EventDedupService } from './event-dedup.service';
 import { NormalizeContextProvider } from './normalize-context.provider';
 import { EvolutionQueueConsumer } from './evolution-queue.consumer';
@@ -35,6 +38,8 @@ export class QueueModule {
       imports: [
         // O consumer reusa o WebhookService.processEvolutionEvent EXISTENTE.
         WebhookModule,
+        // Config store: fornece o InMemoryGatewayConfigStore que resolve o seam GO.
+        TenantConfigModule,
         RabbitMQModule.forRootAsync({
           imports: [ConfigModule],
           inject: [ConfigService],
@@ -49,7 +54,14 @@ export class QueueModule {
           }),
         }),
       ],
-      providers: [EventDedupService, NormalizeContextProvider, EvolutionQueueConsumer],
+      providers: [
+        EventDedupService,
+        NormalizeContextProvider,
+        EvolutionQueueConsumer,
+        // Cabeia o seam: o NormalizeContextProvider recebe o store real →
+        // o branch GO de contextFor resolve instanceId→instancia e ownerJid.
+        { provide: GATEWAY_CONFIG_STORE, useExisting: InMemoryGatewayConfigStore },
+      ],
     };
   }
 }
