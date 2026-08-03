@@ -25,13 +25,6 @@ export class EvolutionQueueConsumer {
   ) {}
 
   /**
-   * Contrato de ack/nack (spec §4.4):
-   *  - normalizer `null` (fora do contrato v1, por design) → ACK + log `evt.normalizer-drop`.
-   *  - duplicata (dedup por tipo) → ACK + log `evt.dedup-hit`.
-   *  - `processEvolutionEvent` lança → RETHROW → o errorHandler AMQP nacka → DLQ.
-   *    Nunca engolir o erro: sem rethrow a mensagem venenosa seria "ackada" e perdida.
-   */
-  /**
    * Ponto de entrada AMQP. A fila `nexus.panel.events` carrega eventos da
    * **Evolution GO** (Fases 1+); o gateway Node segue pelo webhook HTTP. Ao
    * lançar, o `defaultNackErrorHandler` faz nack SEM requeue → a mensagem cai na
@@ -52,6 +45,13 @@ export class EvolutionQueueConsumer {
     await this.handle(raw, 'go');
   }
 
+  /**
+   * Contrato de ack/nack (spec §4.4):
+   *  - normalizer `null` (fora do contrato v1, por design) → ACK + log `evt.normalizer-drop`.
+   *  - duplicata (dedup por tipo) → ACK + log `evt.dedup-hit`.
+   *  - `processEvolutionEvent` lança → RETHROW → o errorHandler AMQP nacka → DLQ.
+   *    Nunca engolir o erro: sem rethrow a mensagem venenosa seria "ackada" e perdida.
+   */
   async handle(raw: RawGatewayEvent, gateway: 'node' | 'go'): Promise<void> {
     const ctx = this.ctxProvider.contextFor(gateway, raw);
     const v1 = normalizeGatewayEvent(raw, ctx);

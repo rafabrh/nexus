@@ -57,7 +57,7 @@ Legenda: ✅ feito+merge · 🔵 feito+PR aberto · 📋 plano escrito · ✍️
 | Etapa | Estado |
 |---|---|
 | 1 — Tiering do Redis | ✅ **em prod** (PR #19 mergeado, `ab63833`) |
-| 2 — Contrato + barramento | 🔵 em andamento (1/4 fatias em PR) |
+| 2 — Contrato + barramento | 🔵 em andamento (2.1 em prod; 2.2 em PR) |
 | 3 — Gateway híbrido | ⏳ HLD |
 | 4 — Engine + IA | ⏳ HLD |
 | 5 — Migração + descom. | ⏳ HLD |
@@ -71,9 +71,9 @@ Legenda: ✅ feito+merge · 🔵 feito+PR aberto · 📋 plano escrito · ✍️
 ### Etapa 1 — Fundação (Tiering do Redis) — ✅ CONCLUÍDA
 - ✅ **Tiering** — plano `2026-08-01-redis-tiering.md`; 8 tasks TDD; PR #19 **mergeado** em prod. Runbook de ativação pendente (backfill→ARCHIVE→LTRIM), 🔒 do Rafa.
 
-### Etapa 2 — Contrato + barramento — 🔵 EM ANDAMENTO (1/4)
-- 🔵 **Fatia 2.1 — NEXUS Event v1 + normalizer** — plano `2026-08-02-nexus-event-v1-normalizer.md`; 6 tasks; `packages/shared` (contrato + `normalizeGatewayEvent` + fixtures douradas + `RedisKeys.evtDedup/evtCount`); 33 testes verdes; **PR #20 aberto** (aguarda merge do Rafa). ⚠️ fixtures GO `@provisional` até captura na Fase 0.
-- 📋 **Fatia 2.2 — Módulo `queue/` (consumer)** — plano `2026-08-02-queue-consumer.md` (próximo a executar). `apps/api/src/queue/`: `EvolutionQueueConsumer` (@golevelup/nestjs-rabbitmq) → `normalizeGatewayEvent` → dedup (`evtDedup`, SET NX 48h, política por tipo §4.4) → `WebhookService.processEvolutionEvent` + kill-switch `QUEUE_CONSUMER_ENABLED`. Boundary HTTP existente também passa a normalizar. Testes unit; conexão AMQP real 🔒.
+### Etapa 2 — Contrato + barramento — 🔵 EM ANDAMENTO (2/4)
+- ✅ **Fatia 2.1 — NEXUS Event v1 + normalizer** — plano `2026-08-02-nexus-event-v1-normalizer.md`; 6 tasks; `packages/shared` (contrato + `normalizeGatewayEvent` + fixtures douradas + `RedisKeys.evtDedup/evtCount`); 33 testes verdes; **PR #20 MERGEADO em prod** (`4cc6d6d`). ⚠️ fixtures GO `@provisional` até captura na Fase 0.
+- 🔵 **Fatia 2.2 — Módulo `queue/` (consumer)** — plano `2026-08-02-queue-consumer.md`; 7 tasks TDD; branch `feat/queue-consumer` (off prod). `apps/api/src/queue/`: `EventDedupService` (dedup por tipo, SET NX 48h §4.4) + `NormalizeContextProvider` (Node completo; seam GO p/ 2.3) + `EvolutionQueueConsumer` (@golevelup/nestjs-rabbitmq, `@RabbitSubscribe nexus.panel.events` → normalize→dedup→`WebhookService.processEvolutionEvent`, nack→DLX `nexus.dlx`) + `QueueModule` gated por `QUEUE_CONSUMER_ENABLED`+`RABBITMQ_URL`. Boundary HTTP também normaliza (fallback `v1 ?? payload` — **não** dropa fora-de-contrato, evita regressão de connection/contacts). **21 testes novos, suite 355 verde, lint ok. PR aberto** (aguarda merge do Rafa). Conexão AMQP real 🔒 (Fase 0).
 - ⏳ **Fatia 2.3 — Config store por tenant** — `tenant_engine_config` (migration Drizzle, conferir journal) + write-through Redis (`tenant:cfg:*`) + reconcile no boot + seed SQL; migrations `gateway`/`transport` no registry (§4.6/D7/D9). 100% testável agora.
 - ⏳ **Fatia 2.4 — `EvolutionClient` port + 2 adapters** — port de saída com adapters `node` (client atual) e `go` (dialeto REST GO), selecionado por `tenant.gateway` (§4.3). Testes unit; envio real GO 🔒.
 - 🔒 **Fase 0 (infra/captura)** — subir RabbitMQ + Evolution GO (EasyPanel) + parear número de TESTE + capturar payload/naming AMQP real → **trocar fixtures GO `@provisional`** e re-rodar tabela dourada. Gate duro de paridade (§7 Fase 0). **Depende do Rafa.**
