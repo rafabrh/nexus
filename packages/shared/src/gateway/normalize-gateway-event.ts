@@ -31,6 +31,20 @@ export function normalizeGatewayEvent(
   return normalizeGo(raw, instance, ctx);
 }
 
+/**
+ * Contexto Node do normalizer: `resolveInstance` é identidade sobre `raw.instance`
+ * (o payload Node já traz o nome canônico e o `sender`). PURO e sem dependências
+ * — o boundary HTTP (webhook.controller) e o `NormalizeContextProvider` reusam
+ * este helper em vez de reconstruir o contexto, sem acoplar módulos entre si.
+ */
+export function nodeNormalizeContext(): NormalizeContext {
+  return {
+    gateway: 'node',
+    resolveInstance: (raw) =>
+      typeof raw.instance === 'string' && raw.instance ? raw.instance : null,
+  };
+}
+
 function normalizeNode(raw: RawGatewayEvent, instance: string): NexusEventV1 | null {
   const event = raw.event as string | undefined;
   if (!event || !V1_TYPES.has(event as NexusEventV1Type)) return null; // fora do contrato → drop

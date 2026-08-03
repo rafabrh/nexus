@@ -11,9 +11,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { timingSafeEqual } from 'crypto';
-import { normalizeGatewayEvent } from '@nexus/shared';
+import { normalizeGatewayEvent, nodeNormalizeContext } from '@nexus/shared';
 import { WebhookService } from './webhook.service';
-import { NormalizeContextProvider } from '../queue/normalize-context.provider';
 import { Public } from '../auth/decorators/public.decorator';
 
 @Controller('webhook')
@@ -58,7 +57,7 @@ export class WebhookController {
     // que não têm `data.key`) devolvem `null` — nesse caso passamos o payload CRU,
     // preservando 100% do fluxo Node atual (o service já os trata). Custo ~zero:
     // função pura, sem I/O.
-    const v1 = normalizeGatewayEvent(payload, NormalizeContextProvider.nodeContext());
+    const v1 = normalizeGatewayEvent(payload, nodeNormalizeContext());
     await this.service.processEvolutionEvent(
       (v1 as unknown as Record<string, unknown>) ?? payload,
     );

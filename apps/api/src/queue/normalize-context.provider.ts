@@ -1,5 +1,5 @@
 import { Injectable, Inject, Optional } from '@nestjs/common';
-import type { NormalizeContext, RawGatewayEvent } from '@nexus/shared';
+import { nodeNormalizeContext, type NormalizeContext, type RawGatewayEvent } from '@nexus/shared';
 
 /**
  * Fonte de configuração por instância que a **Fatia 2.3 (config store)** vai
@@ -45,23 +45,11 @@ export class NormalizeContextProvider {
     this.store = store ?? new EmptyGatewayConfigStore();
   }
 
-  /**
-   * Contexto do gateway Node. É PURO (não depende do config store), então é
-   * estático — o boundary HTTP (webhook.controller) o reusa sem acoplar DI a
-   * este módulo. Node já traz `instance` (nome canônico) e `sender`, logo
-   * `resolveInstance` é identidade e `ownerJid` é dispensável.
-   */
-  static nodeContext(): NormalizeContext {
-    return {
-      gateway: 'node',
-      resolveInstance: (raw) =>
-        typeof raw.instance === 'string' && raw.instance ? raw.instance : null,
-    };
-  }
-
   contextFor(gateway: 'node' | 'go', _raw: RawGatewayEvent): NormalizeContext {
     if (gateway === 'node') {
-      return NormalizeContextProvider.nodeContext();
+      // Contexto Node é puro (identidade) e vive em @nexus/shared, ao lado do
+      // normalizer — o boundary HTTP reusa o MESMO helper, sem acoplamento.
+      return nodeNormalizeContext();
     }
     // GO traz `instanceId` (UUID) → mapeado pelo config store (vazio até a 2.3).
     // ownerJid é injetado porque o payload GO não carrega `sender`.
