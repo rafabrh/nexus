@@ -58,6 +58,11 @@ export const RedisKeys = {
   evtCount: (fonte: string, inst: string, event: string) =>
     `evt:count:${fonte}:${inst}:${event}`,
 
+  // Espelho da config do engine por tenant (write-through do Postgres — §4.6).
+  // Lido pelo futuro engine GO (Etapa 4); o painel hidrata um snapshot em
+  // memória a partir do Postgres (fonte de verdade), não desta chave.
+  tenantCfg: (inst: string) => `tenant:cfg:${inst}`,
+
   // ---- Contato (namespaced por instancia — BFF popula e le a sua chave) ----
   // O N8N escreve a chave global `contact:{phone}`, mas o BFF NAO depende dela:
   // mantem a sua propria chave `contact:{inst}:{phone}` para isolar PII por tenant.
