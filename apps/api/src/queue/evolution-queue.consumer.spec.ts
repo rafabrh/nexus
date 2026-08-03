@@ -14,6 +14,8 @@ function makeConsumer(overrides?: {
 }) {
   const dedup = {
     shouldProcess: vi.fn().mockResolvedValue(overrides?.shouldProcess ?? true),
+    release: vi.fn().mockResolvedValue(undefined),
+    count: vi.fn().mockResolvedValue(undefined),
   } as unknown as EventDedupService;
   const service = {
     processEvolutionEvent: vi.fn(overrides?.processImpl ?? (async () => undefined)),
@@ -59,15 +61,23 @@ describe('EvolutionQueueConsumer.handle', () => {
     expect(debug).toHaveBeenCalledWith(expect.stringContaining('evt.dedup-hit'));
   });
 
-  it('processEvolutionEvent lança → rethrow (nack→DLQ) e loga nack-dlq', async () => {
+  it('processEvolutionEvent lança → LIBERA dedup (anti-perda) + rethrow + loga nack-dlq', async () => {
     const error = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     const boom = new Error('boom');
-    const { consumer } = makeConsumer({
+    const { consumer, dedup } = makeConsumer({
       processImpl: async () => {
         throw boom;
       },
     });
     await expect(consumer.handle(validNode, 'node')).rejects.toBe(boom);
+    // Chave de dedup liberada ANTES do rethrow, para o replay do DLQ reprocessar.
+    expect(dedup.release).toHaveBeenCalledWith('shk', 'messages.upsert', 'WAMID-1');
     expect(error).toHaveBeenCalledWith(expect.stringContaining('evt.nack-dlq'));
+  });
+
+  it('sucesso NÃO libera a marca de dedup (permanece deduplicado)', async () => {
+    const { consumer, dedup } = makeConsumer({ shouldProcess: true });
+    await consumer.handle(validNode, 'node');
+    expect(dedup.release).not.toHaveBeenCalled();
   });
 });

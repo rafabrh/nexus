@@ -57,24 +57,43 @@ export class EvolutionQueueConsumer {
     const v1 = normalizeGatewayEvent(raw, ctx);
     if (!v1) {
       this.logger.debug(`evt.normalizer-drop gateway=${gateway}`);
+      void this.safeCount(gateway, 'unknown', 'normalizer-drop');
       return; // ack: fora do contrato v1 (NÃO é erro)
     }
 
     const ok = await this.dedup.shouldProcess(v1.instance, v1.event, v1.data.key.id);
     if (!ok) {
       this.logger.debug(`evt.dedup-hit ${v1.instance} ${v1.event} ${v1.data.key.id}`);
+      void this.safeCount(v1.gateway, v1.instance, 'dedup-hit');
       return; // ack: já processado
     }
 
     try {
       await this.service.processEvolutionEvent(v1 as unknown as Record<string, unknown>);
+      void this.safeCount(v1.gateway, v1.instance, v1.event);
     } catch (err) {
+      // A marca de dedup foi setada ANTES do processamento; como este evento
+      // falhou e vai para o DLQ, LIBERA a marca para que o replay reprocesse em
+      // vez de ser suprimido como duplicata (anti-perda). Aguarda o DEL completar
+      // antes do rethrow/nack.
+      await this.dedup.release(v1.instance, v1.event, v1.data.key.id);
       // Rethrow para o errorHandler AMQP fazer nack → DLQ (nexus.dlx). Loga aqui
       // para observabilidade; o service já loga o detalhe do processamento.
       this.logger.error(
         `evt.nack-dlq ${v1.instance} ${v1.event}: ${(err as Error)?.message ?? String(err)}`,
       );
+      void this.safeCount(v1.gateway, v1.instance, 'nack-dlq');
       throw err;
+    }
+  }
+
+  /** Incremento de métrica fire-and-forget: nunca deixa a observabilidade
+   *  quebrar o processamento (Redis pode estar indisponível). */
+  private async safeCount(fonte: string, instancia: string, event: string): Promise<void> {
+    try {
+      await this.dedup.count(fonte, instancia, event);
+    } catch {
+      /* métrica é best-effort */
     }
   }
 }
