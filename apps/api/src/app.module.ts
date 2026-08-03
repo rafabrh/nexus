@@ -24,6 +24,7 @@ import { RemindersModule } from './reminders/reminders.module';
 import { QuickRepliesModule } from './quick-replies/quick-replies.module';
 import { FunnelModule } from './funnel/funnel.module';
 import { MediaModule } from './media/media.module';
+import { QueueModule } from './queue/queue.module';
 import { validate } from './core/config/app.config';
 
 @Module({
@@ -60,6 +61,9 @@ import { validate } from './core/config/app.config';
     QuickRepliesModule,
     FunnelModule,
     MediaModule,
+    // Consumer RabbitMQ (Etapa 2). GATED: sobe vazio até QUEUE_CONSUMER_ENABLED
+    // + RABBITMQ_URL — não afeta o boot atual sem broker.
+    QueueModule.register(),
   ],
   providers: [
     // Global rate limiting. Without this guard the @Throttle decorators (e.g.

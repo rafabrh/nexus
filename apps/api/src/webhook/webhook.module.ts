@@ -9,5 +9,8 @@ import { N8nForwarderService } from './n8n-forwarder.service';
   imports: [RealtimeModule, ConversationModule],
   controllers: [WebhookController],
   providers: [WebhookService, N8nForwarderService],
+  // Exportado para o EvolutionQueueConsumer (QueueModule) reusar a mesma lógica
+  // de processamento do webhook HTTP.
+  exports: [WebhookService],
 })
 export class WebhookModule {}

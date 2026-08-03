@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { RabbitSubscribe, defaultNackErrorHandler } from '@golevelup/nestjs-rabbitmq';
 import { normalizeGatewayEvent, type RawGatewayEvent } from '@nexus/shared';
 import { EventDedupService } from './event-dedup.service';
 import { NormalizeContextProvider } from './normalize-context.provider';
@@ -30,6 +31,27 @@ export class EvolutionQueueConsumer {
    *  - `processEvolutionEvent` lança → RETHROW → o errorHandler AMQP nacka → DLQ.
    *    Nunca engolir o erro: sem rethrow a mensagem venenosa seria "ackada" e perdida.
    */
+  /**
+   * Ponto de entrada AMQP. A fila `nexus.panel.events` carrega eventos da
+   * **Evolution GO** (Fases 1+); o gateway Node segue pelo webhook HTTP. Ao
+   * lançar, o `defaultNackErrorHandler` faz nack SEM requeue → a mensagem cai na
+   * DLX `nexus.dlx` (não trava a fila). Delega toda a lógica ao `handle`.
+   */
+  @RabbitSubscribe({
+    exchange: 'evolution',
+    routingKey: '#',
+    queue: 'nexus.panel.events',
+    queueOptions: {
+      durable: true,
+      deadLetterExchange: 'nexus.dlx',
+      deadLetterRoutingKey: 'nexus.panel.events.dlq',
+    },
+    errorHandler: defaultNackErrorHandler,
+  })
+  async onEvent(raw: RawGatewayEvent): Promise<void> {
+    await this.handle(raw, 'go');
+  }
+
   async handle(raw: RawGatewayEvent, gateway: 'node' | 'go'): Promise<void> {
     const ctx = this.ctxProvider.contextFor(gateway, raw);
     const v1 = normalizeGatewayEvent(raw, ctx);
