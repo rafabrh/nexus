@@ -1,6 +1,6 @@
 export * from './types/nexus-event';
 export * from './types/nexus-event-v1';
-export { normalizeGatewayEvent } from './gateway/normalize-gateway-event';
+export { normalizeGatewayEvent, nodeNormalizeContext } from './gateway/normalize-gateway-event';
 export * from './types/conversation';
 export * from './types/funnel-stage';
 export * from './types/ai-control-state';

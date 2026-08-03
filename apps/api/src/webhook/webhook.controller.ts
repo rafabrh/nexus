@@ -11,6 +11,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { timingSafeEqual } from 'crypto';
+import { normalizeGatewayEvent, nodeNormalizeContext } from '@nexus/shared';
 import { WebhookService } from './webhook.service';
 import { Public } from '../auth/decorators/public.decorator';
 
@@ -50,7 +51,16 @@ export class WebhookController {
       throw new UnauthorizedException('Invalid API key');
     }
 
-    await this.service.processEvolutionEvent(payload);
+    // Unifica o boundary com o consumer da fila (§4.3): eventos de mensagem são
+    // promovidos ao contrato NexusEventV1 (para Node a normalização é IDENTIDADE
+    // + tag `gateway`). Eventos fora do contrato v1 (connection/presence/contacts,
+    // que não têm `data.key`) devolvem `null` — nesse caso passamos o payload CRU,
+    // preservando 100% do fluxo Node atual (o service já os trata). Custo ~zero:
+    // função pura, sem I/O.
+    const v1 = normalizeGatewayEvent(payload, nodeNormalizeContext());
+    await this.service.processEvolutionEvent(
+      (v1 as unknown as Record<string, unknown>) ?? payload,
+    );
   }
 
   /** Constant-time comparison to avoid leaking the key via timing. */

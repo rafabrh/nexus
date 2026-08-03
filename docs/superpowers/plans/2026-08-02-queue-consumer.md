@@ -38,10 +38,10 @@
 
 **Files:** Modify `apps/api/package.json`, `apps/api/src/core/config/app.config.ts`.
 
-- [ ] **Step 1:** `npm install @golevelup/nestjs-rabbitmq amqp-connection-manager --prefix apps/api` (fixar versões compatíveis com Nest 10; conferir `npm ls`).
-- [ ] **Step 2:** Adicionar ao `AppConfig` (mesmo estilo dos flags existentes): `RABBITMQ_URL?: string` (@IsOptional @IsString); `QUEUE_CONSUMER_ENABLED: string = 'false'`; `QUEUE_PREFETCH: number = 10` (@Type Number @Min(1)).
-- [ ] **Step 3:** `npm run lint --prefix apps/api` → PASS.
-- [ ] **Step 4:** Commit — `chore(queue): deps @golevelup/nestjs-rabbitmq + config do consumer`.
+- [x] **Step 1:** `npm install @golevelup/nestjs-rabbitmq amqp-connection-manager --prefix apps/api` (fixar versões compatíveis com Nest 10; conferir `npm ls`).
+- [x] **Step 2:** Adicionar ao `AppConfig` (mesmo estilo dos flags existentes): `RABBITMQ_URL?: string` (@IsOptional @IsString); `QUEUE_CONSUMER_ENABLED: string = 'false'`; `QUEUE_PREFETCH: number = 10` (@Type Number @Min(1)).
+- [x] **Step 3:** `npm run lint --prefix apps/api` → PASS.
+- [x] **Step 4:** Commit — `chore(queue): deps @golevelup/nestjs-rabbitmq + config do consumer`.
 
 ---
 
@@ -49,7 +49,7 @@
 
 **Files:** Create `apps/api/src/queue/event-dedup.service.ts` (+spec). TDD.
 
-- [ ] **Step 1: Testes que falham**
+- [x] **Step 1: Testes que falham**
 
 ```ts
 // messages.upsert: 1ª chamada shouldProcess=true (SET NX ok); 2ª=false (chave existe)
@@ -58,8 +58,8 @@
 // TTL: SET usa EX 48*3600
 ```
 
-- [ ] **Step 2: Rodar (falha).**
-- [ ] **Step 3: Implementar**
+- [x] **Step 2: Rodar (falha).**
+- [x] **Step 3: Implementar**
 
 ```ts
 const DEDUP_EVENTS = new Set(['messages.upsert', 'send.message']);
@@ -80,7 +80,7 @@ export class EventDedupService {
 }
 ```
 
-- [ ] **Step 4: Rodar (passa).** — [ ] **Step 5: Commit** — `feat(queue): EventDedupService (dedup por tipo, TTL 48h)`.
+- [x] **Step 4: Rodar (passa).** — [ ] **Step 5: Commit** — `feat(queue): EventDedupService (dedup por tipo, TTL 48h)`.
 
 ---
 
@@ -90,9 +90,9 @@ export class EventDedupService {
 
 Monta o `NormalizeContext` para um evento cru. **Node completo agora**; GO deixa `resolveInstance`/`ownerJid` num seam a cabear pela Fatia 2.3 (config store).
 
-- [ ] **Step 1: Teste** — `contextFor('node', raw)` devolve ctx com `resolveInstance` = `raw.instance`; `ownerJid` undefined (Node traz sender). Para `'go'`, `resolveInstance` usa um mapa injetado (mock) `instanceId→instancia` e `ownerJid` via mapa injetado — hoje ambos vazios (devolvem null/undefined), documentado como pendente da 2.3.
-- [ ] **Step 2/3: Implementar** — provider injetável recebendo (futuramente) o config store; por ora um mapa vazio + TODO cross-ref à Fatia 2.3. Node não depende de nada externo.
-- [ ] **Step 4/5:** rodar + commit — `feat(queue): NormalizeContextProvider (Node completo; seam GO p/ config store)`.
+- [x] **Step 1: Teste** — `contextFor('node', raw)` devolve ctx com `resolveInstance` = `raw.instance`; `ownerJid` undefined (Node traz sender). Para `'go'`, `resolveInstance` usa um mapa injetado (mock) `instanceId→instancia` e `ownerJid` via mapa injetado — hoje ambos vazios (devolvem null/undefined), documentado como pendente da 2.3.
+- [x] **Step 2/3: Implementar** — provider injetável recebendo (futuramente) o config store; por ora um mapa vazio + TODO cross-ref à Fatia 2.3. Node não depende de nada externo.
+- [x] **Step 4/5:** rodar + commit — `feat(queue): NormalizeContextProvider (Node completo; seam GO p/ config store)`.
 
 ---
 
@@ -100,14 +100,14 @@ Monta o `NormalizeContext` para um evento cru. **Node completo agora**; GO deixa
 
 **Files:** Create `apps/api/src/queue/evolution-queue.consumer.ts` (+spec). TDD. **Sem AMQP real** — testa o método `handle(raw, gateway)` diretamente com deps mockadas.
 
-- [ ] **Step 1: Testes**
+- [x] **Step 1: Testes**
   - normalizer devolve `null` → NÃO chama processEvolutionEvent; loga `evt.normalizer-drop`; retorna ack.
   - evento válido, dedup `shouldProcess=true` → chama `processEvolutionEvent(v1)`; ack.
   - dedup `false` (duplicata) → NÃO chama process; loga `evt.dedup-hit`; ack.
   - `processEvolutionEvent` lança → propaga p/ nack→DLQ (o handler NÃO engole; loga `evt.nack-dlq`).
   - `QUEUE_CONSUMER_ENABLED=false` → o handler nem roda (registro gated no módulo; teste do gate no Task 5).
-- [ ] **Step 2: Rodar (falha).**
-- [ ] **Step 3: Implementar** o método puro de orquestração (sem decorators AMQP ainda):
+- [x] **Step 2: Rodar (falha).**
+- [x] **Step 3: Implementar** o método puro de orquestração (sem decorators AMQP ainda):
 
 ```ts
 async handle(raw: RawGatewayEvent, gateway: 'node' | 'go'): Promise<void> {
@@ -121,7 +121,7 @@ async handle(raw: RawGatewayEvent, gateway: 'node' | 'go'): Promise<void> {
 ```
 
   A anotação `@RabbitSubscribe` (fila `nexus.panel.events`, prefetch, `errorHandler` → nack) fica no Task 5, chamando `handle`. Manter `handle` público e testável.
-- [ ] **Step 4: Rodar (passa).** — [ ] **Step 5: Commit** — `feat(queue): EvolutionQueueConsumer.handle (normalize→dedup→delegate)`.
+- [x] **Step 4: Rodar (passa).** — [ ] **Step 5: Commit** — `feat(queue): EvolutionQueueConsumer.handle (normalize→dedup→delegate)`.
 
 ---
 
@@ -129,11 +129,11 @@ async handle(raw: RawGatewayEvent, gateway: 'node' | 'go'): Promise<void> {
 
 **Files:** Create `apps/api/src/queue/queue.module.ts`; Modify `apps/api/src/webhook/webhook.module.ts` (export `WebhookService`), `apps/api/src/app.module.ts` (import `QueueModule`).
 
-- [ ] **Step 1:** `WebhookModule` passa a `exports: [WebhookService]`.
-- [ ] **Step 2:** `QueueModule`: importa `WebhookModule`; `RabbitMQModule.forRootAsync` lê `RABBITMQ_URL` (exchange topic `evolution`); provê `EventDedupService`, `NormalizeContextProvider`, `EvolutionQueueConsumer`. **Registrar a subscription só quando `QUEUE_CONSUMER_ENABLED==='true'`** (kill-switch — condicional no provider/subscription). Se `RABBITMQ_URL` ausente, o módulo sobe sem consumer (não quebra o boot local/prod atual).
-- [ ] **Step 3:** `@RabbitSubscribe` na `nexus.panel.events` chamando `consumer.handle(msg, 'go')` (a fila carrega GO nas fases 1+; Node segue por HTTP). `errorHandler` faz nack→DLQ (`nexus.dlx`).
-- [ ] **Step 4:** Teste do gate: com `QUEUE_CONSUMER_ENABLED=false`, o app compila e sobe sem registrar subscription (teste de módulo/boot). Import no `AppModule`.
-- [ ] **Step 5:** `npm run lint --prefix apps/api` PASS. Commit — `feat(queue): QueueModule + subscription gated por kill-switch`.
+- [x] **Step 1:** `WebhookModule` passa a `exports: [WebhookService]`.
+- [x] **Step 2:** `QueueModule`: importa `WebhookModule`; `RabbitMQModule.forRootAsync` lê `RABBITMQ_URL` (exchange topic `evolution`); provê `EventDedupService`, `NormalizeContextProvider`, `EvolutionQueueConsumer`. **Registrar a subscription só quando `QUEUE_CONSUMER_ENABLED==='true'`** (kill-switch — condicional no provider/subscription). Se `RABBITMQ_URL` ausente, o módulo sobe sem consumer (não quebra o boot local/prod atual).
+- [x] **Step 3:** `@RabbitSubscribe` na `nexus.panel.events` chamando `consumer.handle(msg, 'go')` (a fila carrega GO nas fases 1+; Node segue por HTTP). `errorHandler` faz nack→DLQ (`nexus.dlx`).
+- [x] **Step 4:** Teste do gate: com `QUEUE_CONSUMER_ENABLED=false`, o app compila e sobe sem registrar subscription (teste de módulo/boot). Import no `AppModule`.
+- [x] **Step 5:** `npm run lint --prefix apps/api` PASS. Commit — `feat(queue): QueueModule + subscription gated por kill-switch`.
 
 ---
 
@@ -141,19 +141,19 @@ async handle(raw: RawGatewayEvent, gateway: 'node' | 'go'): Promise<void> {
 
 **Files:** Modify `apps/api/src/webhook/webhook.controller.ts:53`.
 
-- [ ] **Step 1: Teste** (estender o spec do controller): payload Node passa por `normalizeGatewayEvent(payload, nodeCtx)` e o resultado (identidade) vai ao `processEvolutionEvent`; payload que normaliza p/ `null` (fora de contrato) NÃO chama o service (ack silencioso). Comportamento Node atual inalterado.
-- [ ] **Step 2: Rodar (falha).**
-- [ ] **Step 3: Implementar** — no `@Post('evolution')`, montar `nodeCtx` (`resolveInstance`=`payload.instance`) e `const v1 = normalizeGatewayEvent(payload, nodeCtx); if (v1) await this.service.processEvolutionEvent(v1 as ...)`. Torna o webhook da GO um fallback real e unifica o boundary.
-- [ ] **Step 4: Rodar (passa).** — [ ] **Step 5: Commit** — `feat(webhook): boundary HTTP normaliza via NexusEventV1 (fallback unificado, §4.3)`.
+- [x] **Step 1: Teste** (estender o spec do controller): payload Node passa por `normalizeGatewayEvent(payload, nodeCtx)` e o resultado (identidade) vai ao `processEvolutionEvent`; payload que normaliza p/ `null` (fora de contrato) NÃO chama o service (ack silencioso). Comportamento Node atual inalterado.
+- [x] **Step 2: Rodar (falha).**
+- [x] **Step 3: Implementar** — no `@Post('evolution')`, montar `nodeCtx` (`resolveInstance`=`payload.instance`) e `const v1 = normalizeGatewayEvent(payload, nodeCtx); if (v1) await this.service.processEvolutionEvent(v1 as ...)`. Torna o webhook da GO um fallback real e unifica o boundary.
+- [x] **Step 4: Rodar (passa).** — [ ] **Step 5: Commit** — `feat(webhook): boundary HTTP normaliza via NexusEventV1 (fallback unificado, §4.3)`.
 
 ---
 
 ## Task 7: Suite verde + typecheck + review
 
-- [ ] **Step 1:** `npm test --prefix apps/api` → PASS (incl. pré-existentes; nenhuma regressão no webhook).
-- [ ] **Step 2:** `npm run lint --prefix apps/api` → PASS.
-- [ ] **Step 3:** Review final (spec compliance + code quality) da fatia; corrigir; commit de ajustes.
-- [ ] **Step 4:** Atualizar o CRONOGRAMA VIVO (`2026-08-01-...roadmap.md`): Fatia 2.2 → 🔵/✅. Abrir PR contra `worktree-macos-reskin`.
+- [x] **Step 1:** `npm test --prefix apps/api` → PASS (incl. pré-existentes; nenhuma regressão no webhook).
+- [x] **Step 2:** `npm run lint --prefix apps/api` → PASS.
+- [x] **Step 3:** Review final (spec compliance + code quality) da fatia; corrigir; commit de ajustes.
+- [x] **Step 4:** Atualizar o CRONOGRAMA VIVO (`2026-08-01-...roadmap.md`): Fatia 2.2 → 🔵/✅. Abrir PR contra `worktree-macos-reskin`.
 
 ---
 
