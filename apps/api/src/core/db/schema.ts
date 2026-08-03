@@ -10,6 +10,7 @@ import {
   primaryKey,
   bigserial,
 } from 'drizzle-orm/pg-core';
+import type { TenantEngineConfig } from '../../tenant-config/tenant-engine-config.types';
 
 /**
  * Postgres é o sistema de registro. O Redis permanece como barramento de
@@ -29,7 +30,25 @@ export const tenants = pgTable('tenants', {
   syncStatus: text('sync_status'), // pending | syncing | done | error
   connectedAt: timestamp('connected_at', { withTimezone: true }),
   n8nWebhookUrl: text('n8n_webhook_url'),
+  // Roteamento por tenant (D7 — o registry é a fonte ÚNICA do gateway; o espelho
+  // Redis da config replica, nunca o contrário). Flip via SQL no cutover (§7.1).
+  gateway: text('gateway').notNull().default('node'), // node | go
+  transport: text('transport').notNull().default('webhook'), // webhook | amqp
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ---- Config do engine por tenant (dono: painel; §4.6) ----
+// Postgres = fonte de verdade da config. Write-through → Redis (tenant:cfg:<inst>)
+// para o futuro engine GO; o painel hidrata um snapshot em memória a partir daqui.
+// `config` é jsonb aberto: v1 usa só instanceId + ownerJid (campos exigidos pela GO);
+// o inventário rico (persona/templates/llm*) fecha na Fase 0 / Etapa 4.
+export const tenantEngineConfig = pgTable('tenant_engine_config', {
+  instancia: text('instancia')
+    .primaryKey()
+    .references(() => tenants.instancia, { onDelete: 'cascade' }),
+  config: jsonb('config').$type<TenantEngineConfig>().notNull().default({}),
+  cfgVersion: integer('cfg_version').notNull().default(1), // detecta drift no reconcile
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const tenantUsers = pgTable(
@@ -185,6 +204,7 @@ export const messages = pgTable(
 export type MessageRow = typeof messages.$inferSelect;
 
 export type TenantRow = typeof tenants.$inferSelect;
+export type TenantEngineConfigRow = typeof tenantEngineConfig.$inferSelect;
 export type TenantUserRow = typeof tenantUsers.$inferSelect;
 export type ReminderRow = typeof reminders.$inferSelect;
 export type QuickReplyRow = typeof quickReplies.$inferSelect;
