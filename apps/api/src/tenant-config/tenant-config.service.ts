@@ -52,7 +52,9 @@ export class TenantConfigService implements OnApplicationBootstrap, OnModuleDest
 
   /** Boot/full: Postgres → write-through Redis de TODAS + hidrata o snapshot. */
   async reconcile(): Promise<void> {
-    const rows = await this.repo.list();
+    // listWithGateway junta o gateway do registry (fonte p/ o router); só a
+    // `config` vai pro Redis — o gateway mora SÓ no registry (tenants.gateway).
+    const rows = await this.repo.listWithGateway();
     await Promise.all(
       rows.map((r) => this.redis.set(RedisKeys.tenantCfg(r.instancia), JSON.stringify(r.config))),
     );
@@ -62,7 +64,7 @@ export class TenantConfigService implements OnApplicationBootstrap, OnModuleDest
 
   /** Tick periódico: só re-hidrata o snapshot em memória (não reescreve o Redis). */
   async rehydrate(): Promise<void> {
-    this.store.hydrate(await this.repo.list());
+    this.store.hydrate(await this.repo.listWithGateway());
   }
 
   private async safeReconcile(): Promise<void> {
