@@ -1,0 +1,247 @@
+# docker-compose.evo-evogo.yml — STACK "EVO + EVOGO" (Docker Desktop / local)
+#
+# Sobe as duas APIs de WhatsApp da Evolution Foundation, lado a lado, num Postgres 17
+# compartilhado (multi-DB) e numa rede isolada:
+#
+#   evolution  → Evolution API  (Node/TypeScript + Baileys)
+#   evogo      → Evolution GO   (Go + whatsmeow, EXIGE licença)
+#
+# Subir:    cp .env.evo-evogo.example .env.evo-evogo   &&  (edite os valores)
+#           docker compose -f docker-compose.evo-evogo.yml --env-file .env.evo-evogo up -d
+# Logs:     docker compose -f docker-compose.evo-evogo.yml --env-file .env.evo-evogo logs -f
+# Derrubar: docker compose -f docker-compose.evo-evogo.yml --env-file .env.evo-evogo down
+#           (apagar TODOS os dados também: ... down -v)
+#
+# Portas expostas SÓ em 127.0.0.1 (localhost).
+#
+# Fluxo de boot (ver depends_on):
+#   postgres (healthy) → db-init cria os 3 DBs → evolution + evogo sobem
+
+name: zpro-evo
+
+services:
+  # ── Postgres 17 compartilhado pelas duas APIs (multi-DB).
+  #    Os 3 DBs (evolution_db, evogo_auth, evogo_users) são criados pelo db-init.
+  postgres:
+    image: postgres:17-alpine
+    container_name: zpro-evo-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?defina PG_PASSWORD no .env.evo-evogo}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=300"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "work_mem=4MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "idle_in_transaction_session_timeout=60000"
+      - "-c"
+      - "synchronous_commit=off"
+      - "-c"
+      - "timezone=America/Sao_Paulo"
+      - "-c"
+      - "log_timezone=America/Sao_Paulo"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${DB_PORT:-18544}:5432"
+    networks:
+      - zpro-evo-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    shm_size: 256mb
+
+  # ── db-init (one-shot): cria os 3 DBs das APIs e sai (restart:"no").
+  #    Idempotente (\gexec create-if-absent) — ver init-db/01-create-databases.sql.
+  db-init:
+    image: postgres:17-alpine
+    container_name: zpro-evo-db-init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${PG_PASSWORD}
+    volumes:
+      - ./init-db/01-create-databases.sql:/init-db.sql:ro
+    entrypoint: ["sh","-c","psql -h postgres -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres} -v ON_ERROR_STOP=1 -f /init-db.sql"]
+    networks:
+      - zpro-evo-net
+    restart: "no"
+
+  # ── Redis — cache da Evolution API (DB 6). O EvoGo NÃO usa Redis.
+  #    noeviction OBRIGATÓRIO: com eviction o Redis descartaria chaves de sessão/fila.
+  redis:
+    image: redis:7-alpine
+    container_name: zpro-evo-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
+    volumes:
+      - redis_data:/data
+    networks:
+      - zpro-evo-net
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ── Evolution API — Node/TS + Baileys, Prisma sobre Postgres.
+  #    Manager embutido: http://127.0.0.1:${EVO_PORT}/manager  (login = AUTHENTICATION_API_KEY)
+  #    SERVER_URL precisa ser a URL como o BROWSER/consumidor enxerga a API: ela entra
+  #    nos links de mídia devolvidos pelos webhooks. Errado aqui = mídia 404 no consumidor.
+  evolution:
+    image: ${EVO_IMAGE}
+    container_name: zpro-evo-evolution
+    environment:
+      SERVER_PORT: 8080
+      SERVER_URL: ${EVO_SERVER_URL:-http://localhost:18080}
+      AUTHENTICATION_API_KEY: ${EVO_GLOBAL_KEY:?defina EVO_GLOBAL_KEY no .env.evo-evogo}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
+      LANGUAGE: ${EVO_LANGUAGE:-pt-BR}
+      DEL_INSTANCE: "false"
+      QRCODE_LIMIT: "30"
+      CONFIG_SESSION_PHONE_CLIENT: ${EVO_SESSION_CLIENT:-Evolution API}
+      CONFIG_SESSION_PHONE_NAME: ${EVO_SESSION_BROWSER:-Chrome}
+      LOG_LEVEL: ${EVO_LOG_LEVEL:-ERROR,WARN,INFO}
+      LOG_BAILEYS: error
+      LOG_COLOR: "true"
+      # Banco (Prisma). Schema próprio `evolution_api` dentro de evolution_db.
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: "postgresql://${POSTGRES_USER:-postgres}:${PG_PASSWORD}@postgres:5432/evolution_db?schema=evolution_api"
+      DATABASE_CONNECTION_CLIENT_NAME: evolution_exchange
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+      DATABASE_SAVE_DATA_LABELS: "true"
+      DATABASE_SAVE_DATA_HISTORIC: "true"
+      # Cache Redis (DB 6). CACHE_LOCAL_ENABLED fica false: os dois juntos duplicam estado.
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: "redis://redis:6379/6"
+      CACHE_REDIS_PREFIX_KEY: "evolution"
+      CACHE_REDIS_TTL: "604800"
+      CACHE_REDIS_SAVE_INSTANCES: "false"
+      CACHE_LOCAL_ENABLED: "false"
+      # Webhook GLOBAL (opcional): vazio = desligado; cada instância pode ter o seu via API.
+      WEBHOOK_GLOBAL_ENABLED: ${EVO_WEBHOOK_GLOBAL_ENABLED:-false}
+      WEBHOOK_GLOBAL_URL: ${EVO_WEBHOOK_GLOBAL_URL:-}
+      WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS: "false"
+      # Integrações desligadas por padrão (ligue só o que for usar).
+      TYPEBOT_ENABLED: "false"
+      CHATWOOT_ENABLED: "false"
+      OPENAI_ENABLED: "false"
+      DIFY_ENABLED: "false"
+      N8N_ENABLED: "false"
+      RABBITMQ_ENABLED: "false"
+      SQS_ENABLED: "false"
+      KAFKA_ENABLED: "false"
+      PUSHER_ENABLED: "false"
+      S3_ENABLED: "false"
+      WEBSOCKET_ENABLED: ${EVO_WEBSOCKET_ENABLED:-false}
+      TELEMETRY_ENABLED: "false"
+      TZ: America/Sao_Paulo
+    volumes:
+      - evolution_instances:/evolution/instances
+    ports:
+      - "127.0.0.1:${EVO_PORT:-18080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    networks:
+      - zpro-evo-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    restart: unless-stopped
+    healthcheck:
+      # Imagem é node:alpine → não tem curl/wget, mas tem `node`. GET / responde 200.
+      test: ["CMD-SHELL", "node -e 'require(\"http\").get(\"http://localhost:8080/\",r=>process.exit(r.statusCode<500?0:1)).on(\"error\",()=>process.exit(1))'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ── Evolution GO — Go + whatsmeow. EXIGE LICENÇA.
+  #    A API responde 503 em tudo até a licença ser ativada.
+  #    `hostname: evogo` é OBRIGATÓRIO: o hardware-id da licença deriva do hostname do
+  #    container; sem fixar, o Docker sorteia um a cada recreate e a licença "vira outra
+  #    máquina" (re-ativação a cada boot).
+  #    1ª vez: ative no Manager UI → http://127.0.0.1:${EVOGO_PORT}/manager/login
+  #    Depois: com EVOLUTION_OPERATOR_EMAIL preenchido (o MESMO e-mail do 1º registro),
+  #    o boot chama /v1/register/auto e re-ativa headless, sem abrir navegador.
+  evogo:
+    image: ${EVOGO_IMAGE}
+    container_name: zpro-evo-evogo
+    hostname: evogo
+    environment:
+      SERVER_PORT: 8082
+      CLIENT_NAME: evolution
+      OS_NAME: ${EVOGO_OS_NAME:-Evolution GO}
+      GLOBAL_API_KEY: ${EVOGO_GLOBAL_KEY:?defina EVOGO_GLOBAL_KEY no .env.evo-evogo}
+      # Dois bancos SEPARADOS (auth = licença/tokens, users = instâncias/sessões).
+      POSTGRES_AUTH_DB: "postgresql://${POSTGRES_USER:-postgres}:${PG_PASSWORD}@postgres:5432/evogo_auth?sslmode=disable"
+      POSTGRES_USERS_DB: "postgresql://${POSTGRES_USER:-postgres}:${PG_PASSWORD}@postgres:5432/evogo_users?sslmode=disable"
+      # false = não persiste o corpo das mensagens (o consumidor já guarda). true engorda o DB.
+      DATABASE_SAVE_MESSAGES: ${EVOGO_SAVE_MESSAGES:-false}
+      # false = não reconecta as instâncias sozinho no boot (quem manda é o consumidor).
+      CONNECT_ON_STARTUP: ${EVOGO_CONNECT_ON_STARTUP:-false}
+      WEBHOOK_FILES: "true"
+      # Webhook GLOBAL (opcional): vazio = desligado.
+      WEBHOOK_URL: ${EVOGO_WEBHOOK_URL:-}
+      AMQP_GLOBAL_ENABLED: "false"
+      MINIO_ENABLED: "false"
+      LOGTYPE: console
+      WADEBUG: ${EVOGO_WADEBUG:-INFO}
+      # Licença: e-mail do 1º registro → re-ativação headless nos boots seguintes.
+      EVOLUTION_OPERATOR_EMAIL: ${EVOLUTION_OPERATOR_EMAIL:-}
+      # Passkey (WebAuthn): só para contas que pedem passkey ao vincular dispositivo.
+      # Tem de ser a URL PÚBLICA desta API, alcançável pelo browser que abre o WhatsApp Web.
+      PASSKEY_PUBLIC_URL: ${EVOGO_PASSKEY_PUBLIC_URL:-}
+      TZ: America/Sao_Paulo
+    ports:
+      - "127.0.0.1:${EVOGO_PORT:-18082}:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
+    networks:
+      - zpro-evo-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    restart: unless-stopped
+    # Sem healthcheck: a imagem é distroless-like (sem curl/wget/node) e, antes da licença
+    # ser ativada, TODA rota responde 503 — um healthcheck marcaria o container unhealthy
+    # justamente no estado em que ele precisa ficar de pé para você ativar a licença.
+
+volumes:
+  pg_data:
+  redis_data:
+  evolution_instances:
+
+networks:
+  zpro-evo-net:
+    driver: bridge

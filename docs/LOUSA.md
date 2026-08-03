@@ -15,11 +15,11 @@ Legenda: ✅ em prod · 🔵 entregue/PR aberto · 📋 plano escrito · ⏳ só
 |---|---|---|
 | **1** | Fundação de escala — Tiering do Redis | ✅ **em prod** |
 | **2** | Contrato + barramento (desacoplamento) | 🟢 **software 4/4 (2.1✅ 2.2✅ 2.3✅ 2.4🔵)** — resta Fase 0 🔒 |
-| 3 | Gateway híbrido (Evolution GO + Cloud API) | ⏳ HLD |
+| 3 | Gateway híbrido (Cloud API) | 🅿️ **ADIADA** (decisão de produto: só Evo GO; broadcast futuro via Evolution rate-limited, plano avançado, controlado pela SHK) |
 | 4 | Engine próprio (Go) + IA plugável | ⏳ HLD |
 | 5 | Migração + descomissionamento do N8N | ⏳ HLD |
 
-**Próximo passo:** mergear o **PR da Fatia 2.4** → a Etapa 2 fecha no software; o que resta é a **Fase 0 🔒** (infra + captura GO). Depois, planejar a **Etapa 3** (gateway híbrido).
+**Próximo passo:** mergear o **PR da Fatia 2.4** → a Etapa 2 fecha no software; o que resta é a **Fase 0 🔒** (infra + captura GO). Cloud API/campanhas **adiadas** — caminho ativo é Evolution GO + o 1:1 com IA (Etapa 4).
 
 ---
 
