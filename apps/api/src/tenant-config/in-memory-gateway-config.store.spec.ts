@@ -38,4 +38,32 @@ describe('InMemoryGatewayConfigStore', () => {
     expect(store.resolveInstanceId('qualquer')).toBeNull();
     expect(store.ownerJid('qualquer')).toBeUndefined();
   });
+
+  describe('gatewayFor', () => {
+    it('hydrate com gateway=go → gatewayFor devolve go', () => {
+      store.hydrate([{ instancia: 'Shk', gateway: 'go', config: {} }]);
+      expect(store.gatewayFor('Shk')).toBe('go');
+    });
+
+    it('desconhecido → node por default', () => {
+      store.hydrate([{ instancia: 'Shk', gateway: 'go', config: {} }]);
+      expect(store.gatewayFor('Desconhecido')).toBe('node');
+    });
+
+    it('gateway inválido (nem node nem go) cai no default node', () => {
+      store.hydrate([{ instancia: 'X', gateway: 'baileys', config: {} }]);
+      expect(store.gatewayFor('X')).toBe('node');
+    });
+
+    it('gateway ausente na linha → node por default', () => {
+      store.hydrate([{ instancia: 'Y', config: {} }]);
+      expect(store.gatewayFor('Y')).toBe('node');
+    });
+
+    it('re-hydrate([]) esvazia o mapa → volta ao default node', () => {
+      store.hydrate([{ instancia: 'Shk', gateway: 'go', config: {} }]);
+      store.hydrate([]);
+      expect(store.gatewayFor('Shk')).toBe('node');
+    });
+  });
 });

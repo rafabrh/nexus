@@ -2,7 +2,7 @@
 
 > Snapshot vivo do programa. Atualizado a cada fatia entregue. Fonte detalhada: `docs/superpowers/plans/2026-08-01-nexus-programa-escala-roadmap.md` (CRONOGRAMA VIVO).
 >
-> **Última atualização:** 2026-08-03
+> **Última atualização:** 2026-08-03 (Etapa 2 — software 4/4 completo)
 > **Branch de prod:** `worktree-macos-reskin` (deploy EasyPanel `siteshkgroup`)
 
 Legenda: ✅ em prod · 🔵 entregue/PR aberto · 📋 plano escrito · ⏳ só HLD · 🔒 portão manual do Rafa
@@ -14,12 +14,12 @@ Legenda: ✅ em prod · 🔵 entregue/PR aberto · 📋 plano escrito · ⏳ só
 | Etapa | Título | Estado |
 |---|---|---|
 | **1** | Fundação de escala — Tiering do Redis | ✅ **em prod** |
-| **2** | Contrato + barramento (desacoplamento) | 🔵 **em andamento (2.1✅ 2.2✅ 2.3🔵 — falta 2.4)** |
+| **2** | Contrato + barramento (desacoplamento) | 🟢 **software 4/4 (2.1✅ 2.2✅ 2.3✅ 2.4🔵)** — resta Fase 0 🔒 |
 | 3 | Gateway híbrido (Evolution GO + Cloud API) | ⏳ HLD |
 | 4 | Engine próprio (Go) + IA plugável | ⏳ HLD |
 | 5 | Migração + descomissionamento do N8N | ⏳ HLD |
 
-**Próximo passo:** mergear o **PR da Fatia 2.3** → depois planejar/executar a **Fatia 2.4** (`EvolutionClient` port node/go).
+**Próximo passo:** mergear o **PR da Fatia 2.4** → a Etapa 2 fecha no software; o que resta é a **Fase 0 🔒** (infra + captura GO). Depois, planejar a **Etapa 3** (gateway híbrido).
 
 ---
 
@@ -44,10 +44,9 @@ Migration `0005` (`tenant_engine_config` + `gateway`/`transport` no registry, D7
 
 ---
 
-## 📋 Próximo
-
-### Etapa 2 · Fatia 2.4 — `EvolutionClient` port + 2 adapters — ⏳ (a planejar)
-Port de saída com adapters `node` (client atual) e `go` (REST GO), selecionado por `tenants.gateway`. Testável agora; envio real GO 🔒.
+### Etapa 2 · Fatia 2.4 — `EvolutionClient` port + 2 adapters — 🔵 PR ABERTO
+Plano: `docs/superpowers/plans/2026-08-03-evolution-client-port.md` (subagent-driven, 4 implementers).
+Port `EvolutionGateway` (superfície extraída) + `EvolutionNodeAdapter` (client atual 1:1) + `EvolutionGoAdapter` (@provisional, lança até Fase 0) + **`EvolutionClient` vira router** (mesmo token, delega por `gatewayFor(instancia)` do snapshot da 2.3 → **consumidores inalterados**). Auditoria `/hm-engineer`: **0 crítico/alto, 1 médio + 2 baixos (todos gated/Fase 0)** → SHIPPA. **404 testes apps/api + 34 shared, 0 regressão.** Fecha a **Etapa 2 no software 🟢**.
 
 ---
 

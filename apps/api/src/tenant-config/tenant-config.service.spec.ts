@@ -6,14 +6,14 @@ import type { InMemoryGatewayConfigStore } from './in-memory-gateway-config.stor
 import type { ConfigService } from '@nestjs/config';
 
 const ROWS = [
-  { instancia: 'Shkgroup', config: { instanceId: 'uuid-1', ownerJid: '55@x' }, cfgVersion: 1, updatedAt: new Date() },
-  { instancia: 'Geotech', config: { instanceId: 'uuid-2' }, cfgVersion: 1, updatedAt: new Date() },
+  { instancia: 'Shkgroup', gateway: 'go', config: { instanceId: 'uuid-1', ownerJid: '55@x' } },
+  { instancia: 'Geotech', gateway: 'node', config: { instanceId: 'uuid-2' } },
 ];
 
 function make(opts: { list?: any[]; listImpl?: () => Promise<any[]>; reconcileSec?: number } = {}) {
   const repo = {
     upsert: vi.fn().mockResolvedValue(undefined),
-    list: vi.fn(opts.listImpl ?? (async () => opts.list ?? ROWS)),
+    listWithGateway: vi.fn(opts.listImpl ?? (async () => opts.list ?? ROWS)),
   } as unknown as TenantEngineConfigRepository;
   const redis = { set: vi.fn().mockResolvedValue('OK') };
   const store = { hydrate: vi.fn() } as unknown as InMemoryGatewayConfigStore;

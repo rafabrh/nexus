@@ -1,7 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { eq, sql } from 'drizzle-orm';
 import { DB, type Database } from '../core/db/db.module';
-import { tenantEngineConfig, type TenantEngineConfigRow } from '../core/db/schema';
+import { tenants, tenantEngineConfig, type TenantEngineConfigRow } from '../core/db/schema';
 import type { TenantEngineConfig } from './tenant-engine-config.types';
 
 /**
@@ -22,6 +22,30 @@ export class TenantEngineConfigRepository {
 
   async list(): Promise<TenantEngineConfigRow[]> {
     return this.db.select().from(tenantEngineConfig);
+  }
+
+  /**
+   * Junta a config (`tenant_engine_config`) ao `gateway` do registry (`tenants`),
+   * fonte ÚNICA do roteamento (D7). LEFT JOIN: tenants SEM config vêm com
+   * `config=null` → normaliza p/ `{}` (tenant Node puro). Alimenta a hidratação
+   * do snapshot com o gateway por instância (fonte p/ o router de saída).
+   */
+  async listWithGateway(): Promise<
+    { instancia: string; gateway: string; config: TenantEngineConfig }[]
+  > {
+    const rows = await this.db
+      .select({
+        instancia: tenants.instancia,
+        gateway: tenants.gateway,
+        config: tenantEngineConfig.config,
+      })
+      .from(tenants)
+      .leftJoin(tenantEngineConfig, eq(tenants.instancia, tenantEngineConfig.instancia));
+    return rows.map((r) => ({
+      instancia: r.instancia,
+      gateway: r.gateway,
+      config: (r.config ?? {}) as TenantEngineConfig,
+    }));
   }
 
   /**
