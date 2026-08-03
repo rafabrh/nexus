@@ -1,91 +1,73 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EvolutionClient } from './evolution.client';
+import type { EvolutionGateway } from './evolution-gateway.port';
+import type { InMemoryGatewayConfigStore } from '../tenant-config/in-memory-gateway-config.store';
 
 /**
- * probeState collapses the raw connectionState call into exists/absent/unknown.
- * The distinction is safety-critical: `unknown` (transient) must never be read
- * as `absent`, which would let callers destroy a live instance.
+ * O `EvolutionClient` é um ROUTER: por instância (1º argumento de todo método),
+ * resolve o gateway do tenant (`gatewayFor`) e delega ao adapter `node` ou `go`
+ * com os MESMOS argumentos. Os consumidores injetam o mesmo token e não mudam.
  */
-function client() {
-  const config = { get: vi.fn((_k: string, d?: string) => d ?? '') };
-  return new EvolutionClient(config as never);
-}
+describe('EvolutionClient (router)', () => {
+  let node: Record<string, ReturnType<typeof vi.fn>>;
+  let go: Record<string, ReturnType<typeof vi.fn>>;
+  let gateways: { gatewayFor: ReturnType<typeof vi.fn> };
+  let router: EvolutionClient;
 
-describe('EvolutionClient.probeState', () => {
-  it('maps a live instance to { exists, state }', async () => {
-    const c = client();
-    vi.spyOn(c, 'getConnectionState').mockResolvedValue({ instance: { state: 'open' } });
-    expect(await c.probeState('x')).toEqual({ status: 'exists', state: 'open' });
-  });
-
-  it('falls back to "close" when state is missing', async () => {
-    const c = client();
-    vi.spyOn(c, 'getConnectionState').mockResolvedValue({ instance: {} });
-    expect(await c.probeState('x')).toEqual({ status: 'exists', state: 'close' });
-  });
-
-  it('maps a 404 to absent', async () => {
-    const c = client();
-    vi.spyOn(c, 'getConnectionState').mockRejectedValue(
-      new Error('Evolution API 404: The "x" instance does not exist'),
+  beforeEach(() => {
+    node = {
+      sendTextMessage: vi.fn().mockResolvedValue({ from: 'node' }),
+      sendMedia: vi.fn().mockResolvedValue({ from: 'node' }),
+      getConnectionState: vi.fn().mockResolvedValue({ from: 'node' }),
+    };
+    go = {
+      sendTextMessage: vi.fn().mockResolvedValue({ from: 'go' }),
+      sendMedia: vi.fn().mockResolvedValue({ from: 'go' }),
+      getConnectionState: vi.fn().mockResolvedValue({ from: 'go' }),
+    };
+    gateways = { gatewayFor: vi.fn() };
+    router = new EvolutionClient(
+      node as unknown as EvolutionGateway,
+      go as unknown as EvolutionGateway,
+      gateways as unknown as InMemoryGatewayConfigStore,
     );
-    expect(await c.probeState('x')).toEqual({ status: 'absent' });
   });
 
-  it('maps a transient failure to unknown (never absent)', async () => {
-    const c = client();
-    vi.spyOn(c, 'getConnectionState').mockRejectedValue(new Error('fetch failed: ETIMEDOUT'));
-    expect(await c.probeState('x')).toEqual({ status: 'unknown' });
-  });
-});
+  it('roteia p/ o adapter node quando gatewayFor retorna "node", com os MESMOS args', async () => {
+    gateways.gatewayFor.mockReturnValue('node');
 
-/**
- * sendContact/sendLocation montam o body no shape que a Evolution v2 espera. O
- * ponto sensível do contato é o `wuid`: precisa ser SÓ os dígitos do telefone
- * (a Evolution recusa o vCard se vier com máscara). Estes testes travam o
- * endpoint e o corpo — o risco que sinalizamos ao introduzir os endpoints.
- */
-describe('EvolutionClient.sendContact', () => {
-  it('posta em /message/sendContact com wuid só de dígitos', async () => {
-    const c = client();
-    const req = vi.spyOn(c as unknown as { request: () => Promise<unknown> }, 'request').mockResolvedValue({});
-    await c.sendContact('inst', '5511@s.whatsapp.net', {
-      fullName: 'João Silva',
-      phoneNumber: '+55 (11) 99999-9999',
-      organization: 'ACME',
-      email: 'j@acme.com',
-    });
-    expect(req).toHaveBeenCalledWith('POST', '/message/sendContact/inst', {
-      number: '5511@s.whatsapp.net',
-      contact: [
-        {
-          fullName: 'João Silva',
-          wuid: '5511999999999',
-          phoneNumber: '+55 (11) 99999-9999',
-          organization: 'ACME',
-          email: 'j@acme.com',
-        },
-      ],
-    });
-  });
-});
+    await router.sendTextMessage('Shk', 'jid', 'oi');
 
-describe('EvolutionClient.sendLocation', () => {
-  it('posta em /message/sendLocation com as coordenadas e rótulos', async () => {
-    const c = client();
-    const req = vi.spyOn(c as unknown as { request: () => Promise<unknown> }, 'request').mockResolvedValue({});
-    await c.sendLocation('inst', '5511@s.whatsapp.net', {
-      latitude: -23.5505,
-      longitude: -46.6333,
-      name: 'Escritório',
-      address: 'Av. Paulista, 1000',
-    });
-    expect(req).toHaveBeenCalledWith('POST', '/message/sendLocation/inst', {
-      number: '5511@s.whatsapp.net',
-      name: 'Escritório',
-      address: 'Av. Paulista, 1000',
-      latitude: -23.5505,
-      longitude: -46.6333,
-    });
+    expect(node.sendTextMessage).toHaveBeenCalledWith('Shk', 'jid', 'oi', undefined);
+    expect(go.sendTextMessage).not.toHaveBeenCalled();
+  });
+
+  it('roteia p/ o adapter go quando gatewayFor retorna "go", sem tocar no node', async () => {
+    gateways.gatewayFor.mockReturnValue('go');
+
+    await router.sendTextMessage('Shk', 'jid', 'oi');
+
+    expect(go.sendTextMessage).toHaveBeenCalledWith('Shk', 'jid', 'oi', undefined);
+    expect(node.sendTextMessage).not.toHaveBeenCalled();
+  });
+
+  it('decide pelo 1º argumento (instancia): gatewayFor recebe a instância', async () => {
+    gateways.gatewayFor.mockReturnValue('node');
+
+    await router.getConnectionState('Geotech');
+
+    expect(gateways.gatewayFor).toHaveBeenCalledWith('Geotech');
+    expect(node.getConnectionState).toHaveBeenCalledWith('Geotech');
+  });
+
+  it('roteia métodos com mais args (sendMedia) preservando o objeto de opts', async () => {
+    gateways.gatewayFor.mockReturnValue('node');
+    const opts = { mediatype: 'image' as const, media: 'base64data' };
+
+    await router.sendMedia('Shk', 'jid', opts);
+
+    expect(gateways.gatewayFor).toHaveBeenCalledWith('Shk');
+    expect(node.sendMedia).toHaveBeenCalledWith('Shk', 'jid', opts);
+    expect(go.sendMedia).not.toHaveBeenCalled();
   });
 });

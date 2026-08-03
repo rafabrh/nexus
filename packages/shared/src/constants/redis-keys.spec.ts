@@ -28,6 +28,12 @@ describe('RedisKeys.n8nForwardDedup', () => {
   });
 });
 
+describe('RedisKeys.tenantCfg', () => {
+  it('namespaceia a config por instância (write-through §4.6)', () => {
+    expect(RedisKeys.tenantCfg('Shkgroup')).toBe('tenant:cfg:Shkgroup');
+  });
+});
+
 describe('RedisKeys.contact', () => {
   it('namespaces the contact key per instance', () => {
     expect(RedisKeys.contact('shk', '5511999999999')).toBe(

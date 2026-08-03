@@ -24,6 +24,8 @@ import { RemindersModule } from './reminders/reminders.module';
 import { QuickRepliesModule } from './quick-replies/quick-replies.module';
 import { FunnelModule } from './funnel/funnel.module';
 import { MediaModule } from './media/media.module';
+import { QueueModule } from './queue/queue.module';
+import { TenantConfigModule } from './tenant-config/tenant-config.module';
 import { validate } from './core/config/app.config';
 
 @Module({
@@ -60,6 +62,12 @@ import { validate } from './core/config/app.config';
     QuickRepliesModule,
     FunnelModule,
     MediaModule,
+    // Config store por tenant (Etapa 2 · Fatia 2.3). Sempre-on: reconcile no boot
+    // espelha Postgres→Redis e aquece o snapshot em memória, independe do consumer.
+    TenantConfigModule,
+    // Consumer RabbitMQ (Etapa 2). GATED: sobe vazio até QUEUE_CONSUMER_ENABLED
+    // + RABBITMQ_URL — não afeta o boot atual sem broker.
+    QueueModule.register(),
   ],
   providers: [
     // Global rate limiting. Without this guard the @Throttle decorators (e.g.
