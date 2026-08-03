@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { EvolutionClient } from './evolution.client';
+import { EvolutionNodeAdapter } from './evolution-node.adapter';
 
 /**
  * probeState collapses the raw connectionState call into exists/absent/unknown.
@@ -8,10 +8,10 @@ import { EvolutionClient } from './evolution.client';
  */
 function client() {
   const config = { get: vi.fn((_k: string, d?: string) => d ?? '') };
-  return new EvolutionClient(config as never);
+  return new EvolutionNodeAdapter(config as never);
 }
 
-describe('EvolutionClient.probeState', () => {
+describe('EvolutionNodeAdapter.probeState', () => {
   it('maps a live instance to { exists, state }', async () => {
     const c = client();
     vi.spyOn(c, 'getConnectionState').mockResolvedValue({ instance: { state: 'open' } });
@@ -45,7 +45,7 @@ describe('EvolutionClient.probeState', () => {
  * (a Evolution recusa o vCard se vier com máscara). Estes testes travam o
  * endpoint e o corpo — o risco que sinalizamos ao introduzir os endpoints.
  */
-describe('EvolutionClient.sendContact', () => {
+describe('EvolutionNodeAdapter.sendContact', () => {
   it('posta em /message/sendContact com wuid só de dígitos', async () => {
     const c = client();
     const req = vi.spyOn(c as unknown as { request: () => Promise<unknown> }, 'request').mockResolvedValue({});
@@ -70,7 +70,7 @@ describe('EvolutionClient.sendContact', () => {
   });
 });
 
-describe('EvolutionClient.sendLocation', () => {
+describe('EvolutionNodeAdapter.sendLocation', () => {
   it('posta em /message/sendLocation com as coordenadas e rótulos', async () => {
     const c = client();
     const req = vi.spyOn(c as unknown as { request: () => Promise<unknown> }, 'request').mockResolvedValue({});
