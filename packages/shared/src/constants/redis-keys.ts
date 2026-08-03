@@ -63,6 +63,12 @@ export const RedisKeys = {
   // memória a partir do Postgres (fonte de verdade), não desta chave.
   tenantCfg: (inst: string) => `tenant:cfg:${inst}`,
 
+  // Cache do lookup de tenant no HOT PATH do webhook (TenantRepository.getCached,
+  // TTL curto ~60s). Evita 2 queries Postgres por evento (§8 / gate 2.2 #4).
+  // Invalidado nas mutações de tenant (register/setActive/setN8nWebhookUrl/users/
+  // updateState). NÃO usado pelas guardas cross-tenant (essas leem o DB fresco).
+  tenantCache: (inst: string) => `tenant:cache:${inst}`,
+
   // ---- Contato (namespaced por instancia — BFF popula e le a sua chave) ----
   // O N8N escreve a chave global `contact:{phone}`, mas o BFF NAO depende dela:
   // mantem a sua propria chave `contact:{inst}:{phone}` para isolar PII por tenant.

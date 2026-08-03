@@ -50,7 +50,10 @@ export class WebhookService {
     // The Evolution apikey is shared across instances, so a valid signature is
     // not enough: confirm the instance belongs to a known tenant before writing
     // anything to Redis. Otherwise a stray/foreign instance could seed data.
-    const tenant = await this.tenants.get(instanceName);
+    // Hot path (1 lookup por evento) → getCached: cache Redis TTL curto, invalidado
+    // nas mutações de tenant. Só existência + n8nWebhookUrl são lidos daqui, ambos
+    // estáveis; connectionState (mutável) NÃO é lido no hot path.
+    const tenant = await this.tenants.getCached(instanceName);
     if (!tenant) {
       this.logger.warn(`webhook.unknown-instance: ${instanceName} (ignorado)`);
       return;

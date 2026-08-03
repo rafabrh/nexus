@@ -18,7 +18,12 @@ function makeDeps(tenantGet: () => Promise<unknown>) {
   } as any;
   const publisher = { publish: vi.fn(async () => undefined) } as any;
   const index = { addJid: vi.fn(async () => undefined) } as any;
-  const tenants = { updateState: vi.fn(async () => undefined), get: vi.fn(tenantGet) } as any;
+  // Hot path usa getCached; get fica p/ caminhos frescos (guardas). Ambos mockados.
+  const tenants = {
+    updateState: vi.fn(async () => undefined),
+    get: vi.fn(tenantGet),
+    getCached: vi.fn(tenantGet),
+  } as any;
   const forwarder = { forward: vi.fn(async () => undefined) } as any;
   return { redis, publisher, index, tenants, forwarder };
 }
@@ -43,7 +48,7 @@ describe('WebhookService indexes processed conversations', () => {
 
     await svc.processEvolutionEvent(msgUpsert());
 
-    expect(d.tenants.get).toHaveBeenCalledWith('shk');
+    expect(d.tenants.getCached).toHaveBeenCalledWith('shk');
     expect(d.redis.rpush).toHaveBeenCalled();
     expect(d.index.addJid).toHaveBeenCalledWith('shk', '5511999@s.whatsapp.net');
   });
@@ -56,7 +61,7 @@ describe('WebhookService rejects unknown instances', () => {
 
     await svc.processEvolutionEvent(msgUpsert({}, 'ghost'));
 
-    expect(d.tenants.get).toHaveBeenCalledWith('ghost');
+    expect(d.tenants.getCached).toHaveBeenCalledWith('ghost');
     expect(d.redis.rpush).not.toHaveBeenCalled();
     expect(d.redis.set).not.toHaveBeenCalled();
     expect(d.index.addJid).not.toHaveBeenCalled();
