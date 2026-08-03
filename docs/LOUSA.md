@@ -2,7 +2,7 @@
 
 > Snapshot vivo do programa. Atualizado a cada fatia entregue. Fonte detalhada: `docs/superpowers/plans/2026-08-01-nexus-programa-escala-roadmap.md` (CRONOGRAMA VIVO).
 >
-> **Última atualização:** 2026-08-02
+> **Última atualização:** 2026-08-03
 > **Branch de prod:** `worktree-macos-reskin` (deploy EasyPanel `siteshkgroup`)
 
 Legenda: ✅ em prod · 🔵 entregue/PR aberto · 📋 plano escrito · ⏳ só HLD · 🔒 portão manual do Rafa
@@ -14,12 +14,12 @@ Legenda: ✅ em prod · 🔵 entregue/PR aberto · 📋 plano escrito · ⏳ só
 | Etapa | Título | Estado |
 |---|---|---|
 | **1** | Fundação de escala — Tiering do Redis | ✅ **em prod** |
-| **2** | Contrato + barramento (desacoplamento) | 🔵 **em andamento (2.1✅ 2.2🔵 2.3📋)** |
+| **2** | Contrato + barramento (desacoplamento) | 🔵 **em andamento (2.1✅ 2.2✅ 2.3🔵 — falta 2.4)** |
 | 3 | Gateway híbrido (Evolution GO + Cloud API) | ⏳ HLD |
 | 4 | Engine próprio (Go) + IA plugável | ⏳ HLD |
 | 5 | Migração + descomissionamento do N8N | ⏳ HLD |
 
-**Próximo passo:** executar a **Fatia 2.3** (plano pronto) — ou mergear antes o **PR #22** (Fatia 2.2).
+**Próximo passo:** mergear o **PR da Fatia 2.3** → depois planejar/executar a **Fatia 2.4** (`EvolutionClient` port node/go).
 
 ---
 
@@ -33,20 +33,20 @@ Archive do `chathistory` no Postgres (write-behind) + LTRIM atômico (Lua, anti-
 Contrato `NexusEventV1` + `normalizeGatewayEvent(raw, ctx)` (função pura, Node=identidade, GO=mapeamento whatsmeow→v1) + fixtures douradas + `RedisKeys.evtDedup/evtCount`. 33 testes verdes.
 ⚠️ Fixtures GO `@provisional` até captura de payload real na Fase 0.
 
-### Etapa 2 · Fatia 2.2 — Módulo `queue/` (consumer RabbitMQ) — 🔵 PR #22 ABERTO
+### Etapa 2 · Fatia 2.2 — Módulo `queue/` (consumer RabbitMQ) — ✅ EM PROD (`98d06e4`, PR #22)
 `apps/api/src/queue/`: `EventDedupService` (dedup por tipo, SET NX 48h) + `NormalizeContextProvider` (Node completo; seam GO pronto) + `EvolutionQueueConsumer` (`@RabbitSubscribe nexus.panel.events` → normalize→dedup→`processEvolutionEvent`, nack→DLX) + `QueueModule` **gated** por `QUEUE_CONSUMER_ENABLED`+`RABBITMQ_URL`. Boundary HTTP também normaliza (fallback `v1 ?? payload`, sem regressão).
-**Auditoria `/hm-engineer`** (1 crítico, 3 altos, 2 médios, 1 baixo) → **4 corrigidos no PR**: release do dedup na falha (anti-perda), guard de `msgId` vazio, `nodeNormalizeContext` movido p/ shared (desacoplamento), `evtCount` (observabilidade). **361 testes verdes, lint ok.**
+**Auditoria `/hm-engineer`** (1 crítico, 3 altos, 2 médios, 1 baixo) → **4 corrigidos**: release do dedup na falha (anti-perda), guard de `msgId` vazio, `nodeNormalizeContext` movido p/ shared, `evtCount` (observabilidade). **361 testes verdes.**
+
+### Etapa 2 · Fatia 2.3 — Config store por tenant — 🔵 PR ABERTO
+Plano: `docs/superpowers/plans/2026-08-02-tenant-config-store.md` (8 tasks TDD).
+Migration `0005` (`tenant_engine_config` + `gateway`/`transport` no registry, D7) + `RedisKeys.tenantCfg` + `TenantEngineConfigRepository` + **`InMemoryGatewayConfigStore`** (impl SÍNCRONA) + `TenantConfigService` (write-through Redis + reconcile boot/periódico) + `TenantConfigModule` (sempre-on) + **seam GO cabeado** no QueueModule → o branch GO do normalizer resolve `instanceId→instancia` e `ownerJid` + seed SQL. **Decisão-chave:** seam é **síncrono** (normalizer puro) → snapshot em memória hidratado do Postgres (não I/O por evento). Finding #3 (shape) e ativação seguem gate de Fase 0. **376 testes apps/api + 34 shared, lint ok.**
+**Destrava:** Fatia 2.4 (`EvolutionClient` port por `tenant.gateway`) + engine GO-native (lê Redis).
 
 ---
 
-## 📋 Planejado (pronto p/ executar)
+## 📋 Próximo
 
-### Etapa 2 · Fatia 2.3 — Config store por tenant — 📋 PLANO ESCRITO
-Plano: `docs/superpowers/plans/2026-08-02-tenant-config-store.md` (8 tasks TDD).
-`tenant_engine_config` (Postgres, fonte de verdade) + `gateway`/`transport` no registry (D7) + write-through Redis `tenant:cfg:*` + reconcile boot/periódico + **`InMemoryGatewayConfigStore`** que **cabeia o seam GO** da 2.2 (resolve `instanceId→instancia` e `ownerJid`). Decisão-chave: seam é **síncrono** (normalizer puro) → snapshot em memória hidratado do Postgres.
-**Destrava:** Fatia 2.4 (`EvolutionClient` port por `tenant.gateway`) + engine GO-native (lê Redis).
-
-### Etapa 2 · Fatia 2.4 — `EvolutionClient` port + 2 adapters — ⏳
+### Etapa 2 · Fatia 2.4 — `EvolutionClient` port + 2 adapters — ⏳ (a planejar)
 Port de saída com adapters `node` (client atual) e `go` (REST GO), selecionado por `tenants.gateway`. Testável agora; envio real GO 🔒.
 
 ---
