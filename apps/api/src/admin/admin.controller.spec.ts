@@ -14,6 +14,7 @@ function makeController() {
     adoptInstance: vi.fn(),
     addUser: vi.fn(),
     removeUser: vi.fn(),
+    changeUserEmail: vi.fn(),
   };
   const controller = new AdminController(tenants as unknown as TenantService);
   return { controller, tenants };
@@ -93,6 +94,23 @@ describe('AdminController', () => {
     const result = await controller.removeUser('shk', 'op@shk.com');
 
     expect(tenants.removeUser).toHaveBeenCalledWith('shk', 'op@shk.com');
+    expect(result).toBe(entry);
+  });
+
+  it('changeUserEmail forwards instancia + old email + new email to the service', async () => {
+    const { controller, tenants } = makeController();
+    const entry = { instancia: 'shk' };
+    tenants.changeUserEmail.mockResolvedValue(entry);
+
+    const result = await controller.changeUserEmail('shk', 'old@shk.com', {
+      newEmail: 'novo@shk.com',
+    });
+
+    expect(tenants.changeUserEmail).toHaveBeenCalledWith(
+      'shk',
+      'old@shk.com',
+      'novo@shk.com',
+    );
     expect(result).toBe(entry);
   });
 });

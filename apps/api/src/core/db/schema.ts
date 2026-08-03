@@ -8,6 +8,7 @@ import {
   uniqueIndex,
   index,
   primaryKey,
+  bigserial,
 } from 'drizzle-orm/pg-core';
 
 /**
@@ -150,6 +151,38 @@ export const conversations = pgTable(
     byTenantHot: index('ix_conv_tenant_hot').on(t.instancia, t.isHot),
   }),
 );
+
+// ---- Messages (projeção durável/archive do chathistory Redis; N8N+BFF escrevem o Redis) ----
+// Fonte quente = lista Redis chathistory:{inst}-{phone}; esta tabela é o arquivo
+// frio COMPLETO. Dedup = (instancia, jid, msgId). Ordenação/paginação = `seq`
+// (bigserial, ordem de INSERÇÃO), NÃO `ts` (nullable). O `seq` só é cronológico
+// se o BACKFILL preceder o archive incremental — garantido pelo runbook.
+// Cold history NÃO rastreia ACK/status ao vivo (YAGNI) — status vem da leitura quente.
+export const messages = pgTable(
+  'messages',
+  {
+    seq: bigserial('seq', { mode: 'number' }).notNull(),
+    instancia: text('instancia').notNull(),
+    jid: text('jid').notNull(),
+    msgId: text('msg_id').notNull(),
+    fromMe: boolean('from_me').notNull().default(false),
+    type: text('type'),
+    content: text('content'),
+    mediaKind: text('media_kind'),
+    mediaId: text('media_id'),
+    mediaMimetype: text('media_mimetype'),
+    quoted: jsonb('quoted').$type<{ id: string; preview: string; fromMe: boolean } | null>(),
+    ts: timestamp('ts', { withTimezone: true }),
+    raw: jsonb('raw').$type<unknown>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.instancia, t.jid, t.msgId] }),
+    byConversationSeq: index('ix_msg_conv_seq').on(t.instancia, t.jid, t.seq),
+  }),
+);
+
+export type MessageRow = typeof messages.$inferSelect;
 
 export type TenantRow = typeof tenants.$inferSelect;
 export type TenantUserRow = typeof tenantUsers.$inferSelect;

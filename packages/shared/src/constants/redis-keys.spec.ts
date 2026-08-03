@@ -44,4 +44,16 @@ describe('RedisKeys.contact', () => {
     expect(keyB).toBe('contact:tenantB:5511999999999');
     expect(keyA).not.toBe(keyB);
   });
+
+  it('evtDedup chaveia por instancia:event:msgId', () => {
+    expect(RedisKeys.evtDedup('shk', 'messages.upsert', 'WAMID1')).toBe(
+      'evt:dedup:shk:messages.upsert:WAMID1',
+    );
+  });
+
+  it('evtCount chaveia por fonte:instancia:event', () => {
+    expect(RedisKeys.evtCount('go', 'shk', 'messages.upsert')).toBe(
+      'evt:count:go:shk:messages.upsert',
+    );
+  });
 });

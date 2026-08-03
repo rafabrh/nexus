@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { KeyspaceListener } from './keyspace.listener';
 import { EventTranslator } from './event.translator';
+import type { MessageArchiveService } from '../conversation/message-archive.service';
 
 /**
  * Integration test for the N8N -> panel realtime bridge.
@@ -33,6 +34,12 @@ function makeRedis(db = 0) {
   return { redis, subscriber, handlers };
 }
 
+function makeArchive(): MessageArchiveService {
+  return {
+    archiveTailCoalesced: vi.fn(async () => undefined),
+  } as unknown as MessageArchiveService;
+}
+
 /** Fires one keyspace notification through the subscriber's pmessage handler. */
 async function emit(
   handlers: Record<string, (...args: any[]) => unknown>,
@@ -51,11 +58,13 @@ describe('KeyspaceListener — N8N write -> live UI event', () => {
     const { redis, handlers } = makeRedis();
     const publisher = { publish: vi.fn(async () => undefined) } as any;
     const projection = { project: vi.fn(async () => undefined) } as any;
+    const archive = makeArchive();
     const listener = new KeyspaceListener(
       redis as any,
       new EventTranslator(redis as any),
       publisher,
       projection,
+      archive,
     );
 
     await listener.onModuleInit();
@@ -78,11 +87,13 @@ describe('KeyspaceListener — N8N write -> live UI event', () => {
     redis.get.mockResolvedValue('S3'); // translator reads the new stage back
     const publisher = { publish: vi.fn(async () => undefined) } as any;
     const projection = { project: vi.fn(async () => undefined) } as any;
+    const archive = makeArchive();
     const listener = new KeyspaceListener(
       redis as any,
       new EventTranslator(redis as any),
       publisher,
       projection,
+      archive,
     );
 
     await listener.onModuleInit();
@@ -100,11 +111,13 @@ describe('KeyspaceListener — N8N write -> live UI event', () => {
     const { redis, handlers } = makeRedis();
     const publisher = { publish: vi.fn(async () => undefined) } as any;
     const projection = { project: vi.fn(async () => undefined) } as any;
+    const archive = makeArchive();
     const listener = new KeyspaceListener(
       redis as any,
       new EventTranslator(redis as any),
       publisher,
       projection,
+      archive,
     );
 
     await listener.onModuleInit();
@@ -116,11 +129,13 @@ describe('KeyspaceListener — N8N write -> live UI event', () => {
 
   it('subscribes on the connection DB index, not a hardcoded @0', async () => {
     const { redis, subscriber } = makeRedis(3);
+    const archive = makeArchive();
     const listener = new KeyspaceListener(
       redis as any,
       new EventTranslator(redis as any),
       { publish: vi.fn() } as any,
       { project: vi.fn() } as any,
+      archive,
     );
 
     await listener.onModuleInit();
@@ -128,5 +143,75 @@ describe('KeyspaceListener — N8N write -> live UI event', () => {
     const patterns = subscriber.psubscribe.mock.calls.map((c) => c[0]);
     expect(patterns).toContain('__keyspace@3__:chathistory:*');
     expect(patterns.every((p: string) => p.startsWith('__keyspace@3__:'))).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // Archive write-behind wiring (Task 5)
+  // -------------------------------------------------------------------------
+
+  it('dispara archiveTailCoalesced no message.received (fire-and-forget)', async () => {
+    const { redis, handlers } = makeRedis();
+    const publisher = { publish: vi.fn(async () => undefined) } as any;
+    const projection = { project: vi.fn(async () => undefined) } as any;
+    const archive = makeArchive();
+    const listener = new KeyspaceListener(
+      redis as any,
+      new EventTranslator(redis as any),
+      publisher,
+      projection,
+      archive,
+    );
+
+    await listener.onModuleInit();
+    await emit(handlers, 'chathistory:shk-5511999@s.whatsapp.net', 'rpush');
+
+    // Fire-and-forget: flush microtasks so the void promise has a chance to schedule.
+    await new Promise((r) => setImmediate(r));
+
+    expect(archive.archiveTailCoalesced).toHaveBeenCalledWith('shk', '5511999@s.whatsapp.net');
+  });
+
+  it('NÃO dispara archiveTailCoalesced em evento que não é message.received', async () => {
+    const { redis, handlers } = makeRedis();
+    redis.get.mockResolvedValue('S3');
+    const publisher = { publish: vi.fn(async () => undefined) } as any;
+    const projection = { project: vi.fn(async () => undefined) } as any;
+    const archive = makeArchive();
+    const listener = new KeyspaceListener(
+      redis as any,
+      new EventTranslator(redis as any),
+      publisher,
+      projection,
+      archive,
+    );
+
+    await listener.onModuleInit();
+    await emit(handlers, 'chat:shk:5511999@s.whatsapp.net:followup_step', 'set');
+
+    await new Promise((r) => setImmediate(r));
+
+    expect(archive.archiveTailCoalesced).not.toHaveBeenCalled();
+  });
+
+  it('NÃO dispara archiveTailCoalesced quando o evento não tem instancia/jid', async () => {
+    const { redis, handlers } = makeRedis();
+    const publisher = { publish: vi.fn(async () => undefined) } as any;
+    const projection = { project: vi.fn(async () => undefined) } as any;
+    const archive = makeArchive();
+    const listener = new KeyspaceListener(
+      redis as any,
+      new EventTranslator(redis as any),
+      publisher,
+      projection,
+      archive,
+    );
+
+    await listener.onModuleInit();
+    // An unmapped event returns null from translator — no publish, no archive.
+    await emit(handlers, 'chathistory:shk-5511999@s.whatsapp.net', 'get');
+
+    await new Promise((r) => setImmediate(r));
+
+    expect(archive.archiveTailCoalesced).not.toHaveBeenCalled();
   });
 });

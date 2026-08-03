@@ -28,6 +28,8 @@ import { stageColorToken } from '@/lib/stage-colors';
 import { api } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { cardEntrance, staggerContainer } from '@/lib/motion-variants';
+import { useRouter } from 'next/navigation';
+import { useConversationStore } from '@/stores/conversation.store';
 
 function ColumnSkeleton() {
   return (
@@ -66,6 +68,7 @@ interface KanbanColumnProps {
   onDragLeaveColumn: () => void;
   onDropColumn: () => void;
   onCardDragStart: (conv: ConversationListItem) => void;
+  onCardOpen: (jid: string) => void;
   onRename: (label: string) => void;
   onColorSelect: (hex: string) => void;
   onDelete: () => void;
@@ -88,6 +91,7 @@ function KanbanColumn({
   onDragLeaveColumn,
   onDropColumn,
   onCardDragStart,
+  onCardOpen,
   onRename,
   onColorSelect,
   onDelete,
@@ -193,7 +197,11 @@ function KanbanColumn({
             custom={index}
             transition={{ delay: index * 0.03 }}
           >
-            <KanbanCard conv={conv} onDragStart={() => onCardDragStart(conv)} />
+            <KanbanCard
+              conv={conv}
+              onDragStart={() => onCardDragStart(conv)}
+              onOpen={() => onCardOpen(conv.jid)}
+            />
           </motion.div>
         ))}
       </motion.div>
@@ -205,6 +213,19 @@ export function KanbanBoard() {
   const { data: conversations, isLoading: convLoading } = useConversations();
   const { data: stages, isLoading: stagesLoading } = useFunnelStages();
   const qc = useQueryClient();
+  const router = useRouter();
+  const setSelectedJid = useConversationStore((s) => s.setSelectedJid);
+
+  // Atalho do card: seleciona a conversa e navega para a tela de Conversas. O
+  // store é global e persiste na navegação client-side, então a ConversationsPage
+  // já monta com o chat daquele contato aberto.
+  const openConversation = useCallback(
+    (jid: string) => {
+      setSelectedJid(jid);
+      router.push('/conversations');
+    },
+    [router, setSelectedJid],
+  );
 
   const createStage = useCreateStage();
   const updateStage = useUpdateFunnelStage();
@@ -371,7 +392,7 @@ export function KanbanBoard() {
           Funil de Vendas
         </h1>
         <p className="text-xs text-text-muted mt-0.5">
-          Arraste os contatos entre as etapas para atualizar o estágio
+          Arraste os contatos entre as etapas · duplo-clique num card abre a conversa
         </p>
       </div>
 
@@ -409,6 +430,7 @@ export function KanbanBoard() {
                 onDragLeaveColumn={() => setDragOverStage(null)}
                 onDropColumn={() => handleCardDrop(stage.key)}
                 onCardDragStart={setDraggedConv}
+                onCardOpen={openConversation}
                 onRename={(label) => handleRename(stage, label)}
                 onColorSelect={(hex) => handleColor(stage, hex)}
                 onDelete={() => handleDelete(stage)}

@@ -1,4 +1,4 @@
-import { Injectable, Inject, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, Inject, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { and, eq, inArray } from 'drizzle-orm';
 import { DB, type Database } from '../core/db/db.module';
@@ -65,6 +65,9 @@ export class TenantRepository {
       .select({ instancia: tenantUsers.instancia })
       .from(tenantUsers)
       .where(eq(tenantUsers.email, normalized))
+      // Determinístico: com a guarda "um e-mail = uma instância" há no máximo 1
+      // linha, mas ordenar garante login estável mesmo se sobrar uma duplicata legada.
+      .orderBy(tenantUsers.instancia)
       .limit(1);
     if (!hit) return null;
     return this.get(hit.instancia);
@@ -80,6 +83,16 @@ export class TenantRepository {
     if (!/^[a-zA-Z0-9_]+$/.test(instancia)) {
       throw new BadRequestException(
         `Instancia '${instancia}' invalida: use apenas letras, numeros e underscore (sem '-' nem ':').`,
+      );
+    }
+
+    // UM E-MAIL = UMA INSTÂNCIA: o login resolve email->tenant de forma única, então
+    // recusamos anexar um e-mail que já é usuário de OUTRA instância (evita o login
+    // ambíguo/não-determinístico). Re-registro do MESMO par (instancia,email) passa.
+    const takenBy = await this.emailTakenElsewhere(normalized, instancia);
+    if (takenBy) {
+      throw new ConflictException(
+        `O e-mail '${normalized}' já é usuário da instância '${takenBy}'. Um e-mail só pode acessar uma instância — use outro e-mail ou troque o e-mail de acesso daquela instância.`,
       );
     }
 
@@ -138,12 +151,20 @@ export class TenantRepository {
   async addUser(instancia: string, user: TenantUser): Promise<TenantEntry | null> {
     const exists = await this.get(instancia);
     if (!exists) return null;
+    const normalized = user.email.toLowerCase().trim();
+    // UM E-MAIL = UMA INSTÂNCIA (ver register): recusa se já é usuário de outra.
+    const takenBy = await this.emailTakenElsewhere(normalized, instancia);
+    if (takenBy) {
+      throw new ConflictException(
+        `O e-mail '${normalized}' já é usuário da instância '${takenBy}'. Um e-mail só pode acessar uma instância.`,
+      );
+    }
     await this.db
       .insert(tenantUsers)
       .values({
         id: randomUUID(),
         instancia,
-        email: user.email.toLowerCase().trim(),
+        email: normalized,
         role: user.role,
       })
       .onConflictDoNothing(); // race eliminada: unicidade garantida pelo banco
@@ -156,6 +177,86 @@ export class TenantRepository {
     await this.db
       .delete(tenantUsers)
       .where(and(eq(tenantUsers.instancia, instancia), eq(tenantUsers.email, email.toLowerCase().trim())));
+    return this.get(instancia);
+  }
+
+  /**
+   * Um e-mail só pode acessar UMA instância. Retorna a instância que já usa este
+   * e-mail, DIFERENTE de `exceptInstancia` — ou null se estiver livre. Base das
+   * guardas cross-tenant de register/addUser/changeUserEmail.
+   */
+  private async emailTakenElsewhere(
+    email: string,
+    exceptInstancia: string,
+  ): Promise<string | null> {
+    const normalized = email.toLowerCase().trim();
+    const rows = await this.db
+      .select({ instancia: tenantUsers.instancia })
+      .from(tenantUsers)
+      .where(eq(tenantUsers.email, normalized));
+    const other = rows.find((r) => r.instancia !== exceptInstancia);
+    return other?.instancia ?? null;
+  }
+
+  /**
+   * True quando o e-mail é usuário da instância. O refresh usa isto para matar a
+   * sessão de um e-mail removido/trocado: ao deixar de ser membro, o refresh falha
+   * e o acesso morre em no máximo uma janela do access token.
+   */
+  async userExists(instancia: string, email: string): Promise<boolean> {
+    const [hit] = await this.db
+      .select({ id: tenantUsers.id })
+      .from(tenantUsers)
+      .where(
+        and(
+          eq(tenantUsers.instancia, instancia),
+          eq(tenantUsers.email, email.toLowerCase().trim()),
+        ),
+      )
+      .limit(1);
+    return !!hit;
+  }
+
+  /**
+   * Troca o e-mail de acesso de um usuário DENTRO da instância, preservando o
+   * papel. O e-mail antigo perde o acesso (some do tenant → não recebe mais magic
+   * link e o refresh o expulsa); o novo passa a acessar. Aplica a guarda
+   * cross-tenant (o novo não pode pertencer a outra instância) e recusa colisão
+   * dentro da própria instância. NotFound se o antigo não existir aqui.
+   */
+  async changeUserEmail(
+    instancia: string,
+    oldEmail: string,
+    newEmail: string,
+  ): Promise<TenantEntry | null> {
+    const exists = await this.get(instancia);
+    if (!exists) return null;
+    const from = oldEmail.toLowerCase().trim();
+    const to = newEmail.toLowerCase().trim();
+    if (from === to) return exists;
+
+    const takenBy = await this.emailTakenElsewhere(to, instancia);
+    if (takenBy) {
+      throw new ConflictException(
+        `O e-mail '${to}' já é usuário da instância '${takenBy}'. Escolha outro.`,
+      );
+    }
+    if (exists.users.some((u) => u.email.toLowerCase() === to)) {
+      throw new ConflictException(`O e-mail '${to}' já existe nesta instância.`);
+    }
+
+    const res = await this.db
+      .update(tenantUsers)
+      .set({ email: to })
+      .where(
+        and(eq(tenantUsers.instancia, instancia), eq(tenantUsers.email, from)),
+      )
+      .returning({ id: tenantUsers.id });
+    if (res.length === 0) {
+      throw new NotFoundException(
+        `Usuário '${from}' não encontrado na instância '${instancia}'.`,
+      );
+    }
     return this.get(instancia);
   }
 

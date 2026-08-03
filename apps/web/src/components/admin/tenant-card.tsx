@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Trash2, UserPlus, Wifi, WifiOff, Bot } from 'lucide-react';
+import { Trash2, UserPlus, Wifi, WifiOff, Bot, Pencil, Check, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,9 @@ import {
   useAddUser,
   useRemoveUser,
   useSetInstanceConfig,
+  useChangeUserEmail,
 } from '@/hooks/use-admin';
+import { isApiError } from '@/lib/api';
 import type { TenantEntry } from '@nexus/shared';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -55,10 +57,14 @@ export function TenantCard({ tenant }: { tenant: TenantEntry }) {
   const addUser = useAddUser();
   const removeUser = useRemoveUser();
   const setConfig = useSetInstanceConfig();
+  const changeEmail = useChangeUserEmail();
 
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState<'admin' | 'operator'>('operator');
   const [n8nUrl, setN8nUrl] = useState(tenant.n8nWebhookUrl ?? '');
+  // E-mail em edição (troca de acesso) + valor do input inline.
+  const [editingEmail, setEditingEmail] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
 
   const urlDirty = n8nUrl.trim() !== (tenant.n8nWebhookUrl ?? '');
 
@@ -102,8 +108,9 @@ export function TenantCard({ tenant }: { tenant: TenantEntry }) {
       notify.success(`Usuário adicionado a ${tenant.instancia}`);
       setNewEmail('');
       setNewRole('operator');
-    } catch {
-      notify.error('Falha ao adicionar usuário');
+    } catch (e) {
+      // 409 da guarda "um e-mail = uma instância" → usa a message do servidor.
+      notify.error(isApiError(e) ? e.message : 'Falha ao adicionar usuário');
     }
   };
 
@@ -113,6 +120,39 @@ export function TenantCard({ tenant }: { tenant: TenantEntry }) {
       notify.success('Usuário removido');
     } catch {
       notify.error('Falha ao remover usuário');
+    }
+  };
+
+  const onStartEdit = (email: string) => {
+    setEditingEmail(email);
+    setEditValue(email);
+  };
+
+  const onCancelEdit = () => {
+    setEditingEmail(null);
+    setEditValue('');
+  };
+
+  const onConfirmEdit = async (oldEmail: string) => {
+    const to = editValue.trim().toLowerCase();
+    if (!EMAIL_RE.test(to)) {
+      notify.error('Email inválido');
+      return;
+    }
+    if (to === oldEmail.toLowerCase()) {
+      onCancelEdit();
+      return;
+    }
+    try {
+      await changeEmail.mutateAsync({
+        instancia: tenant.instancia,
+        oldEmail,
+        newEmail: to,
+      });
+      notify.success(`E-mail de acesso trocado para ${to}`);
+      onCancelEdit();
+    } catch (e) {
+      notify.error(isApiError(e) ? e.message : 'Falha ao trocar o e-mail');
     }
   };
 
@@ -163,29 +203,75 @@ export function TenantCard({ tenant }: { tenant: TenantEntry }) {
         >
           Usuários ({tenant.users.length})
         </span>
-        {tenant.users.map((u) => (
-          <div
-            key={u.email}
-            className="group flex items-center justify-between gap-2 rounded-input px-2.5 py-1.5"
-            style={{ background: 'var(--bg-active)' }}
-          >
-            <span className="text-xs text-text-primary truncate" title={u.email}>
-              {u.email}
-            </span>
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              <Badge variant={u.role === 'admin' ? 'primary' : 'default'}>
-                {u.role}
-              </Badge>
+        {tenant.users.map((u) =>
+          editingEmail === u.email ? (
+            <div
+              key={u.email}
+              className="flex items-center gap-1.5 rounded-input px-2 py-1"
+              style={{ background: 'var(--bg-active)' }}
+            >
+              <Input
+                type="email"
+                autoFocus
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                placeholder="novo email de acesso…"
+                className="h-7 text-xs"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onConfirmEdit(u.email);
+                  if (e.key === 'Escape') onCancelEdit();
+                }}
+              />
               <button
-                onClick={() => onRemoveUser(u.email)}
-                aria-label={`Remover ${u.email}`}
-                className="text-text-muted hover:text-error opacity-0 group-hover:opacity-100 transition-opacity duration-150 focus-ring rounded"
+                onClick={() => onConfirmEdit(u.email)}
+                disabled={changeEmail.isPending}
+                aria-label="Confirmar novo e-mail"
+                title="Confirmar"
+                className="text-success hover:brightness-110 focus-ring rounded p-1 disabled:opacity-50"
               >
-                <Trash2 size={13} />
+                <Check size={14} />
+              </button>
+              <button
+                onClick={onCancelEdit}
+                aria-label="Cancelar"
+                title="Cancelar"
+                className="text-text-muted hover:text-text-primary focus-ring rounded p-1"
+              >
+                <X size={14} />
               </button>
             </div>
-          </div>
-        ))}
+          ) : (
+            <div
+              key={u.email}
+              className="group flex items-center justify-between gap-2 rounded-input px-2.5 py-1.5"
+              style={{ background: 'var(--bg-active)' }}
+            >
+              <span className="text-xs text-text-primary truncate" title={u.email}>
+                {u.email}
+              </span>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <Badge variant={u.role === 'admin' ? 'primary' : 'default'}>
+                  {u.role}
+                </Badge>
+                <button
+                  onClick={() => onStartEdit(u.email)}
+                  aria-label={`Trocar e-mail de acesso de ${u.email}`}
+                  title="Trocar e-mail de acesso"
+                  className="text-text-muted hover:text-text-primary opacity-0 group-hover:opacity-100 transition-opacity duration-150 focus-ring rounded"
+                >
+                  <Pencil size={13} />
+                </button>
+                <button
+                  onClick={() => onRemoveUser(u.email)}
+                  aria-label={`Remover ${u.email}`}
+                  className="text-text-muted hover:text-error opacity-0 group-hover:opacity-100 transition-opacity duration-150 focus-ring rounded"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            </div>
+          ),
+        )}
       </div>
 
       {/* Add user */}

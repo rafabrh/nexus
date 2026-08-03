@@ -2,6 +2,7 @@ import { Injectable, Inject, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { RedisKeys } from '@nexus/shared';
+import { parseHistoryKey } from './parse-history-entry';
 
 /**
  * Per-tenant conversation discovery index (`conversas:{inst}` SET). Replaces the
@@ -44,11 +45,10 @@ export class ConversationIndexService {
     for (const key of await this.scan(`chat:${instancia}:*:followup_step`)) {
       jids.add(key.split(':')[2]);
     }
-    // chathistory:{inst}-{phone} → jid (legacy phones become @s.whatsapp.net)
+    // chathistory:{inst}-{phone} → jid (parse compartilhado; fonte única).
     for (const key of await this.scan(`chathistory:${instancia}-*`)) {
-      const id = key.slice(`chathistory:${instancia}-`.length);
-      if (!id) continue;
-      jids.add(id.includes('@') ? id : `${id}@s.whatsapp.net`);
+      const parsed = parseHistoryKey(key);
+      if (parsed) jids.add(parsed.jid);
     }
     if (jids.size > 0) {
       await this.redis.sadd(indexKey, ...jids);
