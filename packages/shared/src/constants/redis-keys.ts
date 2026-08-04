@@ -101,6 +101,17 @@ export const RedisKeys = {
   ackSeededAt: (inst: string, jid: string) =>
     `chat:${inst}:${jid}:ackseed`,
 
+  // Store de mídia RECEBIDA base64 INLINE (BFF exclusivo, caminho Evolution GO).
+  // A Evolution GO NÃO expõe download por key — entrega a mídia em base64 no
+  // próprio evento (`data.message.base64`). O webhook persiste esse base64 aqui
+  // (JSON `{ b64, mimetype }`, TTL curto) chaveado pelo `mediaId` = `key.id`
+  // (WAMID), o MESMO id que o proxy `getMedia` usa para localizar a mídia. No
+  // caminho Node esta chave NUNCA é escrita (o Node não manda base64 inline) —
+  // `getMedia` cai no download atual. O blob fica FORA do chathistory (não infla
+  // a lista/replay); só o store carrega o binário, com expiração própria.
+  inlineMedia: (inst: string, mediaId: string) =>
+    `media:${inst}:${mediaId}`,
+
   // ---- BFF exclusivo ----
 
   eventStream: (inst: string) =>

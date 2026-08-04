@@ -34,6 +34,23 @@ describe('RedisKeys.tenantCfg', () => {
   });
 });
 
+describe('RedisKeys.inlineMedia', () => {
+  it('chaveia a mídia inline por instância + mediaId (WAMID)', () => {
+    expect(RedisKeys.inlineMedia('shk', 'WAMID1')).toBe('media:shk:WAMID1');
+  });
+
+  it('isola a mesma mídia entre tenants', () => {
+    expect(RedisKeys.inlineMedia('a', 'M1')).not.toBe(RedisKeys.inlineMedia('b', 'M1'));
+  });
+
+  it('usa o formato literal media:{inst}:{mediaId} (contrato ingestão↔proxy)', () => {
+    // A ingestão (webhook.persistInlineMedia) e o proxy (getMedia.readInlineMedia)
+    // localizam o blob pela MESMA chave. Trava o formato para que um refactor não
+    // divirja os dois lados silenciosamente (mídia sumiria sem erro).
+    expect(RedisKeys.inlineMedia('shk', 'WAMID9')).toBe('media:shk:WAMID9');
+  });
+});
+
 describe('RedisKeys.contact', () => {
   it('namespaces the contact key per instance', () => {
     expect(RedisKeys.contact('shk', '5511999999999')).toBe(

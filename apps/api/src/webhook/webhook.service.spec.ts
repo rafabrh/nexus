@@ -487,6 +487,174 @@ describe('WebhookService messages.update (read receipts / ACK)', () => {
   });
 });
 
+describe('WebhookService persiste mídia base64 INLINE (caminho Evolution GO)', () => {
+  const goImage = (id: string, extra: Record<string, unknown> = {}) => ({
+    event: 'messages.upsert',
+    instance: 'shk',
+    data: {
+      key: { remoteJid: '5511999@s.whatsapp.net', fromMe: false, id },
+      message: {
+        base64: 'QkFTRTY0Qllc', // base64 inline (sinal GO)
+        imageMessage: { caption: 'foto go', mimetype: 'image/jpeg' },
+        ...extra,
+      },
+    },
+  });
+
+  it('grava o base64 inline no media store chaveado pelo WAMID (media:{inst}:{id}) com TTL', async () => {
+    const d = makeDeps(knownTenant());
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(goImage('GOMSG5'));
+
+    const setCalls = (d.redis.set as any).mock.calls as Array<[string, string, ...unknown[]]>;
+    const mediaSet = setCalls.find(([k]) => k === 'media:shk:GOMSG5');
+    expect(mediaSet).toBeDefined();
+    const stored = JSON.parse(mediaSet![1]);
+    expect(stored.b64).toBe('QkFTRTY0Qllc');
+    expect(stored.mimetype).toBe('image/jpeg');
+    // TTL presente (SET ... EX 7d) — o blob não fica no Redis para sempre.
+    expect(mediaSet![2]).toBe('EX');
+    expect(mediaSet![3]).toBe(7 * 24 * 60 * 60);
+  });
+
+  it('NÃO grava o media store quando a mensagem de mídia vem SEM base64 inline (caminho Node)', async () => {
+    const d = makeDeps(knownTenant());
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent({
+      event: 'messages.upsert',
+      instance: 'shk',
+      data: {
+        key: { remoteJid: '5511999@s.whatsapp.net', fromMe: false, id: 'NODE1' },
+        message: { imageMessage: { caption: 'foto node', mimetype: 'image/jpeg' } },
+      },
+    });
+
+    const setCalls = (d.redis.set as any).mock.calls as Array<[string, ...unknown[]]>;
+    expect(setCalls.find(([k]) => String(k).startsWith('media:'))).toBeUndefined();
+  });
+
+  it('NÃO grava o media store para uma mensagem de TEXTO (sem nó de mídia), mesmo com base64 espúrio', async () => {
+    const d = makeDeps(knownTenant());
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent({
+      event: 'messages.upsert',
+      instance: 'shk',
+      data: {
+        key: { remoteJid: '5511999@s.whatsapp.net', fromMe: false, id: 'TXT1' },
+        message: { conversation: 'oi', base64: 'ESPURIO' },
+      },
+    });
+
+    const setCalls = (d.redis.set as any).mock.calls as Array<[string, ...unknown[]]>;
+    expect(setCalls.find(([k]) => String(k).startsWith('media:'))).toBeUndefined();
+  });
+
+  it('barra um base64 acima do teto (não escreve o blob anômalo no Redis)', async () => {
+    const d = makeDeps(knownTenant());
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    // > 8 MB decodificados → string base64 > ~10.7 MB. Excede o teto → não persiste.
+    const huge = 'A'.repeat(Math.ceil((8 * 1024 * 1024 * 4) / 3) + 1);
+    await svc.processEvolutionEvent(goImage('BIG1', { base64: huge }));
+
+    const setCalls = (d.redis.set as any).mock.calls as Array<[string, ...unknown[]]>;
+    expect(setCalls.find(([k]) => k === 'media:shk:BIG1')).toBeUndefined();
+    // A mensagem em si continua sendo gravada no histórico (degradação não bloqueia).
+    expect(d.redis.rpush).toHaveBeenCalled();
+  });
+
+  it('persiste o inline do áudio PTT GO (audioMessage) chaveado pelo WAMID', async () => {
+    const d = makeDeps(knownTenant());
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent({
+      event: 'messages.upsert',
+      instance: 'shk',
+      data: {
+        key: { remoteJid: '5511999@s.whatsapp.net', fromMe: false, id: 'GOMSG7' },
+        message: {
+          base64: 'QVVESU9CWVRFUw==',
+          audioMessage: { ptt: true, mimetype: 'audio/ogg; codecs=opus' },
+        },
+      },
+    });
+
+    const setCalls = (d.redis.set as any).mock.calls as Array<[string, string, ...unknown[]]>;
+    const mediaSet = setCalls.find(([k]) => k === 'media:shk:GOMSG7');
+    expect(mediaSet).toBeDefined();
+    expect(JSON.parse(mediaSet![1]).mimetype).toBe('audio/ogg; codecs=opus');
+  });
+
+  it('NÃO grava o media store quando o base64 inline é uma STRING VAZIA (guarda len===0)', async () => {
+    // A GO poderia emitir `base64: ''` num nó de mídia sem payload embutido —
+    // persistir uma string vazia sujaria o store e o proxy serviria 0 byte. A
+    // guarda `b64.length === 0` (persistInlineMedia) deve barrar antes do SET.
+    const d = makeDeps(knownTenant());
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent(goImage('EMPTY1', { base64: '' }));
+
+    const setCalls = (d.redis.set as any).mock.calls as Array<[string, ...unknown[]]>;
+    expect(setCalls.find(([k]) => k === 'media:shk:EMPTY1')).toBeUndefined();
+    // A mensagem em si continua no histórico — a ausência de inline degrada limpo.
+    expect(d.redis.rpush).toHaveBeenCalled();
+  });
+
+  it('grava o inline com mimetype null quando o nó de mídia GO não traz mimetype', async () => {
+    // O proxy coalesce mimetype null → ref.mimetype → octet-stream; aqui só
+    // travamos que o webhook persiste o JSON com mimetype: null (nunca undefined,
+    // que quebraria o JSON.parse do lado do proxy).
+    const d = makeDeps(knownTenant());
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent({
+      event: 'messages.upsert',
+      instance: 'shk',
+      data: {
+        key: { remoteJid: '5511999@s.whatsapp.net', fromMe: false, id: 'NOMIME1' },
+        message: { base64: 'QkFTRTY0', imageMessage: { caption: 'sem mime' } },
+      },
+    });
+
+    const setCalls = (d.redis.set as any).mock.calls as Array<[string, string, ...unknown[]]>;
+    const mediaSet = setCalls.find(([k]) => k === 'media:shk:NOMIME1');
+    expect(mediaSet).toBeDefined();
+    const stored = JSON.parse(mediaSet![1]);
+    expect(stored.b64).toBe('QkFTRTY0');
+    expect(stored.mimetype).toBeNull(); // null explícito, serializável
+  });
+
+  it('persiste o inline de uma mídia de SAÍDA GO (fromMe=true) — o namespacing por WAMID/inst se mantém', async () => {
+    // Num tenant GO, o eco do próprio envio de mídia também carrega base64 inline.
+    // persistInlineMedia roda independente de fromMe (guarda = media && keyId), então
+    // a mídia de saída também é servível pelo proxy. Chave = media:{inst}:{WAMID}.
+    const d = makeDeps(knownTenant());
+    // Sem otimista pendente → o eco fromMe grava normal (não afeta o store).
+    d.redis.lrange = vi.fn(async () => []);
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent({
+      event: 'send.message',
+      instance: 'shk',
+      data: {
+        key: { remoteJid: '5511999@s.whatsapp.net', fromMe: true, id: 'OUT_GO1' },
+        message: {
+          base64: 'T1VUR09CWVRFUw==',
+          imageMessage: { caption: 'enviada pela GO', mimetype: 'image/png' },
+        },
+      },
+    });
+
+    const setCalls = (d.redis.set as any).mock.calls as Array<[string, string, ...unknown[]]>;
+    const mediaSet = setCalls.find(([k]) => k === 'media:shk:OUT_GO1');
+    expect(mediaSet).toBeDefined();
+    expect(JSON.parse(mediaSet![1]).mimetype).toBe('image/png');
+  });
+});
+
 // Gate #3: impedância de shape v1↔GO nos eventos irmãos (connection/contacts).
 // O normalizer GO emite o shape v1 (objeto), diferente do array/`data.state` da
 // Node. Estes testes travam que o consumer aceita AMBOS os shapes.

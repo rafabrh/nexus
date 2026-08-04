@@ -26,6 +26,21 @@ const HOT_STAGES = new Set(['S3', 'S4', 'S5', 'S6']);
  */
 const ECHO_SCAN_WINDOW = 50;
 
+/**
+ * TTL do store de mídia inline (base64 recebido da Evolution GO). 7 dias — folga
+ * para o operador abrir/reabrir a conversa e a mídia ainda renderizar, sem reter
+ * o blob indefinidamente (a GO não tem download por key para re-buscar).
+ */
+const INLINE_MEDIA_TTL_SEC = 7 * 24 * 60 * 60;
+
+/**
+ * Teto do base64 inline a persistir (~8 MB decodificados; base64 infla ~33%, então
+ * a string cabe em ~10.7 MB). As mídias GO capturadas na Fase 0 têm centenas de KB;
+ * o teto barra um blob anômalo antes de escrevê-lo no Redis. Acima do teto a mídia
+ * não é persistida — o proxy degrada limpo (NotFound) em vez de inchar o store.
+ */
+const MAX_INLINE_MEDIA_B64_LEN = Math.ceil((8 * 1024 * 1024 * 4) / 3);
+
 @Injectable()
 export class WebhookService {
   private readonly logger = new Logger(WebhookService.name);
@@ -225,6 +240,16 @@ export class WebhookService {
       await this.redis.rpush(histKey, entry);
     }
 
+    // Evolution GO: a mídia recebida vem em base64 INLINE no evento (a GO não tem
+    // download por key — o adapter GO lança de propósito). Persiste o base64 no
+    // media store (chaveado pelo WAMID, o MESMO id que o proxy usa) para o
+    // `getMedia` servir do store. Só dispara quando há base64 inline (sinal de GO)
+    // + nó de mídia + WAMID → dormente no caminho Node (que nunca manda base64).
+    // O blob fica FORA do chathistory (não infla lista/replay).
+    if (media && keyId) {
+      await this.persistInlineMedia(instanceName, keyId, data, media.mimetype);
+    }
+
     // Contador de nao-lidas: so conta mensagem RECEBIDA do cliente (fromMe=false).
     // A resposta da IA e o envio do operador (fromMe=true) nao geram badge. Zerado
     // quando o operador abre a conversa (ConversationService.markRead).
@@ -368,6 +393,46 @@ export class WebhookService {
       }
     }
     return null;
+  }
+
+  /**
+   * Lê o base64 INLINE que a Evolution GO entrega no corpo da mensagem
+   * (`data.message.base64`) — sinal exclusivo do caminho GO (o Node não manda
+   * base64 inline). Presente → persiste no media store chaveado pelo WAMID
+   * (`RedisKeys.inlineMedia`), o MESMO id que o proxy `getMedia` usa para
+   * localizar a mídia; ausente → no-op (caminho Node segue baixando por key).
+   * Barra o blob acima do teto (`MAX_INLINE_MEDIA_B64_LEN`) para não inchar o
+   * Redis. Best-effort: uma falha aqui nunca derruba o processamento da mensagem.
+   */
+  private async persistInlineMedia(
+    instanceName: string,
+    mediaId: string,
+    data: Record<string, unknown>,
+    mimetype: string | null,
+  ): Promise<void> {
+    const messageObj = data.message as Record<string, unknown> | undefined;
+    const b64 = messageObj?.base64;
+    if (typeof b64 !== 'string' || b64.length === 0) return; // Node (sem inline) → no-op
+    if (b64.length > MAX_INLINE_MEDIA_B64_LEN) {
+      this.logger.warn(
+        `webhook.inline-media-too-large instance=${instanceName} id=${mediaId} len=${b64.length}`,
+      );
+      return;
+    }
+    try {
+      await this.redis.set(
+        RedisKeys.inlineMedia(instanceName, mediaId),
+        JSON.stringify({ b64, mimetype: mimetype ?? null }),
+        'EX',
+        INLINE_MEDIA_TTL_SEC,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `webhook.inline-media-persist-failed instance=${instanceName} id=${mediaId}: ${
+          (err as Error).message
+        }`,
+      );
+    }
   }
 
   /** Timestamp da mensagem (a Evolution manda em segundos) → ms. Null se ausente. */
