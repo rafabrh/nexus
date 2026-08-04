@@ -2,7 +2,7 @@
 
 > Snapshot vivo do programa. Atualizado a cada fatia entregue. Fonte detalhada: `docs/superpowers/plans/2026-08-01-nexus-programa-escala-roadmap.md` (CRONOGRAMA VIVO).
 >
-> **Última atualização:** 2026-08-04 (Fase 0 passos 1–7 feitos; só falta o passo 8 🔒 do Rafa)
+> **Última atualização:** 2026-08-04 (transporte GO→RabbitMQ CONFIRMADO ao vivo + Caminho A no código `55dfa89`; falta só seed+envs+deploy do nexus-api 🔒)
 > **Branch de prod:** `worktree-macos-reskin` (deploy EasyPanel `siteshkgroup`)
 
 Legenda: ✅ em prod · 🔵 entregue/PR aberto · 📋 plano escrito · ⏳ só HLD · 🔒 portão manual do Rafa
@@ -31,7 +31,7 @@ Estava travada na **licença GO** (OAuth Google, código single-use). Diagnósti
 | 5 · Fixtures + normalizer reais | ✅ **em prod** `afd93ce` — corrige bug que **dropava 100% dos receipts** (shape real ≠ @provisional) |
 | 6 · `EvolutionGoAdapter` (dialeto REST) | ✅ **em prod** `e0e5d6f` — probeState degrada p/ `unknown` (gate #4-2.4 ✔) |
 | 7 · Gates de robustez | ✅ **em prod** — #2 retry/DLQ (`3bc1cb3`) · #3 impedância shape v1↔GO (`1d581ab`) · #4 cache `tenants.get` (`a28ceb4`) · #4-2.4 probeState (`e0e5d6f`) |
-| 8 · Seed tenant GO + ligar consumer | 🔒 Rafa: cabear `AMQP_URL`+senha RabbitMQ+redeploy → seed → `QUEUE_CONSUMER_ENABLED` |
+| 8 · Ligar canal GO (transporte + consumer) | 🔵 transporte **CONFIRMADO ao vivo** (filas GO enchem) + **Caminho A** no código (`55dfa89`, spec `f090510`); 🔒 falta Rafa: seed `2.3` + `RABBITMQ_URL`+`QUEUE_CONSUMER_ENABLED=true` no nexus-api → deploy |
 
 ---
 
@@ -73,7 +73,11 @@ Payloads GO **capturados** (WebSocket, número de teste) → `go.fixtures.ts` re
   - ✅ **#3 impedância de shape v1-GO** (`1d581ab`) — `normalizeGoMessageBody` reescreve casing whatsmeow→Baileys nos nós de mídia + base64 inline; `handleContactUpdate` aceita array Node e objeto v1-GO; connection emite `state`.
   - ✅ **#4 cache de `tenants.get`** (`a28ceb4`) — `getCached` (Redis TTL 60s, invalida nas mutações; guardas seguem lendo DB fresco).
   - ✅ **#4-2.4 probeState → `unknown`** (`e0e5d6f`) — no adapter GO.
-- **Passo 8 — ativar o canal GO (🔒 EasyPanel):** cabear `AMQP_URL` na EvoGO (+senha RabbitMQ+redeploy) → connect `rabbitmqEnable` → seed do tenant GO (`instancia`/`instanceId`/`ownerJid`/`instanceToken` via SQL) → `QUEUE_CONSUMER_ENABLED=true` + `RABBITMQ_URL`. Flip `gateway='go'`/`transport='amqp'` só no cutover (§7.1).
+- 🔵 **Passo 8 — canal GO: transporte OK + Caminho A no código.**
+  - **Descoberta (captura ao vivo):** a Evolution GO 0.7.2 **NÃO usa exchange** — publica no **default exchange** (routing key = nome da fila), em filas por evento minúsculas (`message`/`receipt`/`presence`/`connected`/`loggedout`/`contact`/`pushname`), quorum **sem DLX**. Isso invalidou o desenho antigo (exchange `evolution` + fila `nexus.panel.events`). Também: `AMQP_SPECIFIC_EVENTS` da GO é **case-sensitive** → env capitalizada (`Message,Receipt,…`); `AMQP_URL` **sem barra final** (vhost `/`); `CONNECT_ON_STARTUP=false` derruba a sessão a cada redeploy.
+  - **Transporte CONFIRMADO ao vivo:** filas GO encheram (`message:21, receipt:11, pushname:10, connected:1`).
+  - **Caminho A implementado** (`55dfa89`, spec `f090510`): consumer assina as filas GO no default exchange (passivo); cap de retry app-side via `x-delivery-count` → `nexus.panel.events.dlq` (as filas GO não têm DLX, então o #2 broker-native foi substituído por isto). `normalizeGo` já falava o corpo AMQP. apps/api 455 + shared 65 verdes.
+  - 🔒 **Falta Rafa (deploy):** seed `2.3-go-tenant.sql` (`instancia=nexus_teste` [underscore], `go_uuid=22a04a5a-…`, `owner=5511982704692@s.whatsapp.net`, `instanceToken=8b897ea…`) → `RABBITMQ_URL=amqp://nexus:%40Ricky22033@siteshkgroup_rabbitmq:5672` + `QUEUE_CONSUMER_ENABLED=true` no nexus-api → deploy. As ~21 msgs drenam. Flip `gateway='go'`/`transport='amqp'` só no cutover (§7.1).
 - **Runbook do Tiering (Etapa 1):** ativar archive/LTRIM em prod (backfill-primeiro).
 
 ---
