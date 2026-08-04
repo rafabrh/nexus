@@ -41,6 +41,7 @@ function captureReply() {
 
 function hostFor(reply: any) {
   return {
+    getType: () => 'http',
     switchToHttp: () => ({
       getResponse: () => reply,
       getRequest: () => ({ url: '/api/v1/funnel/stages/id4', method: 'DELETE' }),

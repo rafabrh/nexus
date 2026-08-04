@@ -28,14 +28,23 @@ export function makeGoQueueErrorHandler(
       return;
     }
 
+    const reason = (error as Error)?.message ?? String(error);
+    const originalQueue = msg.fields?.routingKey ?? '?';
     logger.error(
-      `evt.go-dlq queue=${msg.fields?.routingKey ?? '?'} deliveryCount=${count} limit=${limit}: ${
-        (error as Error)?.message ?? String(error)
-      }`,
+      `evt.go-dlq queue=${originalQueue} deliveryCount=${count} limit=${limit}: ${reason}`,
     );
+    // Grava a CAUSA na própria mensagem da DLQ: sem isto, a mensagem chega à DLQ
+    // sem nenhum rastro do erro e o diagnóstico exige caçar o log ao vivo. Com os
+    // headers, `rabbitmqadmin get` já mostra o porquê e a fila de origem.
     channel.sendToQueue(DLQ_QUEUE, msg.content, {
       persistent: true,
-      headers: msg.properties?.headers,
+      headers: {
+        ...msg.properties?.headers,
+        'x-error': reason,
+        'x-error-stack': (error as Error)?.stack ?? undefined,
+        'x-original-queue': originalQueue,
+        'x-dead-lettered-at': new Date().toISOString(),
+      },
     });
     channel.ack(msg);
   };

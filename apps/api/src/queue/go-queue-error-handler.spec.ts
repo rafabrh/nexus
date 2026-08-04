@@ -48,7 +48,11 @@ describe('goQueueErrorHandler — cap de retry via x-delivery-count', () => {
     expect(ch.sendToQueue).toHaveBeenCalledWith(
       DLQ_QUEUE,
       content,
-      expect.objectContaining({ persistent: true }),
+      expect.objectContaining({
+        persistent: true,
+        // A CAUSA vai gravada na mensagem da DLQ (observabilidade — evita caçar log).
+        headers: expect.objectContaining({ 'x-error': 'poison' }),
+      }),
     );
     expect(ch.ack).toHaveBeenCalledOnce();
     expect(ch.nack).not.toHaveBeenCalled();
