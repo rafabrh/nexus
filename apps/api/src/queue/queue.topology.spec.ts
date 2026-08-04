@@ -1,25 +1,38 @@
 import { describe, it, expect } from 'vitest';
 import {
-  EVOLUTION_EXCHANGE,
-  PANEL_EVENTS_QUEUE,
-  NEXUS_DLX,
-  PANEL_EVENTS_DLQ_ROUTING_KEY,
+  GO_EVENT_QUEUES,
+  DLQ_QUEUE,
+  DELIVERY_COUNT_HEADER,
   DEFAULT_DELIVERY_LIMIT,
   resolveDeliveryLimit,
-  panelEventsQueueArguments,
 } from './queue.topology';
 
-// GATE #2 (retry vs DLQ): estes testes travam a INTENÇÃO da topologia (a validação
-// de reentrega/dead-letter ponta-a-ponta é GATED no broker — passo 8). Se algum
-// argumento mudar sem querer (quorum, x-delivery-limit, DLX/routing-key), a fila
-// volta ao comportamento do bug (mensagem boa direto na DLQ) e um destes quebra.
+// Caminho A (Fase 0): a Evolution GO 0.7.2 publica no EXCHANGE DEFAULT, direto em
+// filas POR EVENTO (quorum, sem DLX). Estes testes travam os nomes reais das filas
+// e o cap de retry app-side (via x-delivery-count) que substitui o DLX nativo.
 
-describe('queue.topology — nomes de fila/exchange (fonte única)', () => {
-  it('constantes de nomes batem com o contrato do consumer', () => {
-    expect(EVOLUTION_EXCHANGE).toBe('evolution');
-    expect(PANEL_EVENTS_QUEUE).toBe('nexus.panel.events');
-    expect(NEXUS_DLX).toBe('nexus.dlx');
-    expect(PANEL_EVENTS_DLQ_ROUTING_KEY).toBe('nexus.panel.events.dlq');
+describe('queue.topology — filas reais da Evolution GO (default exchange)', () => {
+  it('GO_EVENT_QUEUES = os nomes minúsculos que a GO cria (AMQP_SPECIFIC_EVENTS)', () => {
+    expect(GO_EVENT_QUEUES).toEqual([
+      'message',
+      'receipt',
+      'presence',
+      'connected',
+      'loggedout',
+      'contact',
+      'pushname',
+    ]);
+  });
+
+  it('DLQ_QUEUE reaproveita a fila já existente no broker', () => {
+    expect(DLQ_QUEUE).toBe('nexus.panel.events.dlq');
+  });
+
+  it('DELIVERY_COUNT_HEADER é o header nativo da quorum queue', () => {
+    expect(DELIVERY_COUNT_HEADER).toBe('x-delivery-count');
+  });
+
+  it('default do cap de entregas', () => {
     expect(DEFAULT_DELIVERY_LIMIT).toBe(5);
   });
 });
@@ -34,7 +47,7 @@ describe('resolveDeliveryLimit — env robusto (piso 1, default 5)', () => {
     expect(resolveDeliveryLimit({ QUEUE_DELIVERY_LIMIT: '1' })).toBe(1);
   });
 
-  it('0 → default (nunca 0 entregas; senão a fila descartaria de imediato)', () => {
+  it('0 → default (nunca 0 entregas; senão descartaria de imediato)', () => {
     expect(resolveDeliveryLimit({ QUEUE_DELIVERY_LIMIT: '0' })).toBe(DEFAULT_DELIVERY_LIMIT);
   });
 
@@ -50,11 +63,11 @@ describe('resolveDeliveryLimit — env robusto (piso 1, default 5)', () => {
     expect(resolveDeliveryLimit({ QUEUE_DELIVERY_LIMIT: '' })).toBe(DEFAULT_DELIVERY_LIMIT);
   });
 
-  it('Infinity → default (isFinite barra; senão a fila nunca dead-letter)', () => {
+  it('Infinity → default (isFinite barra; senão nunca dead-letter)', () => {
     expect(resolveDeliveryLimit({ QUEUE_DELIVERY_LIMIT: 'Infinity' })).toBe(DEFAULT_DELIVERY_LIMIT);
   });
 
-  it('fracionário → floor (x-delivery-limit é inteiro)', () => {
+  it('fracionário → floor (contagem de entregas é inteira)', () => {
     expect(resolveDeliveryLimit({ QUEUE_DELIVERY_LIMIT: '3.9' })).toBe(3);
   });
 
@@ -66,36 +79,5 @@ describe('resolveDeliveryLimit — env robusto (piso 1, default 5)', () => {
     for (const v of ['0', '-100', '', 'abc', 'NaN', '0.4', '-0.9']) {
       expect(resolveDeliveryLimit({ QUEUE_DELIVERY_LIMIT: v })).toBeGreaterThanOrEqual(1);
     }
-  });
-});
-
-describe('panelEventsQueueArguments — quorum + delivery-limit + dead-letter', () => {
-  it('declara quorum queue (habilita x-delivery-limit nativo)', () => {
-    const args = panelEventsQueueArguments({ QUEUE_DELIVERY_LIMIT: '5' });
-    expect(args['x-queue-type']).toBe('quorum');
-  });
-
-  it('x-delivery-limit reflete resolveDeliveryLimit (retry contado antes do DLQ)', () => {
-    expect(panelEventsQueueArguments({ QUEUE_DELIVERY_LIMIT: '9' })['x-delivery-limit']).toBe(9);
-    expect(panelEventsQueueArguments({})['x-delivery-limit']).toBe(DEFAULT_DELIVERY_LIMIT);
-    // env inválido cai no default — a fila nunca fica sem limite.
-    expect(panelEventsQueueArguments({ QUEUE_DELIVERY_LIMIT: '0' })['x-delivery-limit']).toBe(
-      DEFAULT_DELIVERY_LIMIT,
-    );
-  });
-
-  it('dead-letter aponta para o DLX e a routing-key da DLQ', () => {
-    const args = panelEventsQueueArguments({});
-    expect(args['x-dead-letter-exchange']).toBe(NEXUS_DLX);
-    expect(args['x-dead-letter-routing-key']).toBe(PANEL_EVENTS_DLQ_ROUTING_KEY);
-  });
-
-  it('shape exato dos argumentos (trava regressão silenciosa da topologia)', () => {
-    expect(panelEventsQueueArguments({ QUEUE_DELIVERY_LIMIT: '5' })).toEqual({
-      'x-queue-type': 'quorum',
-      'x-delivery-limit': 5,
-      'x-dead-letter-exchange': 'nexus.dlx',
-      'x-dead-letter-routing-key': 'nexus.panel.events.dlq',
-    });
   });
 });

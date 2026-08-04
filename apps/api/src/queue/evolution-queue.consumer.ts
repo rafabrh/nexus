@@ -1,23 +1,35 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { RabbitSubscribe, requeueErrorHandler } from '@golevelup/nestjs-rabbitmq';
+import { RabbitSubscribe } from '@golevelup/nestjs-rabbitmq';
 import { normalizeGatewayEvent, type RawGatewayEvent } from '@nexus/shared';
 import { EventDedupService } from './event-dedup.service';
 import { NormalizeContextProvider } from './normalize-context.provider';
 import { WebhookService } from '../webhook/webhook.service';
-import {
-  EVOLUTION_EXCHANGE,
-  PANEL_EVENTS_QUEUE,
-  panelEventsQueueArguments,
-} from './queue.topology';
+import { goQueueErrorHandler } from './go-queue-error-handler';
 
 /**
- * Consumidor de eventos de gateway vindos do RabbitMQ. Tira o painel do caminho
- * crítico: a fila é o buffer durável e este handler só ORQUESTRA
+ * Config compartilhada de uma subscription PASSIVA numa fila da Evolution GO. A GO
+ * publica no exchange DEFAULT (routing key = nome da fila), então NÃO passamos
+ * `exchange` (sem bind) e NÃO redeclaramos a fila (`createQueueIfNotExists: false`)
+ * — a fila é declarada pela própria GO (quorum sem DLX). O cap de retry/DLQ é
+ * app-side (ver goQueueErrorHandler).
+ */
+function goSubscribe(queue: string) {
+  return {
+    queue,
+    createQueueIfNotExists: false,
+    errorHandler: goQueueErrorHandler,
+  };
+}
+
+/**
+ * Consumidor de eventos da Evolution GO vindos do RabbitMQ. Tira o painel do
+ * caminho crítico: cada fila é buffer durável e este handler só ORQUESTRA
  * (normaliza → deduplica → delega), reusando o `WebhookService.processEvolutionEvent`
  * EXISTENTE — a lógica de processamento não muda.
  *
- * `handle` é público e testável sem AMQP; a anotação `@RabbitSubscribe`
- * (QueueModule, Task 5) apenas o invoca e mapeia o retorno/erro para ack/nack.
+ * DESCOBERTA (Fase 0): a GO 0.7.2 publica no default exchange, em filas POR EVENTO
+ * (`message`, `receipt`, `connected`, `loggedout`, `contact`, `pushname`, `presence`).
+ * Cada método abaixo assina uma fila e delega ao `handle`, que roteia por `raw.event`.
  */
 @Injectable()
 export class EvolutionQueueConsumer {
@@ -29,32 +41,38 @@ export class EvolutionQueueConsumer {
     private readonly service: WebhookService,
   ) {}
 
-  /**
-   * Ponto de entrada AMQP. A fila `nexus.panel.events` carrega eventos da
-   * **Evolution GO** (Fases 1+); o gateway Node segue pelo webhook HTTP.
-   *
-   * GATE #2 (retry vs DLQ): a fila é uma **quorum queue** com `x-delivery-limit`
-   * (ver queue.topology). Ao lançar, o `requeueErrorHandler` faz nack COM requeue
-   * → a quorum queue conta a reentrega e retenta; só após esgotar o
-   * `x-delivery-limit` a própria fila dead-letter a mensagem para `nexus.dlx`.
-   * Isso protege mensagens BOAS de um blip transitório (Redis/Postgres). Delega
-   * toda a lógica ao `handle`.
-   */
-  @RabbitSubscribe({
-    exchange: EVOLUTION_EXCHANGE,
-    routingKey: '#',
-    queue: PANEL_EVENTS_QUEUE,
-    queueOptions: {
-      durable: true,
-      // Quorum + x-delivery-limit + dead-letter args (fonte única em topology).
-      arguments: panelEventsQueueArguments(),
-    },
-    // Requeue (não nack-drop): habilita o retry contado pela quorum queue antes
-    // do dead-letter automático. NUNCA voltar para defaultNackErrorHandler, senão
-    // o x-delivery-limit não engaja e a mensagem cai direto na DLQ (o bug do gate).
-    errorHandler: requeueErrorHandler,
-  })
-  async onEvent(raw: RawGatewayEvent): Promise<void> {
+  @RabbitSubscribe(goSubscribe('message'))
+  async onMessage(raw: RawGatewayEvent): Promise<void> {
+    await this.handle(raw, 'go');
+  }
+
+  @RabbitSubscribe(goSubscribe('receipt'))
+  async onReceipt(raw: RawGatewayEvent): Promise<void> {
+    await this.handle(raw, 'go');
+  }
+
+  @RabbitSubscribe(goSubscribe('presence'))
+  async onPresence(raw: RawGatewayEvent): Promise<void> {
+    await this.handle(raw, 'go');
+  }
+
+  @RabbitSubscribe(goSubscribe('connected'))
+  async onConnected(raw: RawGatewayEvent): Promise<void> {
+    await this.handle(raw, 'go');
+  }
+
+  @RabbitSubscribe(goSubscribe('loggedout'))
+  async onLoggedOut(raw: RawGatewayEvent): Promise<void> {
+    await this.handle(raw, 'go');
+  }
+
+  @RabbitSubscribe(goSubscribe('contact'))
+  async onContact(raw: RawGatewayEvent): Promise<void> {
+    await this.handle(raw, 'go');
+  }
+
+  @RabbitSubscribe(goSubscribe('pushname'))
+  async onPushName(raw: RawGatewayEvent): Promise<void> {
     await this.handle(raw, 'go');
   }
 
@@ -62,7 +80,7 @@ export class EvolutionQueueConsumer {
    * Contrato de ack/nack (spec §4.4):
    *  - normalizer `null` (fora do contrato v1, por design) → ACK + log `evt.normalizer-drop`.
    *  - duplicata (dedup por tipo) → ACK + log `evt.dedup-hit`.
-   *  - `processEvolutionEvent` lança → RETHROW → o errorHandler AMQP nacka → DLQ.
+   *  - `processEvolutionEvent` lança → RETHROW → o goQueueErrorHandler nacka/DLQ.
    *    Nunca engolir o erro: sem rethrow a mensagem venenosa seria "ackada" e perdida.
    */
   async handle(raw: RawGatewayEvent, gateway: 'node' | 'go'): Promise<void> {
@@ -90,8 +108,8 @@ export class EvolutionQueueConsumer {
       // vez de ser suprimido como duplicata (anti-perda). Aguarda o DEL completar
       // antes do rethrow/nack.
       await this.dedup.release(v1.instance, v1.event, v1.data.key.id);
-      // Rethrow para o errorHandler AMQP fazer nack → DLQ (nexus.dlx). Loga aqui
-      // para observabilidade; o service já loga o detalhe do processamento.
+      // Rethrow para o goQueueErrorHandler fazer o cap (nack requeue até N, então
+      // DLQ). Loga aqui para observabilidade; o service já loga o detalhe.
       this.logger.error(
         `evt.nack-dlq ${v1.instance} ${v1.event}: ${(err as Error)?.message ?? String(err)}`,
       );

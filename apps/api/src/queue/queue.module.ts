@@ -45,8 +45,9 @@ export class QueueModule {
           inject: [ConfigService],
           useFactory: (config: ConfigService) => ({
             uri: config.getOrThrow<string>('RABBITMQ_URL'),
-            // Exchange topic de onde a Evolution GO publica os eventos.
-            exchanges: [{ name: 'evolution', type: 'topic' }],
+            // A Evolution GO 0.7.2 publica no exchange DEFAULT (routing key = nome da
+            // fila), então NÃO declaramos exchange; o consumer assina as filas da GO
+            // passivamente (ver evolution-queue.consumer / queue.topology).
             prefetchCount: Number(config.get<number>('QUEUE_PREFETCH') ?? 10),
             // Não travar o boot esperando o broker: reconecta em background
             // (o painel continua servindo o webhook HTTP enquanto isso).
