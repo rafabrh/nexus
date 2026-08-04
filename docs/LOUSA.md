@@ -2,7 +2,7 @@
 
 > Snapshot vivo do programa. Atualizado a cada fatia entregue. Fonte detalhada: `docs/superpowers/plans/2026-08-01-nexus-programa-escala-roadmap.md` (CRONOGRAMA VIVO).
 >
-> **Última atualização:** 2026-08-03 (Fase 0 destravada — licença GO ativa; passos 1–6 feitos)
+> **Última atualização:** 2026-08-04 (Fase 0 passos 1–7 feitos; só falta o passo 8 🔒 do Rafa)
 > **Branch de prod:** `worktree-macos-reskin` (deploy EasyPanel `siteshkgroup`)
 
 Legenda: ✅ em prod · 🔵 entregue/PR aberto · 📋 plano escrito · ⏳ só HLD · 🔒 portão manual do Rafa
@@ -30,7 +30,7 @@ Estava travada na **licença GO** (OAuth Google, código single-use). Diagnósti
 | 4 · Capturar payloads reais | ✅ 14 shapes via WebSocket in-house (texto/imagem/áudio/sticker/reação/link/receipt, 1:1 e grupo) |
 | 5 · Fixtures + normalizer reais | ✅ **em prod** `afd93ce` — corrige bug que **dropava 100% dos receipts** (shape real ≠ @provisional) |
 | 6 · `EvolutionGoAdapter` (dialeto REST) | ✅ **em prod** `e0e5d6f` — probeState degrada p/ `unknown` (gate #4-2.4 ✔) |
-| 7 · Gates de robustez | ⏳ #2 retry/DLQ · #3 impedância shape v1↔GO · **#4 cache `tenants.get`** |
+| 7 · Gates de robustez | ✅ **em prod** — #2 retry/DLQ (`3bc1cb3`) · #3 impedância shape v1↔GO (`1d581ab`) · #4 cache `tenants.get` (`a28ceb4`) · #4-2.4 probeState (`e0e5d6f`) |
 | 8 · Seed tenant GO + ligar consumer | 🔒 Rafa: cabear `AMQP_URL`+senha RabbitMQ+redeploy → seed → `QUEUE_CONSUMER_ENABLED` |
 
 ---
@@ -68,11 +68,11 @@ Payloads GO **capturados** (WebSocket, número de teste) → `go.fixtures.ts` re
 ## 🔒 Portões manuais (dependem do Rafa) — Fase 0 e ativações
 
 - ✅ **Infra + captura (passos 1–6):** feito — RabbitMQ+EvoGO no ar, licença `active`, número pareado, payloads reais capturados, fixtures/normalizer/adapter em prod.
-- **Passo 7 — gates de robustez (código; parte já feita):**
-  - ✅ **#4-2.4 probeState degrada p/ `unknown`** — feito no adapter GO.
-  - ⏳ **#2 retry vs DLQ** — hoje falha vai direto ao DLQ sem retry; exige topologia de retry (quorum queue `x-delivery-limit` ou retry-queue+TTL) → depende do broker.
-  - ⏳ **#3 impedância de shape v1-GO ↔ `processEvolutionEvent`** — corpo da mensagem GO tem casing whatsmeow ≠ Baileys; consertar contra payload GO **capturado**.
-  - ⏳ **#4 cache de `tenants.get`** — 2 queries Postgres por evento; cachear (TTL curto) antes de ligar em escala.
+- ✅ **Passo 7 — gates de robustez: COMPLETO** (código em prod; e2e do #2 valida quando o broker subir):
+  - ✅ **#2 retry vs DLQ** (`3bc1cb3`) — quorum queue `x-delivery-limit` (default 5) + `requeueErrorHandler`: retry contado pela fila, DLQ só após N. e2e gated no broker.
+  - ✅ **#3 impedância de shape v1-GO** (`1d581ab`) — `normalizeGoMessageBody` reescreve casing whatsmeow→Baileys nos nós de mídia + base64 inline; `handleContactUpdate` aceita array Node e objeto v1-GO; connection emite `state`.
+  - ✅ **#4 cache de `tenants.get`** (`a28ceb4`) — `getCached` (Redis TTL 60s, invalida nas mutações; guardas seguem lendo DB fresco).
+  - ✅ **#4-2.4 probeState → `unknown`** (`e0e5d6f`) — no adapter GO.
 - **Passo 8 — ativar o canal GO (🔒 EasyPanel):** cabear `AMQP_URL` na EvoGO (+senha RabbitMQ+redeploy) → connect `rabbitmqEnable` → seed do tenant GO (`instancia`/`instanceId`/`ownerJid`/`instanceToken` via SQL) → `QUEUE_CONSUMER_ENABLED=true` + `RABBITMQ_URL`. Flip `gateway='go'`/`transport='amqp'` só no cutover (§7.1).
 - **Runbook do Tiering (Etapa 1):** ativar archive/LTRIM em prod (backfill-primeiro).
 
