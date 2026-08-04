@@ -21,6 +21,14 @@ export class JwtAuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    // Guards globais (APP_GUARD) rodam em TODO handler, inclusive nos
+    // `@RabbitSubscribe` do consumer. Uma mensagem AMQP não é um request HTTP
+    // autenticado — vem do broker confiável — e não carrega token/req HTTP. Sem
+    // este bypass, `switchToHttp().getRequest()` não tem token e o guard lança
+    // UnauthorizedException, derrubando o consumer (todos os eventos GO iriam pra
+    // DLQ). Autenticação JWT é exclusiva do transporte HTTP.
+    if (context.getType() !== 'http') return true;
+
     // Routes/controllers marked @Public() bypass authentication entirely.
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),

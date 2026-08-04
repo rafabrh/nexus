@@ -17,7 +17,16 @@ const guard = new TestGuard({} as any, {} as any, {} as any);
 /** Monta um ExecutionContext HTTP mínimo com o corpo informado. */
 function httpCtx(body: unknown): ExecutionContext {
   return {
+    getType: () => 'http',
     switchToHttp: () => ({ getRequest: () => ({ body }) }),
+  } as unknown as ExecutionContext;
+}
+
+/** ExecutionContext de um consumer RabbitMQ (AMQP) — sem req/res HTTP. */
+function rmqCtx(): ExecutionContext {
+  return {
+    getType: () => 'rmq',
+    switchToHttp: () => ({ getRequest: () => undefined }),
   } as unknown as ExecutionContext;
 }
 
@@ -70,5 +79,13 @@ describe('TenantThrottlerGuard.shouldSkip (isenção de admin no login)', () => 
   it('NÃO isenta quando não há e-mail no corpo (GET/outras rotas)', async () => {
     expect(await guard.skip(httpCtx({}))).toBe(false);
     expect(await guard.skip(httpCtx(undefined))).toBe(false);
+  });
+
+  it('pula contexto não-HTTP (consumer AMQP) — senão res.header derruba o consumer', async () => {
+    // O throttler é HTTP-only: numa mensagem RabbitMQ não há res HTTP, e o
+    // ThrottlerGuard tentaria setar headers de rate-limit (res.header) → crash →
+    // TODOS os eventos GO iriam pra DLQ. shouldSkip=true faz o guard retornar
+    // true de imediato, sem tocar em res.
+    expect(await guard.skip(rmqCtx())).toBe(true);
   });
 });

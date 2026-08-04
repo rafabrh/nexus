@@ -23,6 +23,13 @@ export class TenantThrottlerGuard extends ThrottlerGuard {
    * corpo carrega `email`, então o caminho comum devolve `false` de imediato.
    */
   protected async shouldSkip(context: ExecutionContext): Promise<boolean> {
+    // O throttler é HTTP-only. Guards globais (APP_GUARD) rodam em TODO handler,
+    // inclusive nos `@RabbitSubscribe` do consumer — e uma mensagem AMQP não tem
+    // req/res HTTP. Sem este skip, o ThrottlerGuard tenta setar os headers de
+    // rate-limit num "response" inexistente (`res.header is not a function`) e
+    // derruba o consumer, mandando TODOS os eventos GO pra DLQ. shouldSkip=true
+    // faz o guard retornar true de imediato, sem tocar em res.
+    if (context.getType() !== 'http') return true;
     const req = context
       .switchToHttp()
       .getRequest<{ body?: { email?: unknown } }>();

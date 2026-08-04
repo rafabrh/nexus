@@ -18,6 +18,20 @@ export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
   catch(exception: unknown, host: ArgumentsHost): void {
+    // Contextos não-HTTP (ex.: consumer RabbitMQ via golevelup) não têm reply
+    // HTTP para formatar. Loga e RE-LANÇA a exceção ORIGINAL para o errorHandler
+    // do transporte tratar (retry/DLQ) — senão o filter tentaria `reply.status()`
+    // num reply inexistente, mascarando a causa com "reply.status is not a
+    // function" e engolindo o erro (a mensagem falha seria ACKada e perdida).
+    if (host.getType() !== 'http') {
+      const message = exception instanceof Error ? exception.message : String(exception);
+      this.logger.error(
+        `Unhandled exception (${host.getType()}): ${message}`,
+        exception instanceof Error ? exception.stack : undefined,
+      );
+      throw exception;
+    }
+
     // If it's an HttpException, format it as RFC 7807 (same as HttpExceptionFilter)
     if (exception instanceof HttpException) {
       const ctx = host.switchToHttp();
