@@ -486,3 +486,73 @@ describe('WebhookService messages.update (read receipts / ACK)', () => {
     expect(d.publisher.publish).not.toHaveBeenCalled();
   });
 });
+
+// Gate #3: impedância de shape v1↔GO nos eventos irmãos (connection/contacts).
+// O normalizer GO emite o shape v1 (objeto), diferente do array/`data.state` da
+// Node. Estes testes travam que o consumer aceita AMBOS os shapes.
+describe('WebhookService aceita o shape v1-GO em connection/contacts', () => {
+  it('connection.update GO (data.state=open) marca a instância como open', async () => {
+    const d = makeDeps(knownTenant());
+    d.redis.get = vi.fn(async () => 'close'); // estado anterior != open → transição
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    // Shape v1 emitido pelo normalizer GO: `data.state` no topo (não data.instance.state).
+    await svc.processEvolutionEvent({
+      event: 'connection.update',
+      instance: 'shk',
+      data: { key: { remoteJid: '', fromMe: false, id: '' }, status: 'open', state: 'open' },
+    });
+
+    // Persistiu 'open' (não caiu no default 'close') e publicou a transição.
+    expect(d.redis.set).toHaveBeenCalledWith(expect.stringContaining('shk'), 'open');
+    expect(d.tenants.updateState).toHaveBeenCalledWith('shk', { connectionState: 'open' });
+    expect(d.publisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'connection.update', payload: { state: 'open' } }),
+    );
+  });
+
+  it('contacts.update GO (objeto v1 {key,pushName}) faz upsert do contato', async () => {
+    const d = makeDeps(knownTenant());
+    d.redis.get = vi.fn(async () => null); // sem contato prévio
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    // Shape v1-GO: `data` é OBJETO {key, pushName}, não o array da Node.
+    await svc.processEvolutionEvent({
+      event: 'contacts.update',
+      instance: 'shk',
+      data: {
+        key: {
+          remoteJid: '111@lid',
+          remoteJidAlt: '5511988887777@s.whatsapp.net',
+          fromMe: false,
+          id: 'C1',
+        },
+        pushName: 'Cliente GO',
+      },
+    });
+
+    // Gravou o contato pelo telefone real (remoteJidAlt). O `pushName` do v1-GO é
+    // achatado no campo canônico `name` do contato (mesmo registro do caminho Node).
+    const setCalls = (d.redis.set as any).mock.calls as Array<[string, string]>;
+    const contactSet = setCalls.find(([k]) => k.includes('5511988887777'));
+    expect(contactSet).toBeDefined();
+    expect(JSON.parse(contactSet![1])).toMatchObject({ name: 'Cliente GO' });
+  });
+
+  it('contacts.update Node (array) continua funcionando (regressão)', async () => {
+    const d = makeDeps(knownTenant());
+    d.redis.get = vi.fn(async () => null);
+    const svc = new WebhookService(d.redis, d.publisher, d.index, d.tenants, d.forwarder);
+
+    await svc.processEvolutionEvent({
+      event: 'contacts.update',
+      instance: 'shk',
+      data: [{ remoteJid: '5511999@s.whatsapp.net', name: 'Fulano Node' }],
+    });
+
+    const setCalls = (d.redis.set as any).mock.calls as Array<[string, string]>;
+    const contactSet = setCalls.find(([k]) => k.includes('5511999'));
+    expect(contactSet).toBeDefined();
+    expect(JSON.parse(contactSet![1])).toMatchObject({ name: 'Fulano Node' });
+  });
+});

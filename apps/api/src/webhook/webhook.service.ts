@@ -562,13 +562,15 @@ export class WebhookService {
     instanceName: string,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    const dataObj = payload.data;
-    if (!Array.isArray(dataObj)) return;
+    // Dois shapes: Evolution Node manda `data` como ARRAY de contatos; a Evolution
+    // GO (normalizada p/ o v1) manda UM contato como OBJETO `{key, pushName}` (o
+    // contrato v1 exige `data` objeto — tem `data.key`). Aceita ambos aqui, no
+    // consumer, em vez de forçar o normalizer a violar o contrato (ver o normalizer
+    // GO em @nexus/shared). O shape v1 é achatado para o mesmo registro de contato.
+    const items = this.contactUpdateItems(payload.data);
+    if (items.length === 0) return;
 
-    for (const item of dataObj) {
-      if (!item || typeof item !== 'object') continue;
-      const contact = item as Record<string, unknown>;
-
+    for (const contact of items) {
       const resolved = resolvePersonalJid(
         contact.remoteJid as string | undefined,
         contact.remoteJidAlt as string | undefined,
@@ -585,6 +587,38 @@ export class WebhookService {
     // Invalidate caches
     await this.redis.del(RedisKeys.cacheContacts(instanceName));
     await this.redis.del(RedisKeys.cacheConversations(instanceName));
+  }
+
+  /**
+   * Achata o `data` de um `contacts.update` para a lista de contatos, tolerando
+   * os dois shapes: ARRAY (Evolution Node) e OBJETO v1 do GO (`{key, pushName}`).
+   * No shape v1 o JID vem em `data.key.remoteJid`/`remoteJidAlt` e o nome em
+   * `data.pushName` — achata para o mesmo registro `{remoteJid, remoteJidAlt,
+   * pushName}` que o loop consome. Ignora entradas malformadas.
+   */
+  private contactUpdateItems(dataObj: unknown): Array<Record<string, unknown>> {
+    if (Array.isArray(dataObj)) {
+      return dataObj.filter(
+        (i): i is Record<string, unknown> => !!i && typeof i === 'object',
+      );
+    }
+    if (dataObj && typeof dataObj === 'object') {
+      const data = dataObj as Record<string, unknown>;
+      const key = data.key as Record<string, unknown> | undefined;
+      // Shape v1 (GO): tem `data.key` — achata JID/nome para um registro de contato.
+      if (key && typeof key === 'object') {
+        return [
+          {
+            remoteJid: key.remoteJid,
+            remoteJidAlt: key.remoteJidAlt,
+            pushName: data.pushName,
+          },
+        ];
+      }
+      // Objeto solto de contato (defensivo): usa como um único registro.
+      return [data];
+    }
+    return [];
   }
 
   /**

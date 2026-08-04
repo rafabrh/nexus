@@ -6,6 +6,7 @@ import type {
   RawGatewayEvent,
   NormalizeContext,
 } from '../types/nexus-event-v1';
+import { normalizeGoMessageBody } from './normalize-go-message';
 
 const V1_TYPES = new Set<NexusEventV1Type>([
   'messages.upsert',
@@ -150,11 +151,35 @@ function normalizeGo(
 
   const outData: NexusEventV1Data = { key };
   if (typeof info.PushName === 'string' && info.PushName) outData.pushName = info.PushName;
-  if (data.Message !== undefined) outData.message = data.Message as Record<string, unknown>;
+  // Corpo da mensagem: a GO title-caseia o casing whatsmeow (`URL`/`PTT`/`Seconds`)
+  // e entrega mídia base64 INLINE. Reescreve para o shape Baileys que o painel lê
+  // (§ gate #3 de impedância de shape). Texto/reação/sticker/contextInfo passam
+  // opacos; o `base64` inline é preservado no topo do corpo.
+  if (data.Message !== undefined && data.Message !== null && typeof data.Message === 'object') {
+    outData.message = normalizeGoMessageBody(data.Message as Record<string, unknown>);
+  } else if (data.Message !== undefined) {
+    outData.message = data.Message as Record<string, unknown>;
+  }
   const ts = toEpochSeconds(info.Timestamp);
   if (ts !== undefined) outData.messageTimestamp = ts;
-  if (goEvent === 'Connected') outData.status = 'open';
-  if (goEvent === 'LoggedOut') outData.status = 'close';
+  // connection.update: o painel lê `data.state`/`data.instance.state` (Baileys),
+  // não `data.status`. Emite AMBOS: `state` casa o consumer, `status` mantém o
+  // contrato v1 legível. Sem `state`, todo evento GO cairia em 'close' (default).
+  if (goEvent === 'Connected') {
+    outData.status = 'open';
+    outData.state = 'open';
+  }
+  if (goEvent === 'LoggedOut') {
+    outData.status = 'close';
+    outData.state = 'close';
+  }
+
+  // NOTA sobre contacts.update: a GO entrega UM contato por evento no shape v1
+  // (`data.key` + `data.pushName`), enquanto a Evolution Node manda `data` como
+  // ARRAY. O contrato v1 exige `data` OBJETO (tem `data.key`), então NÃO dá para
+  // o normalizer emitir um array sem quebrar o contrato. A conciliação fica no
+  // consumer: `WebhookService.handleContactUpdate` aceita AMBOS os shapes (array
+  // Node OU objeto v1-GO). Ver webhook.service.ts.
 
   return withSender({ event, instance, data: outData, gateway: 'go' }, instance, ctx);
 }

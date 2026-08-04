@@ -161,7 +161,10 @@ export const goFixtures: Fixture[] = [
     },
   },
   {
-    name: 'Message mídia imagem (message passa opaco, incl. base64 inline)',
+    // Casing whatsmeow REAL: `URL` maiúsculo (Baileys usa `url`), base64 INLINE.
+    // O normalizer reescreve `URL→url` e mantém `base64` no topo do corpo para o
+    // painel/proxy lerem sem baixar por key. mimetype/fileLength já vêm minúsculos.
+    name: 'Message imagem whatsmeow (URL→url, base64 inline preservado)',
     raw: env('Message', {
       Info: {
         Chat: LID_PEER,
@@ -176,7 +179,17 @@ export const goFixtures: Fixture[] = [
       },
       Message: {
         base64: 'BASE64BYTES',
-        imageMessage: { URL: 'https://mmg.whatsapp.net/x.enc', mimetype: 'image/jpeg', fileLength: 184449 },
+        imageMessage: {
+          URL: 'https://mmg.whatsapp.net/x.enc',
+          mimetype: 'image/jpeg',
+          fileLength: 184449,
+          FileSHA256: 'sha',
+          MediaKey: 'mk',
+          Height: 1280,
+          Width: 720,
+          Caption: 'legenda da foto',
+          messageContextInfo: { messageSecret: 'x' },
+        },
       },
     }),
     ctx: goCtx,
@@ -187,7 +200,246 @@ export const goFixtures: Fixture[] = [
         key: { remoteJid: LID_PEER, remoteJidAlt: PHONE_PEER, fromMe: false, id: 'GOMSG5' },
         message: {
           base64: 'BASE64BYTES',
-          imageMessage: { URL: 'https://mmg.whatsapp.net/x.enc', mimetype: 'image/jpeg', fileLength: 184449 },
+          imageMessage: {
+            url: 'https://mmg.whatsapp.net/x.enc',
+            mimetype: 'image/jpeg',
+            fileLength: 184449,
+            fileSha256: 'sha',
+            mediaKey: 'mk',
+            height: 1280,
+            width: 720,
+            caption: 'legenda da foto',
+            messageContextInfo: { messageSecret: 'x' },
+          },
+        },
+        messageTimestamp: EPOCH,
+      },
+      sender: OWNER,
+      gateway: 'go',
+    },
+  },
+  {
+    // Áudio PTT whatsmeow: `PTT`/`URL`/`Seconds`/`Waveform`/`Mimetype` title-cased.
+    // O normalizer reescreve p/ `ptt`/`url`/`seconds`/`waveform`/`mimetype` (o
+    // painel lê `audioMessage` só pela presença + mimetype; o casing correto
+    // garante que ptt/seconds/waveform cheguem para futuros consumidores/UI).
+    name: 'Message áudio PTT whatsmeow (PTT/URL/Seconds/Waveform/Mimetype → minúsculo)',
+    raw: env('Message', {
+      Info: {
+        Chat: LID_PEER,
+        Sender: LID_PEER,
+        SenderAlt: PHONE_PEER,
+        IsFromMe: false,
+        IsGroup: false,
+        ID: 'GOMSG7',
+        Timestamp: ISO,
+        Type: 'media',
+        MediaType: 'audio',
+      },
+      Message: {
+        base64: 'AUDIOBYTES',
+        audioMessage: {
+          PTT: true,
+          URL: 'https://mmg.whatsapp.net/a.enc',
+          Mimetype: 'audio/ogg; codecs=opus',
+          Seconds: 6,
+          Waveform: 'AAECAwQ=',
+          FileLength: 9001,
+          FileSHA256: 'sha-a',
+          MediaKey: 'mk-a',
+        },
+      },
+    }),
+    ctx: goCtx,
+    expected: {
+      event: 'messages.upsert',
+      instance: 'Shkgroup',
+      data: {
+        key: { remoteJid: LID_PEER, remoteJidAlt: PHONE_PEER, fromMe: false, id: 'GOMSG7' },
+        message: {
+          base64: 'AUDIOBYTES',
+          audioMessage: {
+            ptt: true,
+            url: 'https://mmg.whatsapp.net/a.enc',
+            mimetype: 'audio/ogg; codecs=opus',
+            seconds: 6,
+            waveform: 'AAECAwQ=',
+            fileLength: 9001,
+            fileSha256: 'sha-a',
+            mediaKey: 'mk-a',
+          },
+        },
+        messageTimestamp: EPOCH,
+      },
+      sender: OWNER,
+      gateway: 'go',
+    },
+  },
+  {
+    // Vídeo + documento whatsmeow no MESMO corpo é impossível, mas o vídeo sozinho
+    // trava o casing de `Caption`/`URL`. Documento trava `FileName`.
+    name: 'Message vídeo whatsmeow (URL→url, Caption→caption)',
+    raw: env('Message', {
+      Info: {
+        Chat: '5511999@s.whatsapp.net',
+        Sender: '5511999@s.whatsapp.net',
+        IsFromMe: false,
+        IsGroup: false,
+        ID: 'GOMSG8',
+        Timestamp: ISO,
+        Type: 'media',
+        MediaType: 'video',
+      },
+      Message: {
+        base64: 'VIDEOBYTES',
+        videoMessage: { URL: 'https://mmg.whatsapp.net/v.enc', Mimetype: 'video/mp4', Caption: 'olha isso', Seconds: 12 },
+      },
+    }),
+    ctx: goCtx,
+    expected: {
+      event: 'messages.upsert',
+      instance: 'Shkgroup',
+      data: {
+        key: { remoteJid: '5511999@s.whatsapp.net', fromMe: false, id: 'GOMSG8' },
+        message: {
+          base64: 'VIDEOBYTES',
+          videoMessage: { url: 'https://mmg.whatsapp.net/v.enc', mimetype: 'video/mp4', caption: 'olha isso', seconds: 12 },
+        },
+        messageTimestamp: EPOCH,
+      },
+      sender: OWNER,
+      gateway: 'go',
+    },
+  },
+  {
+    name: 'Message documento whatsmeow (FileName→fileName, URL→url)',
+    raw: env('Message', {
+      Info: {
+        Chat: '5511999@s.whatsapp.net',
+        Sender: '5511999@s.whatsapp.net',
+        IsFromMe: false,
+        IsGroup: false,
+        ID: 'GOMSG9',
+        Timestamp: ISO,
+        Type: 'media',
+        MediaType: 'document',
+      },
+      Message: {
+        base64: 'DOCBYTES',
+        documentMessage: { URL: 'https://mmg.whatsapp.net/d.enc', Mimetype: 'application/pdf', FileName: 'contrato.pdf', FileLength: 4242 },
+      },
+    }),
+    ctx: goCtx,
+    expected: {
+      event: 'messages.upsert',
+      instance: 'Shkgroup',
+      data: {
+        key: { remoteJid: '5511999@s.whatsapp.net', fromMe: false, id: 'GOMSG9' },
+        message: {
+          base64: 'DOCBYTES',
+          documentMessage: { url: 'https://mmg.whatsapp.net/d.enc', mimetype: 'application/pdf', fileName: 'contrato.pdf', fileLength: 4242 },
+        },
+        messageTimestamp: EPOCH,
+      },
+      sender: OWNER,
+      gateway: 'go',
+    },
+  },
+  {
+    name: 'Message sticker whatsmeow (URL→url; passa como mídia image no painel)',
+    raw: env('Message', {
+      Info: {
+        Chat: '5511999@s.whatsapp.net',
+        Sender: '5511999@s.whatsapp.net',
+        IsFromMe: false,
+        IsGroup: false,
+        ID: 'GOMSG10',
+        Timestamp: ISO,
+        Type: 'media',
+        MediaType: 'sticker',
+      },
+      Message: {
+        base64: 'STICKERBYTES',
+        stickerMessage: { URL: 'https://mmg.whatsapp.net/s.enc', Mimetype: 'image/webp', FileLength: 1024 },
+      },
+    }),
+    ctx: goCtx,
+    expected: {
+      event: 'messages.upsert',
+      instance: 'Shkgroup',
+      data: {
+        key: { remoteJid: '5511999@s.whatsapp.net', fromMe: false, id: 'GOMSG10' },
+        message: {
+          base64: 'STICKERBYTES',
+          stickerMessage: { url: 'https://mmg.whatsapp.net/s.enc', mimetype: 'image/webp', fileLength: 1024 },
+        },
+        messageTimestamp: EPOCH,
+      },
+      sender: OWNER,
+      gateway: 'go',
+    },
+  },
+  {
+    name: 'Message reação (reactionMessage passa opaco — sem nó de mídia)',
+    raw: env('Message', {
+      Info: {
+        Chat: '5511999@s.whatsapp.net',
+        Sender: '5511999@s.whatsapp.net',
+        IsFromMe: false,
+        IsGroup: false,
+        ID: 'GOMSG11',
+        Timestamp: ISO,
+        Type: 'reaction',
+      },
+      Message: {
+        reactionMessage: { key: { id: 'GOMSG1' }, text: '👍', senderTimestampMS: 1704067200000 },
+      },
+    }),
+    ctx: goCtx,
+    expected: {
+      event: 'messages.upsert',
+      instance: 'Shkgroup',
+      data: {
+        key: { remoteJid: '5511999@s.whatsapp.net', fromMe: false, id: 'GOMSG11' },
+        message: {
+          reactionMessage: { key: { id: 'GOMSG1' }, text: '👍', senderTimestampMS: 1704067200000 },
+        },
+        messageTimestamp: EPOCH,
+      },
+      sender: OWNER,
+      gateway: 'go',
+    },
+  },
+  {
+    name: 'Message link (extendedTextMessage passa opaco — text/contextInfo Baileys)',
+    raw: env('Message', {
+      Info: {
+        Chat: '5511999@s.whatsapp.net',
+        Sender: '5511999@s.whatsapp.net',
+        IsFromMe: false,
+        IsGroup: false,
+        ID: 'GOMSG12',
+        Timestamp: ISO,
+        Type: 'text',
+      },
+      Message: {
+        extendedTextMessage: {
+          text: 'veja https://exemplo.com',
+          contextInfo: { stanzaId: 'GOMSG1', quotedMessage: { conversation: 'anterior' } },
+        },
+      },
+    }),
+    ctx: goCtx,
+    expected: {
+      event: 'messages.upsert',
+      instance: 'Shkgroup',
+      data: {
+        key: { remoteJid: '5511999@s.whatsapp.net', fromMe: false, id: 'GOMSG12' },
+        message: {
+          extendedTextMessage: {
+            text: 'veja https://exemplo.com',
+            contextInfo: { stanzaId: 'GOMSG1', quotedMessage: { conversation: 'anterior' } },
+          },
         },
         messageTimestamp: EPOCH,
       },
@@ -294,25 +546,57 @@ export const goFixtures: Fixture[] = [
     },
   },
   {
-    name: 'Connected → connection.update (open); jid com device é ignorado na key',
+    // `state` (além de `status`): o painel lê `data.state`; sem ele todo Connected
+    // cairia no default 'close'. jid com device é ignorado na key.
+    name: 'Connected → connection.update (open, state=open); jid com device ignorado',
     raw: env('Connected', { jid: '5511000:57@s.whatsapp.net', pushName: 'Bot', status: 'open' }),
     ctx: goCtx,
     expected: {
       event: 'connection.update',
       instance: 'Shkgroup',
-      data: { key: { remoteJid: '', fromMe: false, id: '' }, status: 'open' },
+      data: { key: { remoteJid: '', fromMe: false, id: '' }, status: 'open', state: 'open' },
       sender: OWNER,
       gateway: 'go',
     },
   },
   {
-    name: 'LoggedOut → connection.update (close)',
+    name: 'LoggedOut → connection.update (close, state=close)',
     raw: env('LoggedOut', {}),
     ctx: goCtx,
     expected: {
       event: 'connection.update',
       instance: 'Shkgroup',
-      data: { key: { remoteJid: '', fromMe: false, id: '' }, status: 'close' },
+      data: { key: { remoteJid: '', fromMe: false, id: '' }, status: 'close', state: 'close' },
+      sender: OWNER,
+      gateway: 'go',
+    },
+  },
+  {
+    // contacts.update GO: PushName → contacts.update (shape v1 objeto). O consumer
+    // (handleContactUpdate) achata `data.key` + `data.pushName`. A chave inclui o
+    // telefone real (remoteJidAlt) quando @lid.
+    name: 'PushName → contacts.update (shape v1 objeto; consumer achata)',
+    raw: env('PushName', {
+      Info: {
+        Chat: LID_PEER,
+        Sender: LID_PEER,
+        SenderAlt: PHONE_PEER,
+        IsFromMe: false,
+        IsGroup: false,
+        ID: 'GOMSG13',
+        PushName: 'Cliente Novo',
+        Timestamp: ISO,
+      },
+    }),
+    ctx: goCtx,
+    expected: {
+      event: 'contacts.update',
+      instance: 'Shkgroup',
+      data: {
+        key: { remoteJid: LID_PEER, remoteJidAlt: PHONE_PEER, fromMe: false, id: 'GOMSG13' },
+        pushName: 'Cliente Novo',
+        messageTimestamp: EPOCH,
+      },
       sender: OWNER,
       gateway: 'go',
     },
