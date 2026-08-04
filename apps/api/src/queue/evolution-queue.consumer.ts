@@ -1,9 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { RabbitSubscribe, defaultNackErrorHandler } from '@golevelup/nestjs-rabbitmq';
+import { RabbitSubscribe, requeueErrorHandler } from '@golevelup/nestjs-rabbitmq';
 import { normalizeGatewayEvent, type RawGatewayEvent } from '@nexus/shared';
 import { EventDedupService } from './event-dedup.service';
 import { NormalizeContextProvider } from './normalize-context.provider';
 import { WebhookService } from '../webhook/webhook.service';
+import {
+  EVOLUTION_EXCHANGE,
+  PANEL_EVENTS_QUEUE,
+  panelEventsQueueArguments,
+} from './queue.topology';
 
 /**
  * Consumidor de eventos de gateway vindos do RabbitMQ. Tira o painel do caminho
@@ -26,20 +31,28 @@ export class EvolutionQueueConsumer {
 
   /**
    * Ponto de entrada AMQP. A fila `nexus.panel.events` carrega eventos da
-   * **Evolution GO** (Fases 1+); o gateway Node segue pelo webhook HTTP. Ao
-   * lançar, o `defaultNackErrorHandler` faz nack SEM requeue → a mensagem cai na
-   * DLX `nexus.dlx` (não trava a fila). Delega toda a lógica ao `handle`.
+   * **Evolution GO** (Fases 1+); o gateway Node segue pelo webhook HTTP.
+   *
+   * GATE #2 (retry vs DLQ): a fila é uma **quorum queue** com `x-delivery-limit`
+   * (ver queue.topology). Ao lançar, o `requeueErrorHandler` faz nack COM requeue
+   * → a quorum queue conta a reentrega e retenta; só após esgotar o
+   * `x-delivery-limit` a própria fila dead-letter a mensagem para `nexus.dlx`.
+   * Isso protege mensagens BOAS de um blip transitório (Redis/Postgres). Delega
+   * toda a lógica ao `handle`.
    */
   @RabbitSubscribe({
-    exchange: 'evolution',
+    exchange: EVOLUTION_EXCHANGE,
     routingKey: '#',
-    queue: 'nexus.panel.events',
+    queue: PANEL_EVENTS_QUEUE,
     queueOptions: {
       durable: true,
-      deadLetterExchange: 'nexus.dlx',
-      deadLetterRoutingKey: 'nexus.panel.events.dlq',
+      // Quorum + x-delivery-limit + dead-letter args (fonte única em topology).
+      arguments: panelEventsQueueArguments(),
     },
-    errorHandler: defaultNackErrorHandler,
+    // Requeue (não nack-drop): habilita o retry contado pela quorum queue antes
+    // do dead-letter automático. NUNCA voltar para defaultNackErrorHandler, senão
+    // o x-delivery-limit não engaja e a mensagem cai direto na DLQ (o bug do gate).
+    errorHandler: requeueErrorHandler,
   })
   async onEvent(raw: RawGatewayEvent): Promise<void> {
     await this.handle(raw, 'go');
