@@ -127,3 +127,22 @@
 | Consumer + topologia | `apps/api/src/queue/` (exchange `evolution`, fila `nexus.panel.events`, DLX `nexus.dlx`) |
 
 **Ordem dos gates:** 1→2→3 (infra) · 4→5→6 (captura + adapter) · 7 (robustez) · 8 (ligar no teste) · 9 (cutover). Não pular o 4 (captura) nem o 7 (robustez).
+
+---
+
+## 🛡️ Robustez & operação do consumer (pós-incidente 2026-08-04)
+
+**O que aconteceu:** ao ligar o consumer, TODOS os eventos GO foram pra DLQ. Causa: os **providers globais** do NestJS (`APP_GUARD` throttler+jwt, `useGlobalFilters`) assumiam HTTP e rodavam também no `@RabbitSubscribe` → `res.header`/`reply.status is not a function` → falha antes da lógica. Corrigido (`c275f11`, `eb0613d`): guards retornam `true` e filters re-lançam em `getType() !== 'http'`.
+
+**Invariante travada (não re-litigar):** todo provider global cross-cutting (`APP_GUARD`/`APP_FILTER`/`APP_INTERCEPTOR`/global pipe) DEVE ser context-aware — pula/re-lança em contexto não-HTTP. Cada um tem teste com `getType: () => 'rmq'`. Ao adicionar um novo global HTTP-only, adicione o skip **e** o teste. Cobertura: `*.guard.spec.ts`, `*.filter.spec.ts`, e `apps/api/src/queue/evolution-queue.consumer.integration.spec.ts` (pipeline real com payloads GO capturados).
+
+**Rollout OBSERVADO (ao ligar `QUEUE_CONSUMER_ENABLED`):**
+1. Deploy → **olhar a DLQ nos primeiros ~2 min**: `rabbitmqctl list_queues name messages consumers`.
+2. Filas GO com `consumers 1` e `messages ~0` = OK. **`nexus.panel.events.dlq` crescendo = ABORTAR** (kill-switch `QUEUE_CONSUMER_ENABLED=false` + redeploy) e olhar a causa.
+3. Diagnóstico da DLQ sem caçar log: `rabbitmqadmin -u nexus -p <senha> get queue=nexus.panel.events.dlq count=1 ackmode=ack_requeue_true` — cada msg carrega os headers **`x-error`/`x-error-stack`/`x-original-queue`** (gravados pelo `goQueueErrorHandler`).
+
+**Alerta de DLQ (ops, sem código no app):** o próprio RabbitMQ expõe a profundidade nativamente — alertar em `rabbitmq_queue_messages{queue="nexus.panel.events.dlq"} > 0` (prometheus plugin) ou olhar a UI de management. Não criar gauge no app (redundante).
+
+**Replay da DLQ:** as msgs falhas ficam na `nexus.panel.events.dlq` (durável). Após corrigir a causa, republicar cada uma na fila de origem pelo `x-original-queue` (script `rabbitmqadmin publish` / shovel). Para o piloto, se for só ruído (ex.: flood de `Connected`), `rabbitmqctl purge_queue nexus.panel.events.dlq` e reenviar msgs de teste.
+
+**Follow-up GO-side (não é bug do painel):** flood de `Connected` (300+) = instância GO em loop de reconexão. `connection.update` no painel é idempotente (só publica na transição), então não corrompe — é ruído. Investigar o flap na GO (`CONNECT_ON_STARTUP`, WS idle 1006).
