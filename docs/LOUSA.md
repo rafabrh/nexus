@@ -11,7 +11,14 @@ Legenda: ✅ em prod · 🔵 entregue/PR aberto · 📋 plano escrito · ⏳ só
 
 ## ▶️ RETOMAR AQUI (próxima sessão)
 
-**Estado:** Fase 0 — canal GO **validado ao vivo COM instrumentação** (2026-08-05). **Latência medida.** Falta só o presence (gap upstream, nice-to-have) e, quando o Rafa quiser, o cutover real na Shkgroup.
+**Estado:** Fase 0 — canal GO **validado ao vivo COM instrumentação** (2026-08-05). **Latência medida.** Falta só o presence (gap upstream, nice-to-have) e o **cutover ao vivo** (plano ativo abaixo).
+
+**▶️ PLANO ATIVO — cutover do vtdryfit (sócio) p/ GO, LOOP COMPLETO (decidido 2026-08-05):**
+Testar a EvoGO no **número do sócio** (`vtdryfit`, que **já atende prod hoje** Node→n8n→painel), com a IA voltando a responder **pela GO**. Decisão do dono: **cutover GO-only direto** (sem fase paralela). Runbook formalizado: **`docs/RUNBOOK-cutover-vtdryfit-go.md`** + seed **`apps/api/src/tenant-config/seed/vtdryfit-go-cutover.sql`**.
+- **Descobertas que moldaram o plano:** (1) a "volta" (resposta da IA) é enviada pelo **n8n chamando a Evolution DIRETO** → o nó de envio do n8n tem que apontar pra EvoGO (mudança no n8n, não no painel); (2) resposta dupla é evitada (forward tem dedup `(inst,WAMID)`), **mas bolha dupla NÃO** (o webhook HTTP do Node pula o `evtDedup`) → por isso GO-only (logout do Node), não paralelo; (3) **zero código novo no painel** — consumer/router/adapter/seed já em prod; consumer **já ligado** (`QUEUE_CONSUMER_ENABLED=true`, confirmado).
+- **Roteamento já existe:** o consumer demultiplexa a fila GO compartilhada por `UUID→instancia` e encaminha pro n8n do tenant. Ligar o vtdryfit = **só o seed** (não precisa da Rota B/onboarding p/ o teste).
+- **Sequência:** P2 parear a EvoGO ANTES (seguro: `gateway='node'` faz o consumer DROPAR os eventos GO) → P3 confirmar o UUID real → janela: J1 seed → J2 flip `gateway='go'` → J3 n8n→GO → J4 logout Node → J5 verificar (⚠️ **risco a validar: o eco de saída da IA aparece no painel?** pode exigir ligar o evento de saída no `AMQP_SPECIFIC_EVENTS` da EvoGO).
+- **Rota B (onboarding pelo painel) REBAIXADA a nice-to-have:** o seed manual resolve o teste; a tela self-service fica pra depois.
 
 **✅ Resultado do teste ao vivo (2026-08-05):**
 - **Latência GO→broker→consumer (`wa_lag_ms`): ~1,9 s** (amostras 1403/1427/1598/2179/2206/2370 ms). O `messageTimestamp` do WhatsApp tem granularidade de 1 s → latência real de transporte provavelmente **~1–1,5 s**.
@@ -25,8 +32,8 @@ Legenda: ✅ em prod · 🔵 entregue/PR aberto · 📋 plano escrito · ⏳ só
 **🔒 LGPD:** `GO_CAPTURE=true` loga payload **INTEGRAL** (Message com mídia/dados pessoais) — **DESLIGAR após o teste** (ficou capturado no log da prod). `GO_LATENCY` pode ficar p/ mais amostras, mas idealmente desligar também.
 
 **Decisões travadas (mantidas):**
-- **vtdryfit** = reusar o workflow n8n dele como downstream do **loop completo com IA** (ida OK; volta precisa ser instance-aware). **Não exercitado neste teste** — o teste de latência dispensa o loop com IA/n8n/login (o `wa_lag_ms` é medido na entrada do consumer). O `validate-go-loop.sql` só é necessário pra testar a resposta da IA ponta a ponta.
-- **Cutover real** será na **Shkgroup** (número da própria SHK), **só DEPOIS**. Identificador que o Rafa passou: `4E8A8AA87C97-47F7-A0F5-33F2013930B2` (**formato de UUID incompleto — confirmar o `instanceId` real ao vivo antes de seedar**).
+- **vtdryfit** = agora é o **1º cutover ao vivo** (loop completo pela GO) — ver o **PLANO ATIVO** acima e `RUNBOOK-cutover-vtdryfit-go.md`. Como é o número DELE, a "volta" da IA responde no próprio vtdryfit (dispensa o instance-aware que o `validate-go-loop.sql` exigia ao reusar o webhook em outro número). O `validate-go-loop.sql` fica só como referência do reuso do workflow.
+- **Shkgroup** (número da própria SHK) = cutover **posterior**, depois de validar o do vtdryfit. Identificador anotado: `4E8A8AA87C97-47F7-A0F5-33F2013930B2` (**formato de UUID incompleto — confirmar o `instanceId` real ao vivo antes de seedar**).
 
 **Próximos BUILDS de código:**
 - **(a) Fix do presence — BLOQUEADO upstream** (ver acima). Destravar exige PRIMEIRO fazer a EvoGO emitir presence (marcar sessão online/subscribe), aí capturar o payload real; só então fixture + branch no `normalizeGo` + `handlePresenceUpdate` (espelhar `handleContactUpdate`).
@@ -125,5 +132,6 @@ Payloads GO **capturados** (WebSocket, número de teste) → `go.fixtures.ts` re
 - PR #24 — EvolutionClient port (Fatia 2.4) — **mergeado** (`c5b2c27`).
 - Fase 0 (passos 5–6) — push direto em `worktree-macos-reskin`: `afd93ce` (normalizer/fixtures), `e0e5d6f` (adapter GO).
 - Runbook da Fase 0: `docs/RUNBOOK-fase-0.md`.
+- Runbook do cutover vtdryfit (GO-only, loop completo): `docs/RUNBOOK-cutover-vtdryfit-go.md` + seed `apps/api/src/tenant-config/seed/vtdryfit-go-cutover.sql`.
 - HLD de escala: `docs/superpowers/specs/2026-08-01-nexus-plataforma-escala-hld-design.md`
 - Spec de desacoplamento (v3): `2026-07-17-desacoplamento-rabbitmq-design.md`
