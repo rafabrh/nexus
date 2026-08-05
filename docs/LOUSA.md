@@ -18,7 +18,7 @@ Testar a EvoGO no **número do sócio** (`vtdryfit`, que **já atende prod hoje*
 - **Descobertas que moldaram o plano:** (1) a "volta" (resposta da IA) é enviada pelo **n8n chamando a Evolution DIRETO** → o nó de envio do n8n tem que apontar pra EvoGO (mudança no n8n, não no painel); (2) resposta dupla é evitada (forward tem dedup `(inst,WAMID)`), **mas bolha dupla NÃO** (o webhook HTTP do Node pula o `evtDedup`) → por isso GO-only (logout do Node), não paralelo; (3) **zero código novo no painel** — consumer/router/adapter/seed já em prod; consumer **já ligado** (`QUEUE_CONSUMER_ENABLED=true`, confirmado).
 - **Roteamento já existe:** o consumer demultiplexa a fila GO compartilhada por `UUID→instancia` e encaminha pro n8n do tenant. Ligar o vtdryfit = **só o seed** (não precisa da Rota B/onboarding p/ o teste).
 - **Sequência:** P2 parear a EvoGO ANTES (seguro: `gateway='node'` faz o consumer DROPAR os eventos GO) → P3 confirmar o UUID real → janela: J1 seed → J2 flip `gateway='go'` → J3 n8n→GO → J4 logout Node → J5 verificar (⚠️ **risco a validar: o eco de saída da IA aparece no painel?** pode exigir ligar o evento de saída no `AMQP_SPECIFIC_EVENTS` da EvoGO).
-- **Rota B (onboarding pelo painel) REBAIXADA a nice-to-have:** o seed manual resolve o teste; a tela self-service fica pra depois.
+- **Rota B (onboarding GO self-service pelo painel) — CONSTRUÍDA** (`f5b876e`, TDD, 476 verdes): decisão do dono foi fazer "tudo pelo painel". A tela agora faz create+QR+sync no GO (A1 create retorna creds, A2 branch GO sem abortar no `probeState=unknown`, A3 `setGoCredentials`, sync short-circuit no GO). **Precondição (D7):** o `gateway='go'` continua sendo 1 linha de SQL/admin (registry é fonte única); o self-service cobre create+scan+sync, não a escolha do gateway. **Ressalva:** o GO **não carrega histórico** no scan (vem por evento) — a tela mostra "0 importados" de propósito. **Próximo:** validar o fluxo no `nexus_teste` (marcar `gateway='go'`, criar pela tela, QR, escanear), depois no vtdryfit.
 
 **✅ Resultado do teste ao vivo (2026-08-05):**
 - **Latência GO→broker→consumer (`wa_lag_ms`): ~1,9 s** (amostras 1403/1427/1598/2179/2206/2370 ms). O `messageTimestamp` do WhatsApp tem granularidade de 1 s → latência real de transporte provavelmente **~1–1,5 s**.
@@ -37,7 +37,7 @@ Testar a EvoGO no **número do sócio** (`vtdryfit`, que **já atende prod hoje*
 
 **Próximos BUILDS de código:**
 - **(a) Fix do presence — BLOQUEADO upstream** (ver acima). Destravar exige PRIMEIRO fazer a EvoGO emitir presence (marcar sessão online/subscribe), aí capturar o payload real; só então fixture + branch no `normalizeGo` + `handlePresenceUpdate` (espelhar `handleContactUpdate`).
-- **(b) Rota B — onboarding GO pelo painel** — pra o cutover da Shkgroup virar um scan pelo painel (sem SQL manual). Lacunas mapeadas: `createInstance` do adapter GO gera token mas não persiste; `onboarding.createInstance` aborta em `probeState=unknown` (fail-safe que protege a prod Node). Fazer com TDD preservando a proteção do Node.
+- **(b) Rota B — onboarding GO pelo painel — ✅ FEITO** (`f5b876e`). Ver o PLANO ATIVO acima. Falta só a validação ao vivo no `nexus_teste` + eventual polish de frontend (mensagem "0 importados / histórico via eventos" na tela).
 
 ---
 
