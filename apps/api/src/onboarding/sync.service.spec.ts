@@ -19,11 +19,35 @@ function makeService(findChats: () => Promise<unknown>): {
     }),
   };
   // Redis is unused by collectStableChats — only the Evolution client matters.
-  const service = new SyncService({} as never, evolution as never, { addJid: vi.fn() } as never);
+  // Store default 'node' → collectStableChats roda o caminho Node normal.
+  const store = { gatewayFor: vi.fn(() => 'node') };
+  const service = new SyncService(
+    {} as never,
+    evolution as never,
+    { addJid: vi.fn() } as never,
+    store as never,
+  );
   return { service, calls: () => calls };
 }
 
 const chat = (jid: string) => ({ remoteJid: jid });
+
+describe('SyncService.syncAll — gateway GO (histórico via eventos)', () => {
+  it('short-circuit no GO: retorna 0/0 SEM pollar findChats (o GO não expõe fetch de histórico)', async () => {
+    const evolution = { findChats: vi.fn(), findContacts: vi.fn() };
+    const store = { gatewayFor: vi.fn(() => 'go') };
+    const service = new SyncService(
+      {} as never,
+      evolution as never,
+      { addJid: vi.fn() } as never,
+      store as never,
+    );
+    const res = await service.syncAll('nexus_teste');
+    expect(res.chats).toBe(0);
+    expect(res.messages).toBe(0);
+    expect(evolution.findChats).not.toHaveBeenCalled(); // sem os ~30s de poll inútil
+  });
+});
 
 describe('SyncService.collectStableChats', () => {
   it('waits for the history to load instead of trusting the first empty read', async () => {
@@ -107,7 +131,12 @@ describe('SyncService indexes imported chats', () => {
     };
 
     const index = { addJid: vi.fn(async () => undefined) };
-    const service = new SyncService(redis as never, evolution as never, index as never);
+    const service = new SyncService(
+      redis as never,
+      evolution as never,
+      index as never,
+      { gatewayFor: () => 'node' } as never,
+    );
     // Bypass the history-load poll (delays) — not under test here.
     vi.spyOn(service, 'collectStableChats').mockResolvedValue([
       { remoteJid: '5511999@s.whatsapp.net' },
@@ -161,7 +190,12 @@ describe('SyncService.remediateContactNames', () => {
       }), // poluído mas com foto → mantém a chave, some só o pushName
     };
     const d = makeRemediateDeps(store, 'SHK Group');
-    const svc = new SyncService(d.redis as never, d.evolution as never, d.index as never);
+    const svc = new SyncService(
+      d.redis as never,
+      d.evolution as never,
+      d.index as never,
+      { gatewayFor: () => 'node' } as never,
+    );
 
     const res = await svc.remediateContactNames('shk');
 
@@ -183,7 +217,12 @@ describe('SyncService.remediateContactNames', () => {
       'contact:shk:5511111': JSON.stringify({ pushName: 'SHK Group' }),
     };
     const d = makeRemediateDeps(store, null);
-    const svc = new SyncService(d.redis as never, d.evolution as never, d.index as never);
+    const svc = new SyncService(
+      d.redis as never,
+      d.evolution as never,
+      d.index as never,
+      { gatewayFor: () => 'node' } as never,
+    );
 
     const res = await svc.remediateContactNames('shk');
 

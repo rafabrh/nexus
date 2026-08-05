@@ -5,6 +5,7 @@ import { RedisKeys, PhoneMask } from '@nexus/shared';
 import { EvolutionClient } from '../whatsapp/evolution.client';
 import { resolvePersonalJid } from '../core/whatsapp/jid.util';
 import { ConversationIndexService } from '../conversation/conversation-index.service';
+import { InMemoryGatewayConfigStore } from '../tenant-config/in-memory-gateway-config.store';
 
 interface SyncResult {
   chats: number;
@@ -56,12 +57,22 @@ export class SyncService {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly evolution: EvolutionClient,
     private readonly index: ConversationIndexService,
+    private readonly gateways: InMemoryGatewayConfigStore,
   ) {}
 
   async syncAll(instancia: string): Promise<SyncResult> {
     const start = Date.now();
     let totalChats = 0;
     let totalMessages = 0;
+
+    // GO não expõe fetch de histórico (findChats/findMessages degradam p/ []): o
+    // histórico chega por EVENTO, não por sync inicial. Short-circuit evita ~30s de
+    // poll inútil e deixa a tela mostrar "0 importados" de propósito (não como
+    // timeout). Ver EvolutionGoAdapter + RUNBOOK-cutover-vtdryfit-go.
+    if (this.gateways.gatewayFor(instancia) === 'go') {
+      this.logger.log(`sync.skipped-go instancia=${instancia} (histórico via eventos)`);
+      return { chats: 0, messages: 0, durationMs: Date.now() - start };
+    }
 
     this.logger.log(`sync.started instancia=${instancia}`);
 

@@ -43,6 +43,26 @@ export class TenantConfigService implements OnApplicationBootstrap, OnModuleDest
     if (this.timer) clearInterval(this.timer);
   }
 
+  /**
+   * Rota B (onboarding GO pelo painel): persiste as creds GO capturadas no
+   * `createInstance` (UUID + token). FUNDE na config existente — nunca apaga o
+   * `ownerJid` já seedado — e re-hidrata o snapshot para o `getQrCode` seguinte
+   * já enxergar o token (senão o `EvolutionGoAdapter.instanceKey` lança). O
+   * roteamento GO só passa a valer quando o tenant é `gateway='go'` no registry
+   * (D7 — decisão de admin/SQL, fora deste método).
+   */
+  async setGoCredentials(
+    instancia: string,
+    creds: { instanceId: string; token: string },
+  ): Promise<void> {
+    const existing = (await this.repo.get(instancia))?.config ?? {};
+    await this.upsert(instancia, {
+      ...existing,
+      instanceId: creds.instanceId,
+      instanceToken: creds.token,
+    });
+  }
+
   /** Grava a config (Postgres = verdade), espelha no Redis e re-hidrata o snapshot. */
   async upsert(instancia: string, config: TenantEngineConfig): Promise<void> {
     await this.repo.upsert(instancia, config);

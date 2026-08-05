@@ -12,6 +12,8 @@ import { RedisKeys } from '@nexus/shared';
 import { EvolutionClient } from '../whatsapp/evolution.client';
 import { SyncService } from './sync.service';
 import { TenantRepository } from '../admin/tenant.repository';
+import { InMemoryGatewayConfigStore } from '../tenant-config/in-memory-gateway-config.store';
+import { TenantConfigService } from '../tenant-config/tenant-config.service';
 
 export interface OnboardingState {
   instanceExists: boolean;
@@ -32,6 +34,8 @@ export class OnboardingService {
     private readonly config: ConfigService,
     private readonly sync: SyncService,
     private readonly tenants: TenantRepository,
+    private readonly gateways: InMemoryGatewayConfigStore,
+    private readonly tenantConfig: TenantConfigService,
   ) {}
 
   /**
@@ -126,6 +130,13 @@ export class OnboardingService {
   }
 
   async createInstance(instancia: string): Promise<{ instanceName: string; state: string }> {
+    // Rota B: tenant marcado `gateway='go'` (decisão de admin/SQL, D7) segue o
+    // provisionamento GO — que NÃO passa pelo fail-safe de `probeState=unknown`
+    // do Node (no GO, unknown é o estado normal de uma instância ainda sem token).
+    if (this.gateways.gatewayFor(instancia) === 'go') {
+      return this.createGoInstance(instancia);
+    }
+
     const probe = await this.probeInstance(instancia);
     const redisState = await this.redis.get(RedisKeys.instanceState(instancia));
 
@@ -180,6 +191,54 @@ export class OnboardingService {
     await this.updateTenantRegistry(instancia, 'created', 'pending');
 
     this.logger.log(`onboarding.instance-created instancia=${instancia}`);
+    return { instanceName: instancia, state: 'created' };
+  }
+
+  /**
+   * Rota B — provisiona a instância GO pelo painel (self-service). O `createInstance`
+   * do `EvolutionGoAdapter` devolve `{ instanceId, token }` (o UUID da GO + o token
+   * que vira a apikey da instância). Persistimos as creds ANTES de retornar para o
+   * `getQrCode` seguinte já autenticar (senão `instanceKey` lança). Recusa se a
+   * instância já foi provisionada por este painel (creds com token) — nesse caso o
+   * operador só precisa escanear o QR, não recriar.
+   *
+   * NÃO faz o probe/abort do Node: no GO uma instância recém-criada não tem token,
+   * então o `probeState` degradaria p/ `unknown` — o que aqui é ESPERADO, não o
+   * sinal de "não recrie sob incerteza" que protege a produção Node.
+   */
+  private async createGoInstance(
+    instancia: string,
+  ): Promise<{ instanceName: string; state: string }> {
+    if (this.gateways.goCredentials(instancia)?.token) {
+      this.logger.warn(
+        `onboarding.go-create-refused instancia=${instancia} reason=already-provisioned`,
+      );
+      throw new ConflictException(`Instancia ${instancia} ja provisionada no GO`);
+    }
+
+    const result = (await this.evolution.createInstance(instancia)) as {
+      instanceId?: string;
+      token?: string;
+    };
+    if (!result?.instanceId || !result?.token) {
+      throw new Error(
+        `GO createInstance nao retornou creds (instanceId/token) para ${instancia}`,
+      );
+    }
+
+    // Persiste as creds (Postgres + Redis + re-hidrata o snapshot) antes do QR.
+    await this.tenantConfig.setGoCredentials(instancia, {
+      instanceId: result.instanceId,
+      token: result.token,
+    });
+
+    await Promise.all([
+      this.redis.set(RedisKeys.instanceState(instancia), 'created'),
+      this.redis.set(RedisKeys.syncStatus(instancia), 'pending'),
+    ]);
+    await this.updateTenantRegistry(instancia, 'created', 'pending');
+
+    this.logger.log(`onboarding.go-instance-created instancia=${instancia}`);
     return { instanceName: instancia, state: 'created' };
   }
 

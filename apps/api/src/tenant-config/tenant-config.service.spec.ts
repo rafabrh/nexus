@@ -13,6 +13,7 @@ const ROWS = [
 function make(opts: { list?: any[]; listImpl?: () => Promise<any[]>; reconcileSec?: number } = {}) {
   const repo = {
     upsert: vi.fn().mockResolvedValue(undefined),
+    get: vi.fn().mockResolvedValue(null),
     listWithGateway: vi.fn(opts.listImpl ?? (async () => opts.list ?? ROWS)),
   } as unknown as TenantEngineConfigRepository;
   const redis = { set: vi.fn().mockResolvedValue('OK') };
@@ -33,6 +34,29 @@ describe('TenantConfigService', () => {
       expect(repo.upsert).toHaveBeenCalledWith('Shkgroup', cfg);
       expect(redis.set).toHaveBeenCalledWith(RedisKeys.tenantCfg('Shkgroup'), JSON.stringify(cfg));
       expect(store.hydrate).toHaveBeenCalled(); // rehydrate
+    });
+  });
+
+  describe('setGoCredentials (Rota B — onboarding GO pelo painel)', () => {
+    it('funde instanceId+instanceToken na config existente (preserva ownerJid) e re-hidrata', async () => {
+      const { service, repo, store } = make();
+      (repo.get as any).mockResolvedValue({ config: { ownerJid: '55@x' } });
+      await service.setGoCredentials('Shkgroup', { instanceId: 'uuid-novo', token: 'TOK' });
+      // Funde — NÃO apaga o ownerJid já seedado.
+      expect(repo.upsert).toHaveBeenCalledWith('Shkgroup', {
+        ownerJid: '55@x',
+        instanceId: 'uuid-novo',
+        instanceToken: 'TOK',
+      });
+      // Rehidrata pra o getQrCode seguinte já enxergar o token (senão instanceKey lança).
+      expect(store.hydrate).toHaveBeenCalled();
+    });
+
+    it('sem config prévia → cria só com as creds GO', async () => {
+      const { service, repo } = make();
+      (repo.get as any).mockResolvedValue(null);
+      await service.setGoCredentials('Nova', { instanceId: 'u', token: 't' });
+      expect(repo.upsert).toHaveBeenCalledWith('Nova', { instanceId: 'u', instanceToken: 't' });
     });
   });
 

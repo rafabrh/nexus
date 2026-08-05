@@ -132,6 +132,17 @@ describe('EvolutionGoAdapter — admin (GLOBAL key)', () => {
     expect(opts.body.token).toMatch(/^[0-9a-f]{48}$/);
   });
 
+  it('createInstance → RETORNA { instanceId, token } (data.id + token gerado) p/ o onboarding persistir', async () => {
+    const a = adapter();
+    // A resposta do GO traz o UUID em data.id; o token da instância é o que
+    // NÓS geramos e enviamos (a GO só o ecoa). O onboarding precisa dos dois
+    // pra seedar as creds e o QR seguinte autenticar.
+    const req = spyRequest(a, { data: { id: 'uuid-novo', token: 'echo-ignorado' } });
+    const result = await a.createInstance('novo');
+    const sentToken = (req.mock.calls[0]?.[2] as { body: { token: string } }).body.token;
+    expect(result).toEqual({ instanceId: 'uuid-novo', token: sentToken });
+  });
+
   it('deleteInstance → DELETE /instance/delete/{uuid} com GLOBAL key quando há UUID', async () => {
     const a = adapter({ instanceId: 'uuid-9', token: 'T' });
     const req = spyRequest(a, undefined);

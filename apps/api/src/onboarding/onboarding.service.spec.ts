@@ -16,6 +16,10 @@ type Probe =
 function build(opts: {
   probe?: () => Promise<Probe>;
   redisState?: string | null;
+  gateway?: 'node' | 'go';
+  goCreds?: { instanceId?: string; token?: string };
+  createResult?: Record<string, unknown>;
+  createImpl?: () => Promise<Record<string, unknown>>;
 }) {
   const redisStore: Record<string, string | null> = {
     'instanceState:nexusdev': opts.redisState ?? null,
@@ -29,19 +33,29 @@ function build(opts: {
   const evolution = {
     // probeState collapses the raw Evolution call into exists/absent/unknown.
     probeState: vi.fn(opts.probe ?? (async () => ({ status: 'exists', state: 'open' }) as Probe)),
-    createInstance: vi.fn(async () => ({})),
+    createInstance: vi.fn(opts.createImpl ?? (async () => opts.createResult ?? {})),
   };
   const config = { get: vi.fn((_k: string, d?: string) => d ?? 'http://localhost:4000') };
   const sync = { syncAll: vi.fn() };
   const tenants = { updateState: vi.fn(async () => undefined) };
+  // Store do gateway (D7): `gatewayFor` roteia Node|GO; default 'node' preserva
+  // 100% do caminho Node existente. `goCredentials` diz se a instância GO já foi
+  // provisionada por este painel.
+  const store = {
+    gatewayFor: vi.fn(() => opts.gateway ?? 'node'),
+    goCredentials: vi.fn(() => opts.goCreds),
+  };
+  const tenantConfig = { setGoCredentials: vi.fn(async () => undefined) };
   const service = new OnboardingService(
     redis as never,
     evolution as never,
     config as never,
     sync as never,
     tenants as never,
+    store as never,
+    tenantConfig as never,
   );
-  return { service, evolution, redis };
+  return { service, evolution, redis, store, tenantConfig };
 }
 
 const probeUnknown = async (): Promise<Probe> => ({ status: 'unknown' });
@@ -79,5 +93,57 @@ describe('OnboardingService.createInstance', () => {
     const res = await service.createInstance('nexusdev');
     expect(evolution.createInstance).toHaveBeenCalledOnce();
     expect(res.instanceName).toBe('nexusdev');
+  });
+});
+
+describe('OnboardingService.createInstance — gateway GO (Rota B, self-service pelo painel)', () => {
+  it('provisiona no GO (create → persiste creds) SEM abortar no probe unknown', async () => {
+    // GO recém-marcado gateway='go', ainda SEM creds → o probe GO degrada p/
+    // unknown (esperado, não é o perigo do Node). Deve criar e persistir, não abortar.
+    const { service, evolution, tenantConfig } = build({
+      gateway: 'go',
+      goCreds: undefined,
+      probe: probeUnknown,
+      createResult: { instanceId: 'uuid-go', token: 'GOTOK' },
+    });
+    const res = await service.createInstance('nexus_teste');
+    expect(evolution.createInstance).toHaveBeenCalledOnce();
+    expect(tenantConfig.setGoCredentials).toHaveBeenCalledWith('nexus_teste', {
+      instanceId: 'uuid-go',
+      token: 'GOTOK',
+    });
+    expect(res.instanceName).toBe('nexus_teste');
+    expect(res.state).toBe('created');
+  });
+
+  it('recusa (409) quando a instância GO já foi provisionada por este painel (tem token)', async () => {
+    const { service, evolution } = build({
+      gateway: 'go',
+      goCreds: { instanceId: 'uuid-go', token: 'GOTOK' },
+    });
+    await expect(service.createInstance('nexus_teste')).rejects.toBeInstanceOf(ConflictException);
+    expect(evolution.createInstance).not.toHaveBeenCalled();
+  });
+
+  it('NÃO persiste creds se o create GO falhar (propaga o erro)', async () => {
+    const { service, tenantConfig } = build({
+      gateway: 'go',
+      goCreds: undefined,
+      createImpl: async () => {
+        throw new Error('GO 500');
+      },
+    });
+    await expect(service.createInstance('nexus_teste')).rejects.toThrow(/GO 500/);
+    expect(tenantConfig.setGoCredentials).not.toHaveBeenCalled();
+  });
+
+  it('create GO sem retornar creds → erro claro (não persiste lixo)', async () => {
+    const { service, tenantConfig } = build({
+      gateway: 'go',
+      goCreds: undefined,
+      createResult: {}, // sem instanceId/token
+    });
+    await expect(service.createInstance('nexus_teste')).rejects.toThrow(/creds/i);
+    expect(tenantConfig.setGoCredentials).not.toHaveBeenCalled();
   });
 });

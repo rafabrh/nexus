@@ -213,10 +213,14 @@ export class EvolutionGoAdapter implements EvolutionGateway {
     // GO create exige um token da instância (vira a apikey dela). O connect com
     // webhook/subscribe é um passo separado (não coberto por esta superfície).
     const token = randomBytes(24).toString('hex');
-    return this.request('POST', '/instance/create', {
+    const res = await this.request<{ data?: { id?: string } }>('POST', '/instance/create', {
       apikey: this.globalKey,
       body: { name: instanceName, token },
     });
+    // Retorna as creds que o onboarding persiste (Rota B): o UUID vem em `data.id`;
+    // o `token` é o que NÓS geramos (a GO só o ecoa) — fonte de verdade da apikey
+    // da instância, usada pelo `getQrCode`/`/send/*` seguintes.
+    return { instanceId: res?.data?.id, token };
   }
 
   async deleteInstance(instancia: string): Promise<void> {
