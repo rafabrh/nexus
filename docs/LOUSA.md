@@ -2,7 +2,7 @@
 
 > Snapshot vivo do programa. Atualizado a cada fatia entregue. Fonte detalhada: `docs/superpowers/plans/2026-08-01-nexus-programa-escala-roadmap.md` (CRONOGRAMA VIVO).
 >
-> **Última atualização:** 2026-08-05 (sessão de handoff — construído o **tooling de teste** do canal GO: instrumentação de captura + latência + seed de validação. Testes verdes, commitado. Falta rodar o teste ao vivo, o que é passo do Rafa. Ver **▶️ RETOMAR AQUI** abaixo.)
+> **Última atualização:** 2026-08-05 (teste ao vivo RODADO — **latência do canal GO medida: `wa_lag_ms` ~1,9 s** (faixa 1,4–2,4 s; painel processa em 1–18 ms; DLQ=0). Presence reclassificado: **não chega na EvoGO** (gap upstream, não do normalizer). Ver **▶️ RETOMAR AQUI** abaixo.)
 > **Branch de prod:** `worktree-macos-reskin` (deploy EasyPanel `siteshkgroup`)
 
 Legenda: ✅ em prod · 🔵 entregue/PR aberto · 📋 plano escrito · ⏳ só HLD · 🔒 portão manual do Rafa
@@ -11,29 +11,25 @@ Legenda: ✅ em prod · 🔵 entregue/PR aberto · 📋 plano escrito · ⏳ só
 
 ## ▶️ RETOMAR AQUI (próxima sessão)
 
-**Onde paramos:** fechando a Fase 0 — "terminar os testes e os steps da migração antes" de tocar a Shkgroup. O canal GO essencial já foi validado ao vivo (passo 8). Nesta sessão construí o **tooling pra medir o loop GO→painel→n8n** e deixei tudo pronto pra você rodar o teste.
+**Estado:** Fase 0 — canal GO **validado ao vivo COM instrumentação** (2026-08-05). **Latência medida.** Falta só o presence (gap upstream, nice-to-have) e, quando o Rafa quiser, o cutover real na Shkgroup.
 
-**✅ Construído e commitado nesta sessão (código puro, seguro, flags OFF por padrão):**
-- **`GO_CAPTURE=true`** (env do nexus-api) → loga o payload AMQP cru (`evt.capture`) pra fechar o shape do `presence` sem chutar. Ligar janela curta num nº de teste (LGPD), desligar após.
-- **`GO_LATENCY=true`** → loga `evt.latency ... proc_ms=<painel> wa_lag_ms=<WhatsApp→fila>` por evento. **`wa_lag_ms` é o número do "latência baixa"** (transporte GO→broker→consumer).
-- **`apps/api/src/tenant-config/seed/validate-go-loop.sql`** → aponta `nexus_teste` pro n8n do **vtdryfit** + cria `tenant_user` de login (login por e-mail, sem senha).
-- Testes: 14/14 do consumer verdes + `tsc` limpo. RUNBOOK §"Flags" documenta os 2 flags.
+**✅ Resultado do teste ao vivo (2026-08-05):**
+- **Latência GO→broker→consumer (`wa_lag_ms`): ~1,9 s** (amostras 1403/1427/1598/2179/2206/2370 ms). O `messageTimestamp` do WhatsApp tem granularidade de 1 s → latência real de transporte provavelmente **~1–1,5 s**.
+- **Painel (`proc_ms`): 1–18 ms** após warm-up (140 ms no 1º, cold). **O gargalo NÃO é o painel.**
+- **DLQ=0**, consumer conectado em todas as filas GO. Canal essencial 100% ✔.
 
-**🔒 Pra você rodar o teste (próxima vez no PC):**
-1. `nexus-api` env: `GO_LATENCY=true` (+ `GO_CAPTURE=true` se for capturar o presence junto) → redeploy.
-2. Rodar `validate-go-loop.sql` no Postgres (preencher a URL do n8n do vtdryfit + um e-mail de teste que NÃO seja de outra instância).
-3. Mandar msg pro número da `nexus_teste` → logar no painel com esse e-mail → ver conversa + IA respondendo.
-4. Ler latência: `docker logs $API | grep evt.latency` (ver [[reference_prod_ssh_access]]).
+**⚠️ Pegadinha que travou o 1º teste (NÃO repetir):** o EasyPanel builda do **GitHub**, não do disco. A instrumentação (`9f8158c`) estava commitada mas **não pushed** → o "rebuild" trazia código velho (container 2 min mais antigo que o commit; flags setadas mas sem código que as lê → zero log). **Sempre `git push` ANTES do rebuild.** Validar: `docker inspect --format {{.State.StartedAt}} $API` tem que ser **> timestamp do commit**; e `docker exec $API env | grep GO_` confirma a flag no processo. Ver [[reference_prod_ssh_access]] e [[project_deploy_easypanel_prod]].
 
-**⚠️ Dependência descoberta (pode precisar de ajuste no n8n, não no painel):** o reuse do n8n do vtdryfit cabeia só a **ida** (GO→painel→n8n). A **volta** (resposta da IA) só cai na conversa da `nexus_teste` se o workflow do vtdryfit responder pela `instance` **do payload** (instance-aware). Se tiver número/instância hardcoded, a IA responde no número do vtdryfit → ajustar no n8n (`docs/n8n-workflow-atual.md`). Comentado no topo do seed.
+**🟡 Presence — RECLASSIFICADO (era "shape do normalizer", é upstream):** o "digitando" **não chega na EvoGO** — **0 `eventType Presence`** nos logs do whatsmeow em 40 min, apesar de `Presence` estar no `AMQP_SPECIFIC_EVENTS`. Causa provável: o WhatsApp só entrega typing indicator para sessões marcadas **online/available**, e a EvoGO não faz `SendPresence(available)`/`SubscribePresence` (sem toggle de env). → o fix (a) do `normalizeGo` está **BLOQUEADO**: sem payload real pra codar contra. **É upstream (EvoGO/config), não é o painel.** Presence é sinal de UI (não vai pro n8n) → nice-to-have, adiável.
 
-**Decisões travadas nesta sessão:**
-- **presence** = **capturar ao vivo primeiro** (não codar contra shape assumido). Presence NÃO vai pro n8n (é sinal de UI), então é ortogonal ao teste de latência.
-- **vtdryfit** = reusar o **workflow n8n** dele como downstream do teste.
-- **Cutover real** será na **Shkgroup** (número da própria SHK), mas **só DEPOIS** dos testes passarem. Identificador que o Rafa passou: `4E8A8AA87C97-47F7-A0F5-33F2013930B2` (**formato de UUID incompleto — confirmar o `instanceId` real ao vivo antes de seedar**).
+**🔒 LGPD:** `GO_CAPTURE=true` loga payload **INTEGRAL** (Message com mídia/dados pessoais) — **DESLIGAR após o teste** (ficou capturado no log da prod). `GO_LATENCY` pode ficar p/ mais amostras, mas idealmente desligar também.
 
-**Próximos BUILDS de código (após o teste):**
-- **(a) Fix do presence** — destrava assim que o Rafa colar o payload capturado (`evt.capture`): fixture real + branch no `normalizeGo` + `handlePresenceUpdate` aceitando o shape GO (espelhar `handleContactUpdate`).
+**Decisões travadas (mantidas):**
+- **vtdryfit** = reusar o workflow n8n dele como downstream do **loop completo com IA** (ida OK; volta precisa ser instance-aware). **Não exercitado neste teste** — o teste de latência dispensa o loop com IA/n8n/login (o `wa_lag_ms` é medido na entrada do consumer). O `validate-go-loop.sql` só é necessário pra testar a resposta da IA ponta a ponta.
+- **Cutover real** será na **Shkgroup** (número da própria SHK), **só DEPOIS**. Identificador que o Rafa passou: `4E8A8AA87C97-47F7-A0F5-33F2013930B2` (**formato de UUID incompleto — confirmar o `instanceId` real ao vivo antes de seedar**).
+
+**Próximos BUILDS de código:**
+- **(a) Fix do presence — BLOQUEADO upstream** (ver acima). Destravar exige PRIMEIRO fazer a EvoGO emitir presence (marcar sessão online/subscribe), aí capturar o payload real; só então fixture + branch no `normalizeGo` + `handlePresenceUpdate` (espelhar `handleContactUpdate`).
 - **(b) Rota B — onboarding GO pelo painel** — pra o cutover da Shkgroup virar um scan pelo painel (sem SQL manual). Lacunas mapeadas: `createInstance` do adapter GO gera token mas não persiste; `onboarding.createInstance` aborta em `probeState=unknown` (fail-safe que protege a prod Node). Fazer com TDD preservando a proteção do Node.
 
 ---
@@ -60,7 +56,7 @@ Estava travada na **licença GO** (OAuth Google, código single-use). Diagnósti
 | 5 · Fixtures + normalizer reais | ✅ **em prod** `afd93ce` — corrige bug que **dropava 100% dos receipts** (shape real ≠ @provisional) |
 | 6 · `EvolutionGoAdapter` (dialeto REST) | ✅ **em prod** `e0e5d6f` — probeState degrada p/ `unknown` (gate #4-2.4 ✔) |
 | 7 · Gates de robustez | ✅ **em prod** — #2 retry/DLQ (`3bc1cb3`) · #3 impedância shape v1↔GO (`1d581ab`) · #4 cache `tenants.get` (`a28ceb4`) · #4-2.4 probeState (`e0e5d6f`) |
-| 8 · Ligar canal GO (transporte + consumer) | ✅ **VALIDADO AO VIVO (essencial)** — seed feito, consumer ligado, teste de conversa 2026-08-05 ponta a ponta: mensagens/receipts/histórico OK, **DLQ=0** (nenhuma falha). Bug dos guards HTTP-only resolvido (`c275f11`/`eb0613d`/`586bdc7`). Known-gaps: `presence.update` (normalizer lê `data.Info` inexistente no presence GO — nice-to-have) + confirmação visual no painel (criar `tenant_user` de teste) |
+| 8 · Ligar canal GO (transporte + consumer) | ✅ **VALIDADO AO VIVO + latência medida** — teste 2026-08-05 ponta a ponta: mensagens/receipts/histórico OK, **DLQ=0**; instrumentação confirmou **`wa_lag_ms` ~1,9 s** / painel 1–18 ms. Bug dos guards HTTP-only resolvido (`c275f11`/`eb0613d`/`586bdc7`). Known-gap: `presence` **não chega na EvoGO** (upstream, não normalizer — 0 `eventType Presence`; WhatsApp só manda typing p/ sessão online) → nice-to-have, adiado |
 
 ---
 
