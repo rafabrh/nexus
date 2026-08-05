@@ -1,10 +1,18 @@
-import { Injectable, Inject, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, ConflictException, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { and, eq, inArray } from 'drizzle-orm';
+import type Redis from 'ioredis';
+import { RedisKeys } from '@nexus/shared';
 import { DB, type Database } from '../core/db/db.module';
+import { REDIS_CLIENT } from '../core/redis/redis.module';
 import { tenants, tenantUsers } from '../core/db/schema';
 import type { TenantEntry, TenantUser } from '@nexus/shared';
 import type { TenantRow, TenantUserRow } from '../core/db/schema';
+
+/** TTL do cache de tenant no hot path (positivo). Curto: mudanças raras, e as
+ * mutações invalidam. Negativo (instância desconhecida) usa TTL menor. */
+const TENANT_CACHE_TTL_S = 60;
+const TENANT_CACHE_NEG_TTL_S = 15;
 
 /**
  * Acesso a tenants sobre Postgres. Substitui o read-modify-write do blob
@@ -14,7 +22,12 @@ import type { TenantRow, TenantUserRow } from '../core/db/schema';
  */
 @Injectable()
 export class TenantRepository {
-  constructor(@Inject(DB) private readonly db: Database) {}
+  private readonly logger = new Logger(TenantRepository.name);
+
+  constructor(
+    @Inject(DB) private readonly db: Database,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
+  ) {}
 
   private toEntry(row: TenantRow, users: TenantUserRow[]): TenantEntry {
     return {
@@ -56,6 +69,46 @@ export class TenantRepository {
     if (!row) return null;
     const users = await this.db.select().from(tenantUsers).where(eq(tenantUsers.instancia, instancia));
     return this.toEntry(row, users);
+  }
+
+  /**
+   * Versão cacheada do `get` para o HOT PATH do webhook (2 queries Postgres por
+   * evento → cache Redis TTL curto). Guarda positivos e negativos (tombstone) e
+   * é invalidada por toda mutação de tenant. **Nunca** usar nas guardas de
+   * segurança (register/addUser/changeUserEmail) — essas leem `get()` fresco,
+   * senão a janela de TTL poderia furar o "um e-mail = uma instância" entre
+   * processos. Degrada para o DB se o Redis falhar (não quebra o webhook).
+   */
+  async getCached(instancia: string): Promise<TenantEntry | null> {
+    const key = RedisKeys.tenantCache(instancia);
+    try {
+      const raw = await this.redis.get(key);
+      if (raw !== null) return JSON.parse(raw) as TenantEntry | null; // hit (entry ou "null")
+    } catch (err) {
+      this.logger.warn(`tenant-cache read falhou (${instancia}), lendo do DB: ${String(err)}`);
+      return this.get(instancia);
+    }
+    const entry = await this.get(instancia); // miss
+    try {
+      await this.redis.set(
+        key,
+        JSON.stringify(entry),
+        'EX',
+        entry ? TENANT_CACHE_TTL_S : TENANT_CACHE_NEG_TTL_S,
+      );
+    } catch (err) {
+      this.logger.warn(`tenant-cache write falhou (${instancia}): ${String(err)}`);
+    }
+    return entry;
+  }
+
+  /** Invalida o cache do hot path após uma mutação. Não-fatal. */
+  private async invalidateCache(instancia: string): Promise<void> {
+    try {
+      await this.redis.del(RedisKeys.tenantCache(instancia));
+    } catch (err) {
+      this.logger.warn(`tenant-cache del falhou (${instancia}): ${String(err)}`);
+    }
   }
 
   /** Login: resolve email -> tenant via índice ix_user_email (O(log n)). */
@@ -119,6 +172,7 @@ export class TenantRepository {
         .values({ id: randomUUID(), instancia, email: normalized, role: 'admin' })
         .onConflictDoNothing(); // uq_user_email_tenant — idempotente
     });
+    await this.invalidateCache(instancia); // limpa o tombstone negativo (instância recém-criada)
     // get() nunca é null aqui: o tenant existe (recém-criado ou já existente).
     return (await this.get(instancia))!;
   }
@@ -130,6 +184,7 @@ export class TenantRepository {
       .where(eq(tenants.instancia, instancia))
       .returning({ instancia: tenants.instancia });
     if (res.length === 0) return null;
+    await this.invalidateCache(instancia);
     return this.get(instancia);
   }
 
@@ -145,6 +200,7 @@ export class TenantRepository {
       .where(eq(tenants.instancia, instancia))
       .returning({ instancia: tenants.instancia });
     if (res.length === 0) return null;
+    await this.invalidateCache(instancia);
     return this.get(instancia);
   }
 
@@ -168,6 +224,7 @@ export class TenantRepository {
         role: user.role,
       })
       .onConflictDoNothing(); // race eliminada: unicidade garantida pelo banco
+    await this.invalidateCache(instancia);
     return this.get(instancia);
   }
 
@@ -177,6 +234,7 @@ export class TenantRepository {
     await this.db
       .delete(tenantUsers)
       .where(and(eq(tenantUsers.instancia, instancia), eq(tenantUsers.email, email.toLowerCase().trim())));
+    await this.invalidateCache(instancia);
     return this.get(instancia);
   }
 
@@ -257,6 +315,7 @@ export class TenantRepository {
         `Usuário '${from}' não encontrado na instância '${instancia}'.`,
       );
     }
+    await this.invalidateCache(instancia);
     return this.get(instancia);
   }
 
@@ -283,5 +342,6 @@ export class TenantRepository {
     if (patch.syncStatus !== undefined) set.syncStatus = patch.syncStatus;
     if (Object.keys(set).length === 0) return;
     await this.db.update(tenants).set(set).where(eq(tenants.instancia, instancia));
+    await this.invalidateCache(instancia);
   }
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import { RedisKeys } from '@nexus/shared';
 import { TenantRepository } from './tenant.repository';
 
 /**
@@ -65,8 +66,62 @@ function makeRepo(opts: { selects?: any[][]; updateRow?: any[] } = {}) {
   );
 
   const db = { select, insert, update, delete: del, transaction } as any;
-  return { repo: new TenantRepository(db), state };
+
+  // Stub de Redis p/ o cache do hot path (getCached/invalidateCache).
+  const redisStore = new Map<string, string>();
+  const redis = {
+    get: vi.fn(async (k: string) => (redisStore.has(k) ? redisStore.get(k)! : null)),
+    set: vi.fn(async (k: string, v: string) => {
+      redisStore.set(k, v);
+    }),
+    del: vi.fn(async (k: string) => {
+      redisStore.delete(k);
+    }),
+  } as any;
+
+  return { repo: new TenantRepository(db, redis), state, redis, redisStore };
 }
+
+describe('TenantRepository.getCached (cache do hot path — gate 2.2 #4)', () => {
+  it('miss lê o DB e popula o cache; hit serve do cache sem novo select', async () => {
+    const { repo, redis } = makeRepo({
+      selects: [[TENANT('shk')], [{ email: 'a@x.com', role: 'admin' }]],
+    });
+    const first = await repo.getCached('shk');
+    expect(first?.instancia).toBe('shk');
+    expect(redis.set).toHaveBeenCalledTimes(1);
+    // 2ª chamada: cache quente (a fila de selects só tinha 1 get) → mesmo resultado.
+    const second = await repo.getCached('shk');
+    expect(second).toEqual(first);
+    expect(redis.set).toHaveBeenCalledTimes(1); // não re-populou
+  });
+
+  it('instância desconhecida cacheia tombstone negativo ("null")', async () => {
+    const { repo, redis } = makeRepo({ selects: [[]] });
+    expect(await repo.getCached('ghost')).toBeNull();
+    expect(redis.set).toHaveBeenCalledWith(
+      RedisKeys.tenantCache('ghost'),
+      'null',
+      'EX',
+      expect.any(Number),
+    );
+  });
+
+  it('degrada p/ o DB quando o Redis falha (não quebra o webhook)', async () => {
+    const { repo, redis } = makeRepo({ selects: [[TENANT('shk')], []] });
+    redis.get.mockRejectedValueOnce(new Error('redis down'));
+    expect((await repo.getCached('shk'))?.instancia).toBe('shk');
+  });
+
+  it('mutação invalida o cache (setActive → del na chave)', async () => {
+    const { repo, redis } = makeRepo({
+      selects: [[TENANT('shk')], []],
+      updateRow: [{ instancia: 'shk' }],
+    });
+    await repo.setActive('shk', false);
+    expect(redis.del).toHaveBeenCalledWith(RedisKeys.tenantCache('shk'));
+  });
+});
 
 describe('TenantRepository.userExists', () => {
   it('[+] true quando o e-mail é membro da instância', async () => {

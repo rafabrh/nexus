@@ -17,6 +17,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
 
   catch(exception: HttpException, host: ArgumentsHost): void {
+    // Filter global roda também no consumer RabbitMQ (contexto não-HTTP): sem
+    // reply HTTP, re-lança a exceção ORIGINAL para o errorHandler do transporte
+    // (golevelup) tratar retry/DLQ — senão `reply.status()` num reply inexistente
+    // mascara a causa e engole a falha (a mensagem seria ACKada e perdida).
+    if (host.getType() !== 'http') {
+      this.logger.warn(
+        `HttpException fora de contexto HTTP (${host.getType()}): ${exception.message}`,
+      );
+      throw exception;
+    }
+
     const ctx = host.switchToHttp();
     const reply = ctx.getResponse<FastifyReply>();
     const request = ctx.getRequest<FastifyRequest>();

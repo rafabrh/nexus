@@ -253,9 +253,14 @@ export class ConversationService {
   }
 
   /**
-   * Proxy de mídia: reconstrói a key a partir da referência guardada e baixa o
-   * binário descriptografado da Evolution. O painel nunca lida com a URL
-   * criptografada do WhatsApp.
+   * Proxy de mídia. Dois caminhos, decididos pela presença do base64 inline no
+   * media store:
+   *  - Evolution GO: a mídia recebida veio em base64 INLINE no evento e o webhook
+   *    a persistiu em `RedisKeys.inlineMedia` (chaveada pelo WAMID = mediaId).
+   *    HIT → serve do store (a GO não tem download por key).
+   *  - Evolution Node (e legado): MISS no store → reconstrói a key e baixa o
+   *    binário descriptografado da Evolution, como sempre. O painel nunca lida
+   *    com a URL criptografada do WhatsApp.
    */
   async getMedia(
     instancia: string,
@@ -266,11 +271,34 @@ export class ConversationService {
     if (!ref) {
       throw new NotFoundException('Mídia não encontrada');
     }
-    const { base64, mimetype } = await this.evolution.getBase64FromMediaMessage(instancia, {
-      id: mediaId,
-      remoteJid: jid,
-      fromMe: ref.fromMe,
-    });
+
+    // Caminho GO: base64 inline persistido pelo webhook. Serve do store sem tocar
+    // a Evolution (a GO não expõe download por key). MISS → cai no download Node.
+    const inline = await this.readInlineMedia(instancia, mediaId);
+    if (inline) {
+      return {
+        buffer: Buffer.from(inline.b64, 'base64'),
+        mimetype: inline.mimetype || ref.mimetype || 'application/octet-stream',
+      };
+    }
+
+    // Caminho Node: baixa o binário descriptografado por key. O adapter GO lança
+    // de propósito (a GO não tem este endpoint); se um tenant GO chegar aqui sem
+    // inline no store, degrada limpo (NotFound) em vez de estourar 500.
+    let base64: string | undefined;
+    let mimetype: string | undefined;
+    try {
+      ({ base64, mimetype } = await this.evolution.getBase64FromMediaMessage(instancia, {
+        id: mediaId,
+        remoteJid: jid,
+        fromMe: ref.fromMe,
+      }));
+    } catch (err) {
+      this.logger.warn(
+        `getMedia download failed instancia=${instancia} id=${mediaId}: ${(err as Error).message}`,
+      );
+      throw new NotFoundException('Mídia indisponível');
+    }
     if (!base64) {
       throw new NotFoundException('Mídia indisponível');
     }
@@ -278,6 +306,36 @@ export class ConversationService {
       buffer: Buffer.from(base64, 'base64'),
       mimetype: mimetype || ref.mimetype || 'application/octet-stream',
     };
+  }
+
+  /**
+   * Lê a mídia inline (base64) do media store escrito na ingestão GO. Retorna null
+   * no miss (caminho Node) ou se a entrada estiver corrompida — o chamador então
+   * segue para o download por key. Best-effort: uma falha do Redis não deve
+   * derrubar o proxy (degrada para o download).
+   */
+  private async readInlineMedia(
+    instancia: string,
+    mediaId: string,
+  ): Promise<{ b64: string; mimetype: string | null } | null> {
+    let raw: string | null;
+    try {
+      raw = await this.redis.get(RedisKeys.inlineMedia(instancia, mediaId));
+    } catch (err) {
+      this.logger.debug(`readInlineMedia get failed: ${(err as Error).message}`);
+      return null;
+    }
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as { b64?: unknown; mimetype?: unknown };
+      if (typeof parsed.b64 !== 'string' || parsed.b64.length === 0) return null;
+      return {
+        b64: parsed.b64,
+        mimetype: typeof parsed.mimetype === 'string' ? parsed.mimetype : null,
+      };
+    } catch {
+      return null; // entrada corrompida — cai no download
+    }
   }
 
   /**

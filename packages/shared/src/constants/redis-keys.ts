@@ -63,6 +63,12 @@ export const RedisKeys = {
   // memória a partir do Postgres (fonte de verdade), não desta chave.
   tenantCfg: (inst: string) => `tenant:cfg:${inst}`,
 
+  // Cache do lookup de tenant no HOT PATH do webhook (TenantRepository.getCached,
+  // TTL curto ~60s). Evita 2 queries Postgres por evento (§8 / gate 2.2 #4).
+  // Invalidado nas mutações de tenant (register/setActive/setN8nWebhookUrl/users/
+  // updateState). NÃO usado pelas guardas cross-tenant (essas leem o DB fresco).
+  tenantCache: (inst: string) => `tenant:cache:${inst}`,
+
   // ---- Contato (namespaced por instancia — BFF popula e le a sua chave) ----
   // O N8N escreve a chave global `contact:{phone}`, mas o BFF NAO depende dela:
   // mantem a sua propria chave `contact:{inst}:{phone}` para isolar PII por tenant.
@@ -94,6 +100,17 @@ export const RedisKeys = {
   // semear o hash de ACK — limita as chamadas à Evolution ao abrir a conversa.
   ackSeededAt: (inst: string, jid: string) =>
     `chat:${inst}:${jid}:ackseed`,
+
+  // Store de mídia RECEBIDA base64 INLINE (BFF exclusivo, caminho Evolution GO).
+  // A Evolution GO NÃO expõe download por key — entrega a mídia em base64 no
+  // próprio evento (`data.message.base64`). O webhook persiste esse base64 aqui
+  // (JSON `{ b64, mimetype }`, TTL curto) chaveado pelo `mediaId` = `key.id`
+  // (WAMID), o MESMO id que o proxy `getMedia` usa para localizar a mídia. No
+  // caminho Node esta chave NUNCA é escrita (o Node não manda base64 inline) —
+  // `getMedia` cai no download atual. O blob fica FORA do chathistory (não infla
+  // a lista/replay); só o store carrega o binário, com expiração própria.
+  inlineMedia: (inst: string, mediaId: string) =>
+    `media:${inst}:${mediaId}`,
 
   // ---- BFF exclusivo ----
 

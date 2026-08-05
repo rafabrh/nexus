@@ -26,6 +26,21 @@ const HOT_STAGES = new Set(['S3', 'S4', 'S5', 'S6']);
  */
 const ECHO_SCAN_WINDOW = 50;
 
+/**
+ * TTL do store de mídia inline (base64 recebido da Evolution GO). 7 dias — folga
+ * para o operador abrir/reabrir a conversa e a mídia ainda renderizar, sem reter
+ * o blob indefinidamente (a GO não tem download por key para re-buscar).
+ */
+const INLINE_MEDIA_TTL_SEC = 7 * 24 * 60 * 60;
+
+/**
+ * Teto do base64 inline a persistir (~8 MB decodificados; base64 infla ~33%, então
+ * a string cabe em ~10.7 MB). As mídias GO capturadas na Fase 0 têm centenas de KB;
+ * o teto barra um blob anômalo antes de escrevê-lo no Redis. Acima do teto a mídia
+ * não é persistida — o proxy degrada limpo (NotFound) em vez de inchar o store.
+ */
+const MAX_INLINE_MEDIA_B64_LEN = Math.ceil((8 * 1024 * 1024 * 4) / 3);
+
 @Injectable()
 export class WebhookService {
   private readonly logger = new Logger(WebhookService.name);
@@ -50,7 +65,10 @@ export class WebhookService {
     // The Evolution apikey is shared across instances, so a valid signature is
     // not enough: confirm the instance belongs to a known tenant before writing
     // anything to Redis. Otherwise a stray/foreign instance could seed data.
-    const tenant = await this.tenants.get(instanceName);
+    // Hot path (1 lookup por evento) → getCached: cache Redis TTL curto, invalidado
+    // nas mutações de tenant. Só existência + n8nWebhookUrl são lidos daqui, ambos
+    // estáveis; connectionState (mutável) NÃO é lido no hot path.
+    const tenant = await this.tenants.getCached(instanceName);
     if (!tenant) {
       this.logger.warn(`webhook.unknown-instance: ${instanceName} (ignorado)`);
       return;
@@ -222,6 +240,16 @@ export class WebhookService {
       await this.redis.rpush(histKey, entry);
     }
 
+    // Evolution GO: a mídia recebida vem em base64 INLINE no evento (a GO não tem
+    // download por key — o adapter GO lança de propósito). Persiste o base64 no
+    // media store (chaveado pelo WAMID, o MESMO id que o proxy usa) para o
+    // `getMedia` servir do store. Só dispara quando há base64 inline (sinal de GO)
+    // + nó de mídia + WAMID → dormente no caminho Node (que nunca manda base64).
+    // O blob fica FORA do chathistory (não infla lista/replay).
+    if (media && keyId) {
+      await this.persistInlineMedia(instanceName, keyId, data, media.mimetype);
+    }
+
     // Contador de nao-lidas: so conta mensagem RECEBIDA do cliente (fromMe=false).
     // A resposta da IA e o envio do operador (fromMe=true) nao geram badge. Zerado
     // quando o operador abre a conversa (ConversationService.markRead).
@@ -365,6 +393,46 @@ export class WebhookService {
       }
     }
     return null;
+  }
+
+  /**
+   * Lê o base64 INLINE que a Evolution GO entrega no corpo da mensagem
+   * (`data.message.base64`) — sinal exclusivo do caminho GO (o Node não manda
+   * base64 inline). Presente → persiste no media store chaveado pelo WAMID
+   * (`RedisKeys.inlineMedia`), o MESMO id que o proxy `getMedia` usa para
+   * localizar a mídia; ausente → no-op (caminho Node segue baixando por key).
+   * Barra o blob acima do teto (`MAX_INLINE_MEDIA_B64_LEN`) para não inchar o
+   * Redis. Best-effort: uma falha aqui nunca derruba o processamento da mensagem.
+   */
+  private async persistInlineMedia(
+    instanceName: string,
+    mediaId: string,
+    data: Record<string, unknown>,
+    mimetype: string | null,
+  ): Promise<void> {
+    const messageObj = data.message as Record<string, unknown> | undefined;
+    const b64 = messageObj?.base64;
+    if (typeof b64 !== 'string' || b64.length === 0) return; // Node (sem inline) → no-op
+    if (b64.length > MAX_INLINE_MEDIA_B64_LEN) {
+      this.logger.warn(
+        `webhook.inline-media-too-large instance=${instanceName} id=${mediaId} len=${b64.length}`,
+      );
+      return;
+    }
+    try {
+      await this.redis.set(
+        RedisKeys.inlineMedia(instanceName, mediaId),
+        JSON.stringify({ b64, mimetype: mimetype ?? null }),
+        'EX',
+        INLINE_MEDIA_TTL_SEC,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `webhook.inline-media-persist-failed instance=${instanceName} id=${mediaId}: ${
+          (err as Error).message
+        }`,
+      );
+    }
   }
 
   /** Timestamp da mensagem (a Evolution manda em segundos) → ms. Null se ausente. */
@@ -559,13 +627,15 @@ export class WebhookService {
     instanceName: string,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    const dataObj = payload.data;
-    if (!Array.isArray(dataObj)) return;
+    // Dois shapes: Evolution Node manda `data` como ARRAY de contatos; a Evolution
+    // GO (normalizada p/ o v1) manda UM contato como OBJETO `{key, pushName}` (o
+    // contrato v1 exige `data` objeto — tem `data.key`). Aceita ambos aqui, no
+    // consumer, em vez de forçar o normalizer a violar o contrato (ver o normalizer
+    // GO em @nexus/shared). O shape v1 é achatado para o mesmo registro de contato.
+    const items = this.contactUpdateItems(payload.data);
+    if (items.length === 0) return;
 
-    for (const item of dataObj) {
-      if (!item || typeof item !== 'object') continue;
-      const contact = item as Record<string, unknown>;
-
+    for (const contact of items) {
       const resolved = resolvePersonalJid(
         contact.remoteJid as string | undefined,
         contact.remoteJidAlt as string | undefined,
@@ -582,6 +652,38 @@ export class WebhookService {
     // Invalidate caches
     await this.redis.del(RedisKeys.cacheContacts(instanceName));
     await this.redis.del(RedisKeys.cacheConversations(instanceName));
+  }
+
+  /**
+   * Achata o `data` de um `contacts.update` para a lista de contatos, tolerando
+   * os dois shapes: ARRAY (Evolution Node) e OBJETO v1 do GO (`{key, pushName}`).
+   * No shape v1 o JID vem em `data.key.remoteJid`/`remoteJidAlt` e o nome em
+   * `data.pushName` — achata para o mesmo registro `{remoteJid, remoteJidAlt,
+   * pushName}` que o loop consome. Ignora entradas malformadas.
+   */
+  private contactUpdateItems(dataObj: unknown): Array<Record<string, unknown>> {
+    if (Array.isArray(dataObj)) {
+      return dataObj.filter(
+        (i): i is Record<string, unknown> => !!i && typeof i === 'object',
+      );
+    }
+    if (dataObj && typeof dataObj === 'object') {
+      const data = dataObj as Record<string, unknown>;
+      const key = data.key as Record<string, unknown> | undefined;
+      // Shape v1 (GO): tem `data.key` — achata JID/nome para um registro de contato.
+      if (key && typeof key === 'object') {
+        return [
+          {
+            remoteJid: key.remoteJid,
+            remoteJidAlt: key.remoteJidAlt,
+            pushName: data.pushName,
+          },
+        ];
+      }
+      // Objeto solto de contato (defensivo): usa como um único registro.
+      return [data];
+    }
+    return [];
   }
 
   /**

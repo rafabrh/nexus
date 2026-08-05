@@ -84,7 +84,8 @@ Legenda: ✅ feito+merge · 🔵 feito+PR aberto · 📋 plano escrito · ✍️
 - 🔒 **Fase 0 (infra/captura)** — subir RabbitMQ + Evolution GO (EasyPanel) + parear número de TESTE + capturar payload/naming AMQP **e o dialeto REST GO** → **trocar fixtures GO `@provisional`** (normalizer) e **preencher o `EvolutionGoAdapter`** (trocar os `NotImplemented`), re-rodar tabela dourada. **Do checklist da auditoria da 2.4:** o `probeState` do GO deve retornar `{status:'unknown'}` (degradar) em vez de lançar enquanto o endpoint real não é capturado — senão quebra o `connection-reconciler` no 1º tenant GO. Gate duro de paridade (§7 Fase 0). **Depende do Rafa.**
 - ⏳ **Engine N8N GO-native** (`docs/n8n-engine-v1.json`) — espelha o normalizer no nó de entrada; config resolver/gate/comandos/núcleo (§4.5). Após config store.
 
-### Etapa 3 — Gateway híbrido — ⏳ HLD (vira planos quando a Etapa 2 fechar)
+### Etapa 3 — Gateway híbrido — 🅿️ ADIADA (decisão de produto, 2026-08-03)
+**Rafa decidiu NÃO fazer o Cloud API connector agora** — seguir só com Evolution (GO). O disparo em massa é a entrega FINAL, mas só p/ plano avançado, com **rate limit controlado pela SHK**, via **Evolution** (não Cloud API), dentro dos padrões da Meta — e mesmo isso fica p/ depois. Divergência consciente do HLD (§4.3 escolhia Cloud API pro broadcast por risco de ban do canal não-oficial). Quando for construído, fundação = o `EvolutionClient` port da Fatia 2.4. Ver [[project_cloud_api_deferred]]. Caminho ativo: Evolution GO (Fase 0) + 1:1 com IA (Etapa 4).
 ### Etapa 4 — Engine próprio + IA — ⏳ HLD (inclui port `LLMProvider`)
 ### Etapa 5 — Migração + descomissionamento — ⏳ HLD (cutover §7.1/§7.2, 🔒)
 

@@ -1,9 +1,12 @@
 import type {
   NexusEventV1,
   NexusEventV1Type,
+  NexusEventV1Data,
+  NexusEventV1Key,
   RawGatewayEvent,
   NormalizeContext,
 } from '../types/nexus-event-v1';
+import { normalizeGoMessageBody } from './normalize-go-message';
 
 const V1_TYPES = new Set<NexusEventV1Type>([
   'messages.upsert',
@@ -68,8 +71,55 @@ const GO_EVENT_MAP: Record<string, NexusEventV1Type | undefined> = {
   ChatPresence: 'presence.update',
 };
 
-// Descartes explícitos (fora do contrato v1 por design — §4.7).
-const GO_DROP = new Set(['QRCode', 'HistorySync', 'CallOffer', 'CallTerminate', 'Labels', 'Newsletter']);
+// Descartes explícitos (fora do contrato v1 por design — §4.7). GroupInfo é
+// metadado de grupo (não é evento de mensagem/conexão no v1).
+const GO_DROP = new Set([
+  'QRCode',
+  'HistorySync',
+  'CallOffer',
+  'CallTerminate',
+  'Labels',
+  'Newsletter',
+  'GroupInfo',
+]);
+
+/**
+ * Info.Timestamp da GO vem como STRING ISO-8601 (capturado na Fase 0), mas o
+ * contrato v1 (espelho da Evolution Node) é epoch em SEGUNDOS. Converte ISO→epoch;
+ * aceita número/número-string (já epoch) na marra; sem parse → passthrough.
+ */
+function toEpochSeconds(v: unknown): number | string | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') {
+    if (v === '') return undefined;
+    if (/^\d+$/.test(v)) return Number(v);
+    const ms = Date.parse(v);
+    return Number.isNaN(ms) ? v : Math.floor(ms / 1000);
+  }
+  return undefined;
+}
+
+/** Remove o sufixo de device (":NN") de um JID whatsmeow → JID canônico. */
+function canonicalJid(jid: string): string {
+  return jid.replace(/:\d+(?=@)/, '');
+}
+
+/**
+ * Telefone real (alt) quando o remoteJid é @lid: em envio (fromMe) o telefone do
+ * peer vem em RecipientAlt; em recebimento vem em SenderAlt (capturado na Fase 0).
+ */
+function lidAlt(remoteJid: string, fromMe: boolean, src: Record<string, unknown>): string | undefined {
+  if (!remoteJid.endsWith('@lid')) return undefined;
+  const alt = fromMe ? src.RecipientAlt : src.SenderAlt;
+  return typeof alt === 'string' && alt ? canonicalJid(alt) : undefined;
+}
+
+function withSender(out: NexusEventV1, instance: string, ctx: NormalizeContext): NexusEventV1 {
+  const owner = ctx.ownerJid?.(instance);
+  if (owner) out.sender = owner;
+  return out;
+}
 
 function normalizeGo(
   raw: RawGatewayEvent,
@@ -80,47 +130,88 @@ function normalizeGo(
   if (!goEvent || GO_DROP.has(goEvent)) return null;
 
   const data = (raw.data ?? {}) as Record<string, unknown>;
-  const info = (data.Info ?? {}) as Record<string, unknown>;
 
-  let event: NexusEventV1Type | undefined;
-  let status: string | undefined;
-  if (goEvent === 'Receipt') {
-    const type = data.Type as string | undefined;
-    if (type === 'Delivered') {
-      event = 'messages.update';
-      status = 'DELIVERY_ACK';
-    } else if (type === 'Read') {
-      event = 'messages.update';
-      status = 'READ';
-    } else {
-      return null; // ReadSelf e outros → drop
-    }
-  } else {
-    event = GO_EVENT_MAP[goEvent];
-  }
+  // Receipt tem shape PRÓPRIO (Fase 0): campos direto em `data` (sem Info),
+  // `MessageIDs` é array, `Type` é minúsculo e o `state` vem no topo do envelope.
+  if (goEvent === 'Receipt') return normalizeGoReceipt(raw, data, instance, ctx);
+
+  const event = GO_EVENT_MAP[goEvent];
   if (!event) return null; // evento GO não mapeado → drop
 
-  const isGroup = info.IsGroup === true;
-  const senderAlt = info.SenderAlt as string | undefined;
+  const info = (data.Info ?? {}) as Record<string, unknown>;
+  const fromMe = info.IsFromMe === true;
+  const remoteJid = canonicalJid((info.Chat as string) ?? '');
 
-  const key: NexusEventV1['data']['key'] = {
-    remoteJid: (info.Chat as string) ?? '',
-    fromMe: info.IsFromMe === true,
-    id: (info.ID as string) ?? '',
-  };
-  if (senderAlt) key.remoteJidAlt = senderAlt;
-  if (isGroup && typeof info.Sender === 'string') key.participant = info.Sender;
+  const key: NexusEventV1Key = { remoteJid, fromMe, id: (info.ID as string) ?? '' };
+  const alt = lidAlt(remoteJid, fromMe, info);
+  if (alt) key.remoteJidAlt = alt;
+  if (info.IsGroup === true && typeof info.Sender === 'string') {
+    key.participant = canonicalJid(info.Sender);
+  }
 
-  const outData: NexusEventV1['data'] = { key };
-  if (typeof info.PushName === 'string') outData.pushName = info.PushName;
-  if (data.Message !== undefined) outData.message = data.Message as Record<string, unknown>;
-  if (info.Timestamp !== undefined) outData.messageTimestamp = info.Timestamp as number;
-  if (status) outData.status = status;
-  if (goEvent === 'Connected') outData.status = 'open';
-  if (goEvent === 'LoggedOut') outData.status = 'close';
+  const outData: NexusEventV1Data = { key };
+  if (typeof info.PushName === 'string' && info.PushName) outData.pushName = info.PushName;
+  // Corpo da mensagem: a GO title-caseia o casing whatsmeow (`URL`/`PTT`/`Seconds`)
+  // e entrega mídia base64 INLINE. Reescreve para o shape Baileys que o painel lê
+  // (§ gate #3 de impedância de shape). Texto/reação/sticker/contextInfo passam
+  // opacos; o `base64` inline é preservado no topo do corpo.
+  if (data.Message !== undefined && data.Message !== null && typeof data.Message === 'object') {
+    outData.message = normalizeGoMessageBody(data.Message as Record<string, unknown>);
+  } else if (data.Message !== undefined) {
+    outData.message = data.Message as Record<string, unknown>;
+  }
+  const ts = toEpochSeconds(info.Timestamp);
+  if (ts !== undefined) outData.messageTimestamp = ts;
+  // connection.update: o painel lê `data.state`/`data.instance.state` (Baileys),
+  // não `data.status`. Emite AMBOS: `state` casa o consumer, `status` mantém o
+  // contrato v1 legível. Sem `state`, todo evento GO cairia em 'close' (default).
+  if (goEvent === 'Connected') {
+    outData.status = 'open';
+    outData.state = 'open';
+  }
+  if (goEvent === 'LoggedOut') {
+    outData.status = 'close';
+    outData.state = 'close';
+  }
 
-  const out: NexusEventV1 = { event, instance, data: outData, gateway: 'go' };
-  const owner = ctx.ownerJid?.(instance);
-  if (owner) out.sender = owner;
-  return out;
+  // NOTA sobre contacts.update: a GO entrega UM contato por evento no shape v1
+  // (`data.key` + `data.pushName`), enquanto a Evolution Node manda `data` como
+  // ARRAY. O contrato v1 exige `data` OBJETO (tem `data.key`), então NÃO dá para
+  // o normalizer emitir um array sem quebrar o contrato. A conciliação fica no
+  // consumer: `WebhookService.handleContactUpdate` aceita AMBOS os shapes (array
+  // Node OU objeto v1-GO). Ver webhook.service.ts.
+
+  return withSender({ event, instance, data: outData, gateway: 'go' }, instance, ctx);
+}
+
+/** Normaliza um Receipt GO (ACK de entrega/leitura) → messages.update. */
+function normalizeGoReceipt(
+  raw: RawGatewayEvent,
+  data: Record<string, unknown>,
+  instance: string,
+  ctx: NormalizeContext,
+): NexusEventV1 | null {
+  const state = ((raw.state as string) ?? '').toLowerCase();
+  const type = ((data.Type as string) ?? '').toLowerCase();
+  let status: string | undefined;
+  if (state === 'read' || type === 'read') status = 'READ';
+  else if (state === 'delivered' || type === 'delivered' || type === 'delivery') status = 'DELIVERY_ACK';
+  else return null; // read-self, played, sender, etc. → drop (fora do v1)
+
+  const fromMe = data.IsFromMe === true;
+  const remoteJid = canonicalJid((data.Chat as string) ?? '');
+  const ids = Array.isArray(data.MessageIDs) ? (data.MessageIDs as string[]) : [];
+
+  const key: NexusEventV1Key = { remoteJid, fromMe, id: ids[0] ?? '' };
+  const alt = lidAlt(remoteJid, fromMe, data);
+  if (alt) key.remoteJidAlt = alt;
+  if (data.IsGroup === true && typeof data.Sender === 'string') {
+    key.participant = canonicalJid(data.Sender);
+  }
+
+  return withSender(
+    { event: 'messages.update', instance, data: { key, status }, gateway: 'go' },
+    instance,
+    ctx,
+  );
 }

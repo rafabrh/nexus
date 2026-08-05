@@ -66,4 +66,28 @@ describe('InMemoryGatewayConfigStore', () => {
       expect(store.gatewayFor('Shk')).toBe('node');
     });
   });
+
+  describe('goCredentials (Fase 0 / adapter GO)', () => {
+    it('gateway=go → devolve { instanceId, token } do config', () => {
+      store.hydrate([
+        {
+          instancia: 'Shk',
+          gateway: 'go',
+          config: { instanceId: 'uuid-1', instanceToken: 'tok-abc', ownerJid: 'o@x' },
+        },
+      ]);
+      expect(store.goCredentials('Shk')).toEqual({ instanceId: 'uuid-1', token: 'tok-abc' });
+    });
+
+    it('tenant Node (sem gateway=go) → undefined (adapter GO nunca o chama)', () => {
+      store.hydrate([{ instancia: 'NodeTenant', config: { instanceId: 'uuid-9', instanceToken: 't' } }]);
+      expect(store.goCredentials('NodeTenant')).toBeUndefined();
+    });
+
+    it('re-hydrate([]) limpa as credenciais', () => {
+      store.hydrate([{ instancia: 'Shk', gateway: 'go', config: { instanceToken: 't' } }]);
+      store.hydrate([]);
+      expect(store.goCredentials('Shk')).toBeUndefined();
+    });
+  });
 });

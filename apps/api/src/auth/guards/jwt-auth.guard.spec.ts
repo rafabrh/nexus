@@ -8,7 +8,17 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 function contextWithoutToken(): ExecutionContext {
   const request = { cookies: {}, headers: {} };
   return {
+    getType: () => 'http',
     switchToHttp: () => ({ getRequest: () => request }),
+    getHandler: () => () => undefined,
+    getClass: () => class {},
+  } as unknown as ExecutionContext;
+}
+
+/** ExecutionContext de um consumer RabbitMQ (AMQP) — sem req/token HTTP. */
+function rmqCtx(): ExecutionContext {
+  return {
+    getType: () => 'rmq',
     getHandler: () => () => undefined,
     getClass: () => class {},
   } as unknown as ExecutionContext;
@@ -25,6 +35,7 @@ function contextWithToken(token: string): {
     headers: { authorization: `Bearer ${token}` },
   };
   const ctx = {
+    getType: () => 'http',
     switchToHttp: () => ({ getRequest: () => request }),
     getHandler: () => () => undefined,
     getClass: () => class {},
@@ -64,6 +75,20 @@ describe('JwtAuthGuard @Public bypass', () => {
     await expect(guard.canActivate(contextWithoutToken())).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
+  });
+
+  it('libera contexto não-HTTP (consumer AMQP) sem exigir token', async () => {
+    // Guards globais (APP_GUARD) rodam no consumer RabbitMQ; mensagens AMQP vêm
+    // do broker confiável, não são requests autenticados. Sem este bypass o
+    // switchToHttp().getRequest() não tem token → UnauthorizedException derruba o
+    // consumer (todos os eventos GO iriam pra DLQ). Autenticação JWT é HTTP-only.
+    const jwt = { verify: vi.fn() } as any;
+    const redis = { get: vi.fn() } as any;
+
+    const guard = new JwtAuthGuard(jwt, redis, notPublic);
+
+    await expect(guard.canActivate(rmqCtx())).resolves.toBe(true);
+    expect(jwt.verify).not.toHaveBeenCalled();
   });
 });
 

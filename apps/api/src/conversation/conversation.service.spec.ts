@@ -352,6 +352,187 @@ describe('ConversationService', () => {
     expect(result.message).toBe('Mensagem enviada');
   });
 
+  // ── getMedia (store inline GO vs. download Node) ────────────────────────────
+
+  describe('getMedia', () => {
+    const ref = { fromMe: false, mimetype: 'image/jpeg' };
+
+    it('serve do media store quando há base64 inline (caminho GO) sem tocar a Evolution', async () => {
+      const repo = { findMediaRef: vi.fn(async () => ref) } as any;
+      // HIT no store: o webhook GO persistiu o base64 inline sob media:shk:WAMID.
+      const redis = {
+        get: vi.fn(async (key: string) =>
+          key === 'media:shk:WAMID'
+            ? JSON.stringify({ b64: Buffer.from('go-bytes').toString('base64'), mimetype: 'image/png' })
+            : null,
+        ),
+      } as any;
+      const evolution = { getBase64FromMediaMessage: vi.fn() } as any;
+      const svc = new ConversationService(repo, evolution, {} as any, redis, {} as any, {} as any, {} as any);
+
+      const out = await svc.getMedia('shk', '5511@s.whatsapp.net', 'WAMID');
+
+      expect(out.buffer.toString()).toBe('go-bytes');
+      expect(out.mimetype).toBe('image/png'); // mimetype do store vence
+      // Caminho GO NÃO baixa por key (o adapter GO lançaria).
+      expect(evolution.getBase64FromMediaMessage).not.toHaveBeenCalled();
+    });
+
+    it('cai no download por key quando o store está vazio (caminho Node inalterado)', async () => {
+      const repo = { findMediaRef: vi.fn(async () => ref) } as any;
+      const redis = { get: vi.fn(async () => null) } as any; // MISS no store
+      const evolution = {
+        getBase64FromMediaMessage: vi.fn(async () => ({
+          base64: Buffer.from('node-bytes').toString('base64'),
+          mimetype: 'image/jpeg',
+        })),
+      } as any;
+      const svc = new ConversationService(repo, evolution, {} as any, redis, {} as any, {} as any, {} as any);
+
+      const out = await svc.getMedia('shk', '5511@s.whatsapp.net', 'WAMID');
+
+      expect(evolution.getBase64FromMediaMessage).toHaveBeenCalledWith('shk', {
+        id: 'WAMID',
+        remoteJid: '5511@s.whatsapp.net',
+        fromMe: false,
+      });
+      expect(out.buffer.toString()).toBe('node-bytes');
+      expect(out.mimetype).toBe('image/jpeg');
+    });
+
+    it('degrada limpo (NotFound) quando o adapter GO lança no download (nunca 500)', async () => {
+      const { NotFoundException } = await import('@nestjs/common');
+      const repo = { findMediaRef: vi.fn(async () => ref) } as any;
+      const redis = { get: vi.fn(async () => null) } as any; // sem inline no store
+      const evolution = {
+        // EvolutionGoAdapter.getBase64FromMediaMessage lança de propósito.
+        getBase64FromMediaMessage: vi.fn(async () => {
+          throw new Error('GO entrega mídia base64 inline no evento — não baixar por key');
+        }),
+      } as any;
+      const svc = new ConversationService(repo, evolution, {} as any, redis, {} as any, {} as any, {} as any);
+
+      await expect(
+        svc.getMedia('shk', '5511@s.whatsapp.net', 'WAMID'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('cai no download quando a entrada do store está corrompida (JSON inválido)', async () => {
+      const repo = { findMediaRef: vi.fn(async () => ref) } as any;
+      const redis = { get: vi.fn(async () => '{corrompido') } as any;
+      const evolution = {
+        getBase64FromMediaMessage: vi.fn(async () => ({
+          base64: Buffer.from('fallback').toString('base64'),
+          mimetype: 'image/jpeg',
+        })),
+      } as any;
+      const svc = new ConversationService(repo, evolution, {} as any, redis, {} as any, {} as any, {} as any);
+
+      const out = await svc.getMedia('shk', '5511@s.whatsapp.net', 'WAMID');
+
+      expect(evolution.getBase64FromMediaMessage).toHaveBeenCalled();
+      expect(out.buffer.toString()).toBe('fallback');
+    });
+
+    it('store hit sem mimetype → coalesce para o mimetype da ref do histórico', async () => {
+      // O webhook persistiu o inline sem mimetype (mídia GO sem Mimetype no nó).
+      // readInlineMedia devolve mimetype: null; getMedia deve cair no ref.mimetype
+      // (image/jpeg aqui), nunca servir undefined/octet-stream quando a ref tem tipo.
+      const repo = { findMediaRef: vi.fn(async () => ref) } as any; // ref.mimetype = image/jpeg
+      const redis = {
+        get: vi.fn(async (key: string) =>
+          key === 'media:shk:WAMID'
+            ? JSON.stringify({ b64: Buffer.from('go-bytes').toString('base64') }) // sem mimetype
+            : null,
+        ),
+      } as any;
+      const evolution = { getBase64FromMediaMessage: vi.fn() } as any;
+      const svc = new ConversationService(repo, evolution, {} as any, redis, {} as any, {} as any, {} as any);
+
+      const out = await svc.getMedia('shk', '5511@s.whatsapp.net', 'WAMID');
+
+      expect(out.buffer.toString()).toBe('go-bytes');
+      expect(out.mimetype).toBe('image/jpeg'); // veio da ref, não undefined
+      expect(evolution.getBase64FromMediaMessage).not.toHaveBeenCalled();
+    });
+
+    it('store hit com b64 vazio → tratado como MISS, cai no download por key', async () => {
+      // Entrada anômala no store (b64 == ''): readInlineMedia guarda len===0 e
+      // devolve null, então o proxy NÃO serve 0 byte — degrada para o download.
+      const repo = { findMediaRef: vi.fn(async () => ref) } as any;
+      const redis = {
+        get: vi.fn(async () => JSON.stringify({ b64: '', mimetype: 'image/png' })),
+      } as any;
+      const evolution = {
+        getBase64FromMediaMessage: vi.fn(async () => ({
+          base64: Buffer.from('node-fallback').toString('base64'),
+          mimetype: 'image/jpeg',
+        })),
+      } as any;
+      const svc = new ConversationService(repo, evolution, {} as any, redis, {} as any, {} as any, {} as any);
+
+      const out = await svc.getMedia('shk', '5511@s.whatsapp.net', 'WAMID');
+
+      expect(evolution.getBase64FromMediaMessage).toHaveBeenCalled();
+      expect(out.buffer.toString()).toBe('node-fallback');
+    });
+
+    it('não estoura 500 servindo do store mesmo com base64 malformado (Buffer.from é leniente)', async () => {
+      // Um b64 inválido no store não deve derrubar o proxy: Buffer.from(...,'base64')
+      // decodifica best-effort (ignora chars inválidos) em vez de lançar. O proxy
+      // devolve o que der — nunca um 500. Trava esse contrato de robustez.
+      const repo = { findMediaRef: vi.fn(async () => ref) } as any;
+      const redis = {
+        get: vi.fn(async () =>
+          JSON.stringify({ b64: '@@@not-valid-base64@@@', mimetype: 'image/png' }),
+        ),
+      } as any;
+      const evolution = { getBase64FromMediaMessage: vi.fn() } as any;
+      const svc = new ConversationService(repo, evolution, {} as any, redis, {} as any, {} as any, {} as any);
+
+      const out = await svc.getMedia('shk', '5511@s.whatsapp.net', 'WAMID');
+
+      expect(Buffer.isBuffer(out.buffer)).toBe(true); // não lançou
+      expect(out.mimetype).toBe('image/png');
+      expect(evolution.getBase64FromMediaMessage).not.toHaveBeenCalled();
+    });
+
+    it('isola a leitura do store por instância (namespacing — não vaza cross-tenant)', async () => {
+      // O proxy lê media:{inst}:{WAMID}; um blob de OUTRO tenant sob o mesmo WAMID
+      // não pode ser servido. Só a chave da instância pedida (shk) tem hit.
+      const repo = { findMediaRef: vi.fn(async () => ref) } as any;
+      const redis = {
+        get: vi.fn(async (key: string) =>
+          key === 'media:shk:WAMID'
+            ? JSON.stringify({ b64: Buffer.from('shk-bytes').toString('base64'), mimetype: 'image/png' })
+            : JSON.stringify({ b64: Buffer.from('OUTRO-TENANT').toString('base64'), mimetype: 'image/png' }),
+        ),
+      } as any;
+      const evolution = { getBase64FromMediaMessage: vi.fn() } as any;
+      const svc = new ConversationService(repo, evolution, {} as any, redis, {} as any, {} as any, {} as any);
+
+      const out = await svc.getMedia('shk', '5511@s.whatsapp.net', 'WAMID');
+
+      // Leu exatamente a chave namespaced da instância pedida.
+      expect(redis.get).toHaveBeenCalledWith('media:shk:WAMID');
+      expect(out.buffer.toString()).toBe('shk-bytes');
+    });
+
+    it('lança NotFound quando a mídia não está no histórico (ref ausente)', async () => {
+      const { NotFoundException } = await import('@nestjs/common');
+      const repo = { findMediaRef: vi.fn(async () => null) } as any;
+      const redis = { get: vi.fn(async () => null) } as any;
+      const evolution = { getBase64FromMediaMessage: vi.fn() } as any;
+      const svc = new ConversationService(repo, evolution, {} as any, redis, {} as any, {} as any, {} as any);
+
+      await expect(
+        svc.getMedia('shk', '5511@s.whatsapp.net', 'WAMID'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      // Ref ausente aborta antes de qualquer download ou leitura de store.
+      expect(evolution.getBase64FromMediaMessage).not.toHaveBeenCalled();
+    });
+  });
+
   it('rejects updateStage (400) when the key is not a stage of the tenant (dynamic funnel)', async () => {
     // O funil é dinâmico por-tenant: um key que não existe em funnel_stages do
     // tenant deve ser rejeitado ANTES de tocar o Redis — senão gravaria um
