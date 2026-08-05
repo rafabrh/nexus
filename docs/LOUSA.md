@@ -2,10 +2,39 @@
 
 > Snapshot vivo do programa. Atualizado a cada fatia entregue. Fonte detalhada: `docs/superpowers/plans/2026-08-01-nexus-programa-escala-roadmap.md` (CRONOGRAMA VIVO).
 >
-> **Última atualização:** 2026-08-05 (✅ canal GO VALIDADO AO VIVO no essencial — DLQ zerada + teste de conversa: +19 `messages.upsert`, +16 `messages.update`/receipts, histórico persistindo, **DLQ=0**. Único gap: `presence.update` [nice-to-have] — normalizer lê `data.Info` que presence GO não tem → known-gap)
+> **Última atualização:** 2026-08-05 (sessão de handoff — construído o **tooling de teste** do canal GO: instrumentação de captura + latência + seed de validação. Testes verdes, commitado. Falta rodar o teste ao vivo, o que é passo do Rafa. Ver **▶️ RETOMAR AQUI** abaixo.)
 > **Branch de prod:** `worktree-macos-reskin` (deploy EasyPanel `siteshkgroup`)
 
 Legenda: ✅ em prod · 🔵 entregue/PR aberto · 📋 plano escrito · ⏳ só HLD · 🔒 portão manual do Rafa
+
+---
+
+## ▶️ RETOMAR AQUI (próxima sessão)
+
+**Onde paramos:** fechando a Fase 0 — "terminar os testes e os steps da migração antes" de tocar a Shkgroup. O canal GO essencial já foi validado ao vivo (passo 8). Nesta sessão construí o **tooling pra medir o loop GO→painel→n8n** e deixei tudo pronto pra você rodar o teste.
+
+**✅ Construído e commitado nesta sessão (código puro, seguro, flags OFF por padrão):**
+- **`GO_CAPTURE=true`** (env do nexus-api) → loga o payload AMQP cru (`evt.capture`) pra fechar o shape do `presence` sem chutar. Ligar janela curta num nº de teste (LGPD), desligar após.
+- **`GO_LATENCY=true`** → loga `evt.latency ... proc_ms=<painel> wa_lag_ms=<WhatsApp→fila>` por evento. **`wa_lag_ms` é o número do "latência baixa"** (transporte GO→broker→consumer).
+- **`apps/api/src/tenant-config/seed/validate-go-loop.sql`** → aponta `nexus_teste` pro n8n do **vtdryfit** + cria `tenant_user` de login (login por e-mail, sem senha).
+- Testes: 14/14 do consumer verdes + `tsc` limpo. RUNBOOK §"Flags" documenta os 2 flags.
+
+**🔒 Pra você rodar o teste (próxima vez no PC):**
+1. `nexus-api` env: `GO_LATENCY=true` (+ `GO_CAPTURE=true` se for capturar o presence junto) → redeploy.
+2. Rodar `validate-go-loop.sql` no Postgres (preencher a URL do n8n do vtdryfit + um e-mail de teste que NÃO seja de outra instância).
+3. Mandar msg pro número da `nexus_teste` → logar no painel com esse e-mail → ver conversa + IA respondendo.
+4. Ler latência: `docker logs $API | grep evt.latency` (ver [[reference_prod_ssh_access]]).
+
+**⚠️ Dependência descoberta (pode precisar de ajuste no n8n, não no painel):** o reuse do n8n do vtdryfit cabeia só a **ida** (GO→painel→n8n). A **volta** (resposta da IA) só cai na conversa da `nexus_teste` se o workflow do vtdryfit responder pela `instance` **do payload** (instance-aware). Se tiver número/instância hardcoded, a IA responde no número do vtdryfit → ajustar no n8n (`docs/n8n-workflow-atual.md`). Comentado no topo do seed.
+
+**Decisões travadas nesta sessão:**
+- **presence** = **capturar ao vivo primeiro** (não codar contra shape assumido). Presence NÃO vai pro n8n (é sinal de UI), então é ortogonal ao teste de latência.
+- **vtdryfit** = reusar o **workflow n8n** dele como downstream do teste.
+- **Cutover real** será na **Shkgroup** (número da própria SHK), mas **só DEPOIS** dos testes passarem. Identificador que o Rafa passou: `4E8A8AA87C97-47F7-A0F5-33F2013930B2` (**formato de UUID incompleto — confirmar o `instanceId` real ao vivo antes de seedar**).
+
+**Próximos BUILDS de código (após o teste):**
+- **(a) Fix do presence** — destrava assim que o Rafa colar o payload capturado (`evt.capture`): fixture real + branch no `normalizeGo` + `handlePresenceUpdate` aceitando o shape GO (espelhar `handleContactUpdate`).
+- **(b) Rota B — onboarding GO pelo painel** — pra o cutover da Shkgroup virar um scan pelo painel (sem SQL manual). Lacunas mapeadas: `createInstance` do adapter GO gera token mas não persiste; `onboarding.createInstance` aborta em `probeState=unknown` (fail-safe que protege a prod Node). Fazer com TDD preservando a proteção do Node.
 
 ---
 
