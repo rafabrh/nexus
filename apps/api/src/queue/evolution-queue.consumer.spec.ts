@@ -109,6 +109,34 @@ describe('EvolutionQueueConsumer.handle', () => {
     await consumer.handle(validNode, 'node');
     expect(dedup.release).not.toHaveBeenCalled();
   });
+
+  it('GO_LATENCY=true → loga evt.latency com proc_ms e wa_lag_ms (defasagem do carimbo)', async () => {
+    process.env.GO_LATENCY = 'true';
+    const log = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const { consumer } = makeConsumer({ shouldProcess: true });
+    const tsSec = Math.floor(Date.now() / 1000) - 2; // mensagem carimbada 2s atrás
+    const raw: RawGatewayEvent = {
+      instance: 'shk',
+      event: 'messages.upsert',
+      data: {
+        key: { remoteJid: '5511@s.whatsapp.net', fromMe: false, id: 'WAMID-L' },
+        messageTimestamp: tsSec,
+      },
+      sender: '5599@s.whatsapp.net',
+    };
+    await consumer.handle(raw, 'node');
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('evt.latency'));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('wa_lag_ms='));
+    delete process.env.GO_LATENCY;
+  });
+
+  it('GO_LATENCY ausente (default) → NÃO loga latência (zero ruído em prod)', async () => {
+    delete process.env.GO_LATENCY;
+    const log = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const { consumer } = makeConsumer({ shouldProcess: true });
+    await consumer.handle(validNode, 'node');
+    expect(log).not.toHaveBeenCalledWith(expect.stringContaining('evt.latency'));
+  });
 });
 
 // Caminho A (wiring): a GO publica no DEFAULT exchange, em filas por evento. O

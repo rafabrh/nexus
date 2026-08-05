@@ -119,6 +119,8 @@
 | Item | Onde |
 |---|---|
 | Kill-switch consumer | env `QUEUE_CONSUMER_ENABLED` (default `false`), `RABBITMQ_URL`, `QUEUE_PREFETCH` |
+| **Captura de payload cru** (§4a) | env `GO_CAPTURE=true` (default off) → log `evt.capture event=<X> raw=<JSON>` no consumer. Ligar JANELA CURTA num nº de TESTE (dump integral = LGPD; `Message` com mídia é volumoso), desligar após. |
+| **Latência do teste** | env `GO_LATENCY=true` (default off) → log `evt.latency ... proc_ms=<painel> wa_lag_ms=<WhatsApp→consumo da fila>` por evento processado. `wa_lag_ms` = latência real do transporte GO→broker→consumer. |
 | Reconcile config | env `TENANT_CFG_RECONCILE_SEC` (default `60`) |
 | Fixtures GO | `packages/shared/src/gateway/fixtures/go.fixtures.ts` |
 | Normalizer | `packages/shared/src/gateway/normalize-gateway-event.ts` |
