@@ -2,7 +2,7 @@
 
 > Snapshot vivo do programa. Atualizado a cada fatia entregue. Fonte detalhada: `docs/superpowers/plans/2026-08-01-nexus-programa-escala-roadmap.md` (CRONOGRAMA VIVO).
 >
-> **Última atualização:** 2026-08-04 (transporte GO→RabbitMQ CONFIRMADO ao vivo + Caminho A no código `55dfa89`; falta só seed+envs+deploy do nexus-api 🔒)
+> **Última atualização:** 2026-08-05 (🟢 canal GO AO VIVO — consumer processando eventos GO ponta a ponta; bug dos guards globais não-HTTP resolvido `586bdc7`; DLQ estável = sem falhas novas)
 > **Branch de prod:** `worktree-macos-reskin` (deploy EasyPanel `siteshkgroup`)
 
 Legenda: ✅ em prod · 🔵 entregue/PR aberto · 📋 plano escrito · ⏳ só HLD · 🔒 portão manual do Rafa
@@ -31,7 +31,7 @@ Estava travada na **licença GO** (OAuth Google, código single-use). Diagnósti
 | 5 · Fixtures + normalizer reais | ✅ **em prod** `afd93ce` — corrige bug que **dropava 100% dos receipts** (shape real ≠ @provisional) |
 | 6 · `EvolutionGoAdapter` (dialeto REST) | ✅ **em prod** `e0e5d6f` — probeState degrada p/ `unknown` (gate #4-2.4 ✔) |
 | 7 · Gates de robustez | ✅ **em prod** — #2 retry/DLQ (`3bc1cb3`) · #3 impedância shape v1↔GO (`1d581ab`) · #4 cache `tenants.get` (`a28ceb4`) · #4-2.4 probeState (`e0e5d6f`) |
-| 8 · Ligar canal GO (transporte + consumer) | 🔵 transporte **CONFIRMADO ao vivo** (filas GO enchem) + **Caminho A** no código (`55dfa89`, spec `f090510`); 🔒 falta Rafa: seed `2.3` + `RABBITMQ_URL`+`QUEUE_CONSUMER_ENABLED=true` no nexus-api → deploy |
+| 8 · Ligar canal GO (transporte + consumer) | 🟢 **AO VIVO** — seed feito, consumer ligado, eventos GO processando ponta a ponta (DLQ estável). Achado+resolvido no caminho: guards/filters globais HTTP-only derrubavam o consumer (`c275f11`/`eb0613d`); +integração (`586bdc7`). Falta só: purgar backlog velho da DLQ + confirmação visual no painel |
 
 ---
 
